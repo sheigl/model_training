@@ -1,21 +1,39 @@
 [project]
-name = "tiny-gpt-project"
+name = "qwen-finetuning"
 version = "0.1.0"
+description = "Fine-tune Qwen 2.5 0.5B with LoRA for instruction following"
 requires-python = ">=3.10"
 dependencies = [
-    "torch>=2.5.0",
-    "torchvision>=0.20.0",
-    "torchaudio>=2.5.0",
+    "torch",
+    "torchvision", 
+    "torchaudio",
+    "transformers>=4.40.0",
+    "datasets>=2.14.0",
+    "peft>=0.10.0",
+    "trl>=0.8.0",
+    "bitsandbytes>=0.41.0",
+    "accelerate>=0.27.0",
+    "sentencepiece>=0.1.99",
+    "protobuf>=3.20.0",
 ]
 
-# Configure the PyTorch XPU index
+[project.optional-dependencies]
+logging = [
+    "wandb",
+    "tensorboard",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Configure PyTorch nightly XPU index for Intel Arc GPUs
 [[tool.uv.index]]
-name = "pytorch-xpu"
-url = "https://download.pytorch.org/whl/xpu"
+name = "pytorch-nightly-xpu"
+url = "https://download.pytorch.org/whl/nightly/xpu"
 explicit = true
 
-# Pin torch packages to use the XPU index
 [tool.uv.sources]
-torch = { index = "pytorch-xpu" }
-torchvision = { index = "pytorch-xpu" }
-torchaudio = { index = "pytorch-xpu" }
+torch = { index = "pytorch-nightly-xpu" }
+torchvision = { index = "pytorch-nightly-xpu" }
+torchaudio = { index = "pytorch-nightly-xpu" }
