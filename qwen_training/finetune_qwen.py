@@ -319,6 +319,34 @@ def parse_args():
         # and evaluate separately, or if you're running automated pipelines.
         help="Skip test generation after training"
     )
+    parser.add_argument(
+        "--resume-from-checkpoint",
+        type=str,
+        default=None,
+        # Path to a training checkpoint directory to resume training from.
+        # During training, the trainer periodically saves "checkpoints" -- full
+        # snapshots of the training state including model weights, optimizer state,
+        # learning rate scheduler state, and the random number generator states.
+        #
+        # Real-world analogy: Imagine you're writing a long essay and your computer
+        # crashes. If you had auto-save enabled, you can reopen the document and
+        # pick up right where you left off instead of starting from scratch. That's
+        # exactly what checkpoint resumption does for model training.
+        #
+        # Checkpoints are saved to directories like "checkpoint-200" (where 200 is
+        # the global step number). To resume, point this at that directory:
+        #   --resume-from-checkpoint ./output/checkpoint-200
+        #
+        # Why this matters:
+        #   - Training can take hours. If it crashes, you don't lose all progress.
+        #   - You can stop training, adjust hyperparameters, and continue.
+        #   - Lets you extend training (e.g., train 3 more epochs from where you
+        #     stopped) without repeating already-completed work.
+        #
+        # NOTE: The checkpoint directory must match the same model and LoRA config
+        # you're using. You can't resume a checkpoint from a different model.
+        help="Path to a checkpoint directory to resume training from (e.g., ./output/checkpoint-200)"
+    )
 
     return parser.parse_args()
 
@@ -351,6 +379,8 @@ print(f"  Gradient accumulation={args.gradient_accumulation}")
 print(f"  Learning rate={args.learning_rate}")
 print(f"  Max sequence length={args.max_seq_length}")
 print(f"  Use 4-bit quantization: {args.use_4bit}")
+if args.resume_from_checkpoint:
+    print(f"  Resume from checkpoint: {args.resume_from_checkpoint}")
 print("="*70 + "\n")
 
 # Transfer command-line args to uppercase constants for clarity in the rest
@@ -588,7 +618,7 @@ print("\nLoading model and tokenizer...")
 # "double quantization" quantizes the quantization constants themselves,
 # saving even more memory with almost no quality loss.
 quantization_config = None
-if USE_4BIT and device in ['cuda', 'cpu']:  # XPU might not support 4-bit yet
+if USE_4BIT:  # XPU might not support 4-bit yet
     quantization_config = BitsAndBytesConfig(
         load_in_4bit=True,              # Enable 4-bit quantization
         bnb_4bit_quant_type="nf4",      # Use NormalFloat4 (best for neural nets)
@@ -623,7 +653,7 @@ model = AutoModelForCausalLM.from_pretrained(
     # bfloat16 (Brain Floating Point 16) uses 16 bits per number instead of 32.
     # It has the same range as float32 but less precision. This halves memory
     # usage with minimal quality loss. Intel and Google hardware love bfloat16.
-    torch_dtype=torch.bfloat16,
+    dtype=torch.bfloat16,
 )
 
 # If using XPU (Intel Arc), manually move the model to the GPU.
@@ -639,7 +669,7 @@ if device == 'xpu':
 # 1. Freezes the quantized weights (they stay compressed during training)
 # 2. Casts certain layers to full precision for numerical stability
 # 3. Enables gradient computation for the layers we'll train
-if USE_4BIT and device in ['cuda', 'cpu']:
+if USE_4BIT:
     model = prepare_model_for_kbit_training(model)
 
 # --- Load the tokenizer ---
@@ -898,9 +928,15 @@ trainer = SFTTrainer(
 
 print("\n" + "="*70)
 print("STARTING TRAINING")
+if args.resume_from_checkpoint:
+    print(f"  Resuming from checkpoint: {args.resume_from_checkpoint}")
 print("="*70 + "\n")
 
-trainer.train()
+# If --resume-from-checkpoint was provided, pass that path to trainer.train().
+# The trainer will load the saved optimizer state, scheduler state, and model
+# weights from the checkpoint directory and continue training from that point.
+# If no checkpoint is specified, training starts fresh from the beginning.
+trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
 
 print("\n" + "="*70)
 print("TRAINING COMPLETE!")

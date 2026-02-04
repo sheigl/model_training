@@ -665,6 +665,257 @@ with open('my_data.jsonl', 'r') as f:
 
 ---
 
+## Understanding Checkpoints
+
+### What Are Checkpoints?
+
+During training, the script automatically saves **checkpoints** - snapshots of your model at regular intervals:
+
+```
+qwen-mtg-expert/
+├── checkpoint-100/     # After 100 training steps
+├── checkpoint-200/     # After 200 training steps
+├── checkpoint-300/     # After 300 training steps
+├── ...
+└── checkpoint-657/     # Final checkpoint
+```
+
+### Why Multiple Checkpoints?
+
+1. **Safety Net**: If training crashes, you don't lose everything
+2. **Find Best Model**: Sometimes an earlier checkpoint performs better
+3. **Resume Training**: Continue from any checkpoint if needed
+
+### What's Inside Each Checkpoint?
+
+```
+checkpoint-100/
+├── adapter_model.safetensors    # LoRA weights (~50MB) ⭐ IMPORTANT
+├── adapter_config.json          # LoRA configuration ⭐ IMPORTANT
+├── optimizer.pt                 # Optimizer state (~100-200MB)
+├── rng_state.pth               # Random number state
+├── scheduler.pt                # Learning rate scheduler
+├── trainer_state.json          # Training progress
+└── training_args.bin           # Training arguments
+```
+
+**The essential files:** `adapter_model.safetensors` and `adapter_config.json`
+
+### How Training Steps Work
+
+**Example calculation:**
+```
+Dataset: 3,500 examples
+Batch size: 2
+Gradient accumulation: 8
+Epochs: 3
+
+Examples per step = 2 × 8 = 16
+Steps per epoch = 3,500 / 16 = 219 steps
+Total steps = 219 × 3 = 657 steps
+
+Checkpoints (saved every 100 steps by default):
+- checkpoint-100  (Epoch 1, 46% complete)
+- checkpoint-200  (Epoch 1, 91% complete)
+- checkpoint-300  (Epoch 2, 37% complete)
+- checkpoint-400  (Epoch 2, 83% complete)
+- checkpoint-500  (Epoch 3, 28% complete)
+- checkpoint-600  (Epoch 3, 74% complete)
+- checkpoint-657  (Final, 100% complete)
+```
+
+### Which Checkpoint Should You Use?
+
+**Default: Use the last checkpoint**
+```python
+from peft import PeftModel
+from transformers import AutoModelForCausalLM
+
+base_model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
+model = PeftModel.from_pretrained(base_model, "./qwen-mtg-expert")
+# Automatically loads the latest checkpoint
+```
+
+**Specify a checkpoint:**
+```python
+# Load a specific checkpoint
+model = PeftModel.from_pretrained(base_model, "./qwen-mtg-expert/checkpoint-400")
+```
+
+**When to use an earlier checkpoint:**
+- Final model seems overtrained
+- Earlier checkpoint gives better answers on test questions
+- Training loss decreased but answer quality got worse (overfitting)
+
+### Controlling Checkpoint Behavior
+
+**Save checkpoints less frequently (default is every 100 steps):**
+```bash
+python finetune_qwen.py \
+  --dataset file \
+  --data-file data.jsonl \
+  --save-steps 200 \
+  --output-dir ./model
+```
+
+**Keep only the last N checkpoints (saves disk space):**
+```bash
+python finetune_qwen.py \
+  --dataset file \
+  --data-file data.jsonl \
+  --save-total-limit 2 \
+  --output-dir ./model
+```
+
+**Only save at the end of each epoch:**
+```bash
+python finetune_qwen.py \
+  --dataset file \
+  --data-file data.jsonl \
+  --save-strategy "epoch" \
+  --output-dir ./model
+```
+
+### Resuming Training from a Checkpoint
+
+```bash
+# Continue training from checkpoint-400
+python finetune_qwen.py \
+  --dataset file \
+  --data-file data.jsonl \
+  --resume-from-checkpoint ./model/checkpoint-400 \
+  --epochs 5 \
+  --output-dir ./model-continued
+```
+
+### Cleaning Up Checkpoints
+
+**After training completes, you can save disk space:**
+
+**Option 1: Keep only the final checkpoint**
+```bash
+# Delete intermediate checkpoints
+cd qwen-mtg-expert
+rm -rf checkpoint-{100,200,300,400,500,600}
+# Keep only checkpoint-657 (or whatever the final one is)
+```
+
+**Option 2: Delete training-only files from each checkpoint**
+```bash
+# In each checkpoint, keep only:
+# - adapter_model.safetensors (your trained model)
+# - adapter_config.json (model configuration)
+#
+# Delete (only needed to resume training):
+# - optimizer.pt
+# - scheduler.pt
+# - rng_state.pth
+# - trainer_state.json
+# - training_args.bin
+
+cd checkpoint-657
+rm optimizer.pt scheduler.pt rng_state.pth trainer_state.json training_args.bin
+```
+
+**Space savings:**
+- Full checkpoint: ~160-260MB each
+- Cleaned checkpoint: ~50MB each
+- Final model only: ~50MB total
+
+### Testing Multiple Checkpoints
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import PeftModel
+import torch
+
+base_model = AutoModelForCausalLM.from_pretrained(
+    "Qwen/Qwen2.5-0.5B-Instruct",
+    device_map="auto",
+    torch_dtype=torch.bfloat16
+)
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
+
+def test_checkpoint(ckpt_path, question):
+    """Test a checkpoint with a question"""
+    model = PeftModel.from_pretrained(base_model, ckpt_path)
+    messages = [{"role": "user", "content": question}]
+    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    outputs = model.generate(**inputs, max_new_tokens=150)
+    response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+    return response
+
+# Test different checkpoints
+checkpoints = ["checkpoint-200", "checkpoint-400", "checkpoint-600", "checkpoint-657"]
+test_question = "What does Lightning Bolt do?"
+
+for ckpt in checkpoints:
+    print(f"\n{'='*60}")
+    print(f"{ckpt}:")
+    print(test_checkpoint(f"./qwen-mtg-expert/{ckpt}", test_question))
+```
+
+### Signs of Overfitting
+
+Monitor answer quality across checkpoints:
+
+**Good progression (no overfitting):**
+```
+checkpoint-100: Basic answers, still learning
+checkpoint-300: Good answers, getting better
+checkpoint-500: Excellent, accurate answers
+checkpoint-657: Excellent, accurate answers ✓
+```
+
+**Overfitting detected:**
+```
+checkpoint-100: Basic answers
+checkpoint-300: Good answers
+checkpoint-500: Excellent answers ⭐ BEST CHECKPOINT
+checkpoint-657: Worse than 500, too specific, hallucinations
+```
+
+**If overfitting occurs:** Use an earlier checkpoint (like checkpoint-500 in this example)
+
+### Checkpoint Configuration Options
+
+You can add these to your training command:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--save-steps N` | 100 | Save checkpoint every N steps |
+| `--save-total-limit N` | None | Keep only last N checkpoints |
+| `--save-strategy "X"` | "steps" | "steps", "epoch", or "no" |
+| `--load-best-model-at-end` | False | Load best checkpoint at end |
+| `--metric-for-best-model "X"` | "loss" | Metric to determine best |
+
+**Example with all options:**
+```bash
+python finetune_qwen.py \
+  --dataset file \
+  --data-file data.jsonl \
+  --save-steps 200 \
+  --save-total-limit 3 \
+  --load-best-model-at-end \
+  --output-dir ./model
+```
+
+### Checkpoint Summary
+
+| Aspect | Details |
+|--------|---------|
+| **Frequency** | Every 100 steps (default), configurable |
+| **Size** | ~160-260MB each (full), ~50MB (cleaned) |
+| **Purpose** | Safety, resume training, find best model |
+| **Recommended** | Keep final + delete optimizer files |
+| **Use** | Load with `PeftModel.from_pretrained(base, checkpoint_path)` |
+| **Delete** | Intermediate checkpoints after confirming final works |
+
+**Pro Tip:** After training completes and you've verified the model works, keep only the final checkpoint's `adapter_model.safetensors` and `adapter_config.json` files. This reduces storage from ~1.5GB to ~50MB!
+
+---
+
 ## Getting Help
 
 ```bash
