@@ -386,7 +386,7 @@ training_args = SFTConfig(
     per_device_eval_batch_size=BATCH_SIZE,
     gradient_accumulation_steps=GRADIENT_ACCUMULATION,
     learning_rate=LEARNING_RATE,
-    max_seq_length=MAX_SEQ_LENGTH,
+    max_length=MAX_SEQ_LENGTH,
     
     # Optimization
     optim="adamw_torch",
@@ -408,6 +408,7 @@ training_args = SFTConfig(
     # Other
     report_to="none",  # Can use "wandb" for logging
     load_best_model_at_end=True,
+    packing=False,  # Don't pack multiple examples together
 )
 
 # ============================================================================
@@ -421,8 +422,7 @@ trainer = SFTTrainer(
     args=training_args,
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
-    tokenizer=tokenizer,
-    packing=False,  # Don't pack multiple examples together
+    processing_class=tokenizer
 )
 
 # ============================================================================
