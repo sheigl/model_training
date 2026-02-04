@@ -1,0 +1,9 @@
+.venv
+.vscode/
+__pycache__/
+*.pyc
+.DS_Store
+training_data/
+*.log
+qwen-mtg-expert/
+output/
