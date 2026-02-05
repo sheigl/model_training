@@ -841,12 +841,12 @@ training_args = SFTConfig(
     # These control how often we check progress and save snapshots.
 
     # eval_strategy="steps" means "evaluate every N training steps" (not epochs).
-    eval_strategy="steps",
-    eval_steps=50,         # Run evaluation every 50 training steps
+    eval_strategy="epoch", # (no, steps, epoch), when to evaulate the training
+    #eval_steps=50,         # Run evaluation every 50 training steps
     logging_steps=10,      # Print training loss every 10 steps (so you can watch progress)
-    save_strategy="steps", # Save a checkpoint every N steps
-    save_steps=100,        # Save every 100 steps
-    save_total_limit=2,    # Only keep the 2 most recent checkpoints (saves disk space)
+    save_strategy="epoch", # Save a checkpoint every N steps (steps,no,epoch)
+    save_steps=200,        # Save every x steps
+    save_total_limit=3,    # Only keep the 2 most recent checkpoints (saves disk space)
 
     # --- Performance flags ---
     # bf16=True tells PyTorch to use bfloat16 (16-bit) math on the GPU.
