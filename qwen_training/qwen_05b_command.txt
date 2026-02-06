@@ -1,0 +1,1 @@
+python ./qwen_training/finetune_qwen.py --dataset file --data-file ./training_data/complete_mtg.jsonl --use-4bit --epochs 2 --batch-size 4 --lora-r 32 --lora-alpha 64 --output-dir ./qwen_training/output/output_continue --resume-from-checkpoint ./qwen_training/output/checkpoint-4300  > ~/.log/model_training.log 2>&1 &

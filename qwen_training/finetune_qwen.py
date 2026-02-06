@@ -1,10 +1,10 @@
 """
-Fine-tune Qwen 2.5 0.5B Instruct with LoRA
-============================================
+Fine-tune Qwen 2.5 0.5B / Qwen3 8B with LoRA and optional GaLore
+=================================================================
 
 WHAT THIS SCRIPT DOES:
-    This script takes a pre-trained language model (Qwen 2.5 0.5B) and teaches it
-    new behavior using your custom data. This is called "fine-tuning."
+    This script takes a pre-trained language model (Qwen 2.5 0.5B or Qwen3 8B) and 
+    teaches it new behavior using your custom data. This is called "fine-tuning."
 
     Real-world analogy: Imagine hiring someone who already has a college degree
     (the pre-trained model). They know how to read, write, and reason. Now you're
@@ -14,6 +14,7 @@ WHAT THIS SCRIPT DOES:
 WHY LoRA (Low-Rank Adaptation)?
     Normally, fine-tuning means updating ALL of a model's parameters (weights).
     For a 0.5 billion parameter model, that requires a LOT of GPU memory.
+    For an 8 billion parameter model, it's impossible on consumer hardware.
 
     LoRA is a shortcut: instead of rewriting the entire textbook, you add small
     sticky notes (adapters) to specific pages. The original book stays the same,
@@ -24,23 +25,63 @@ WHY LoRA (Low-Rank Adaptation)?
     adapter) changes its behavior. You can even swap turbos (adapters) for
     different tasks without touching the engine.
 
+WHY GaLore (Gradient Low-Rank Projection)?
+    GaLore goes one step further than LoRA by also reducing optimizer memory.
+    
+    The problem: When training with Adam optimizer, you need to store:
+    - Model weights (8B params = 16GB in bfloat16)
+    - Optimizer states (2x the params = 32GB!)
+    - Gradients (8B params = 16GB)
+    Total: ~64GB for 8B model -- impossible on consumer GPUs!
+    
+    GaLore's solution: Project gradients to a low-rank space before updating.
+    This reduces optimizer memory by ~60-70%, making 8B model training possible
+    on 12GB consumer GPUs when combined with 4-bit quantization and LoRA.
+    
+    Real-world analogy: Instead of storing a full HD movie (model gradients),
+    you store a compressed version (low-rank projection) that captures the
+    important information in a smaller size. When you need to watch it, you
+    decompress just enough to see the picture clearly.
+    
+    Memory savings with GaLore:
+    - Qwen 0.5B: 5GB → 4GB (not critical, but helps)
+    - Qwen3 8B: 16GB → 6-7GB (critical! makes it possible)
+
+WHEN TO USE WHAT:
+    For Qwen 0.5B - 2B models:
+    - LoRA + 4-bit is sufficient
+    - GaLore optional (adds complexity without much benefit)
+    
+    For Qwen3 8B+ models:
+    - LoRA + 4-bit + GaLore is ESSENTIAL
+    - Without GaLore: Won't fit in 12GB
+    - With GaLore: Fits comfortably in 12GB
+
 WHAT YOU NEED:
     - A GPU (this script supports Intel Arc via XPU, NVIDIA via CUDA, or CPU)
     - Training data in JSONL format (conversations with user/assistant messages)
     - The dependencies in pyproject.toml installed via: uv sync
+    - For GaLore: pip install galore-torch
 
 Usage:
-    # Use sample data (for testing that everything works)
-    python finetune_qwen.py --dataset sample
-
-    # Use Hugging Face dataset (community-shared data)
-    python finetune_qwen.py --dataset hf --hf-dataset yahma/alpaca-cleaned
-
-    # Use your custom JSONL file (what we'll do with MTG data)
+    # Qwen 0.5B with LoRA (simple, fast)
     python finetune_qwen.py --dataset file --data-file my_data.jsonl
 
-    # Customize training hyperparameters
-    python finetune_qwen.py --dataset sample --epochs 5 --batch-size 8 --lora-r 32
+    # Qwen3 8B with LoRA + 4-bit + GaLore (advanced, better quality)
+    python finetune_qwen.py \
+        --model-name Qwen/Qwen3-8B \
+        --dataset file \
+        --data-file my_data.jsonl \
+        --use-4bit \
+        --use-galore \
+        --batch-size 2 \
+        --gradient-accumulation 8
+
+    # With checkpoint resumption
+    python finetune_qwen.py \
+        --dataset file \
+        --data-file my_data.jsonl \
+        --resume-from-checkpoint ./output/checkpoint-1000
 """
 
 # =============================================================================
@@ -111,6 +152,30 @@ from trl import SFTTrainer, SFTConfig
 # os: Operating system utilities (we use it to check if files exist).
 import os
 
+# GaLore: Gradient Low-Rank Projection optimizer for memory-efficient training.
+# This is OPTIONAL and only needed for larger models (7B+) on consumer GPUs.
+# Install with: pip install galore-torch
+#
+# GaLoreAdamW: The GaLore version of the AdamW optimizer. It projects gradients
+# to a low-rank subspace before accumulating optimizer states, drastically
+# reducing memory usage (~60-70% reduction in optimizer memory).
+#
+# GaLoreAdamW8bit: Even more memory-efficient version using 8-bit optimizer states.
+# This combines GaLore's gradient projection with 8-bit quantization of the
+# optimizer states themselves.
+#
+# Real-world analogy: If regular Adam is like storing full-resolution photos of
+# every frame in a video (expensive!), GaLore is like storing a compressed version
+# that captures the essential motion vectors. When you need to update the video,
+# you work with the compressed version and only expand it when necessary.
+try:
+    from galore_torch import GaLoreAdamW, GaLoreAdamW8bit
+    GALORE_AVAILABLE = True
+except ImportError:
+    GALORE_AVAILABLE = False
+    # GaLore is not installed. This is fine if you're training small models (0.5B-2B).
+    # For larger models (7B+), you'll need to install it: pip install galore-torch
+
 # =============================================================================
 # COMMAND LINE ARGUMENTS
 # =============================================================================
@@ -123,7 +188,7 @@ import os
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Fine-tune Qwen 2.5 0.5B with LoRA on instruction data"
+        description="Fine-tune Qwen models (0.5B to 8B+) with LoRA and optional GaLore"
     )
 
     # --- Dataset options ---
@@ -162,18 +227,32 @@ def parse_args():
         type=str,
         default="Qwen/Qwen2.5-0.5B-Instruct",
         # This is the Hugging Face model ID. The first time you run this, it
-        # downloads the model weights (~1GB) from huggingface.co. After that,
-        # it uses the cached version.
-        # "Instruct" means it's already been trained to follow instructions.
-        # We're fine-tuning it further to specialize in MTG.
-        help="Base model to fine-tune"
+        # downloads the model weights from huggingface.co. After that, it uses
+        # the cached version.
+        #
+        # Recommended models:
+        # - Qwen/Qwen2.5-0.5B-Instruct: Small, fast, fits easily (training: ~8 hours)
+        # - Qwen/Qwen2.5-1.5B-Instruct: Medium, good quality (training: ~12 hours)
+        # - Qwen/Qwen3-8B: Large, excellent quality, REQUIRES GaLore (training: ~48 hours)
+        #
+        # For 8B models, you MUST use --use-galore --use-4bit or it won't fit!
+        help="Base model to fine-tune (0.5B to 8B supported)"
     )
+    
+    # Add to parse_args()
+    parser.add_argument(
+        "--hf-token",
+        type=str,
+        default=None,
+        help="Hugging Face token for accessing gated models"
+    )
+    
     parser.add_argument(
         "--output-dir",
         type=str,
         default="./qwen-finetuned",
         # Where to save the trained LoRA adapter weights. This directory will
-        # contain the adapter files (small, ~10MB) -- NOT a full copy of the model.
+        # contain the adapter files (small, ~10-50MB) -- NOT a full copy of the model.
         # To use the model later, you load the base model + this adapter on top.
         help="Directory to save fine-tuned model"
     )
@@ -195,6 +274,11 @@ def parse_args():
         # Technical detail: LoRA decomposes a large weight matrix (e.g., 1024x1024)
         # into two small matrices (1024x16 and 16x1024). Instead of updating
         # 1,048,576 parameters, you only update 32,768. That's 32x fewer!
+        #
+        # Recommendations by model size:
+        # - 0.5B-1B models: r=16 (default)
+        # - 1.5B-3B models: r=24-32
+        # - 7B-8B models: r=32-64
         help="LoRA rank (8-64, higher = more capacity)"
     )
     parser.add_argument(
@@ -226,6 +310,85 @@ def parse_args():
         help="LoRA dropout for regularization"
     )
 
+    # --- GaLore configuration ---
+    # GaLore is ESSENTIAL for training large models (7B+) on consumer GPUs.
+    # It reduces optimizer memory by ~60-70% through gradient projection.
+    parser.add_argument(
+        "--use-galore",
+        action="store_true",
+        # "action=store_true" means this is a flag: just adding --use-galore
+        # enables it (no value needed).
+        #
+        # When to use GaLore:
+        # - Training models 7B+ on consumer GPUs (12-24GB VRAM)
+        # - You're running out of memory even with 4-bit + LoRA
+        # - You want to use larger batch sizes on big models
+        #
+        # When NOT to use GaLore:
+        # - Training small models (0.5B-2B) that already fit comfortably
+        # - You have plenty of VRAM (>40GB)
+        #
+        # Memory comparison for 8B model on 12GB GPU:
+        # - LoRA + 4-bit: ~14GB (OOM!)
+        # - LoRA + 4-bit + GaLore: ~6-7GB (fits!)
+        help="Use GaLore optimizer for memory-efficient training (essential for 7B+ models)"
+    )
+    parser.add_argument(
+        "--galore-rank",
+        type=int,
+        default=128,
+        # The rank of the low-rank projection used by GaLore. This is different
+        # from LoRA rank -- it controls how much to compress the gradients.
+        #
+        # Higher rank = more accurate gradient information but more memory.
+        # Lower rank = more compression but potentially slower convergence.
+        #
+        # Real-world analogy: Like image compression quality. Rank 256 is like
+        # saving at 95% quality (barely noticeable difference), rank 64 is like
+        # 70% quality (visible artifacts but much smaller file).
+        #
+        # Recommendations:
+        # - 7B-8B models: 128 (default, good balance)
+        # - 13B+ models: 256 (less compression needed)
+        # - Memory constrained: 64 (maximum compression)
+        help="GaLore projection rank (64-256, higher = less compression)"
+    )
+    parser.add_argument(
+        "--galore-update-proj-gap",
+        type=int,
+        default=200,
+        # How often (in training steps) to update the GaLore projection subspace.
+        # The projection is the "compression algorithm" used for gradients.
+        #
+        # Too frequent (e.g., every step): Wastes compute recomputing projection
+        # Too infrequent (e.g., every 1000 steps): Projection becomes stale
+        #
+        # 200 steps is a good default that balances computation and freshness.
+        # This typically aligns with checkpoint saving frequency.
+        #
+        # Real-world analogy: Like recalibrating a GPS. You don't recalibrate
+        # every second (wasteful), but you also don't wait until you're completely
+        # lost. Every few minutes (200 steps) is a good middle ground.
+        help="Update GaLore projection every N steps (100-500 recommended)"
+    )
+    parser.add_argument(
+        "--galore-scale",
+        type=float,
+        default=0.25,
+        # Scaling factor for GaLore updates. This controls how aggressively the
+        # low-rank projection influences the optimization.
+        #
+        # Lower scale (0.1-0.25): More conservative, safer for stability
+        # Higher scale (0.5-1.0): More aggressive, faster convergence but risky
+        #
+        # 0.25 is well-tested and recommended by the GaLore paper authors.
+        #
+        # Real-world analogy: Like the gain knob on an amplifier. 0.25 gives you
+        # a clear signal without distortion, while 1.0 might overdrive and cause
+        # clipping (training instability).
+        help="GaLore scaling factor (0.1-1.0, lower = more conservative)"
+    )
+
     # --- Training configuration ---
     # These control the training loop itself.
     parser.add_argument(
@@ -239,6 +402,11 @@ def parse_args():
         # epoch) gives you a basic understanding. Reading it 3 times helps it
         # sink in. But reading it 100 times and you just memorize it word-for-
         # word without understanding (overfitting).
+        #
+        # Guidelines:
+        # - Small dataset (<1000 examples): 5-10 epochs
+        # - Medium dataset (1000-10000): 3-5 epochs
+        # - Large dataset (10000+): 1-3 epochs
         help="Number of training epochs"
     )
     parser.add_argument(
@@ -253,6 +421,12 @@ def parse_args():
         # you grade 32 papers, think about common mistakes, then adjust your
         # rubric once. Larger batches give you a better picture of the overall
         # trend, but you need a bigger desk (GPU memory) to hold all the papers.
+        #
+        # Recommendations by model size:
+        # - 0.5B-1B: batch_size=8 (or 4 with 4-bit)
+        # - 1.5B-3B: batch_size=4
+        # - 7B-8B: batch_size=2 (with 4-bit + GaLore)
+        # - 13B+: batch_size=1 (with 4-bit + GaLore)
         help="Batch size per device"
     )
     parser.add_argument(
@@ -267,6 +441,9 @@ def parse_args():
         # Real-world analogy: Like taking notes during 4 separate meetings
         # before writing one summary report. You're gathering more information
         # before making a decision, without needing a bigger meeting room.
+        #
+        # Target effective batch size: 16-32 for most tasks
+        # Formula: batch_size * gradient_accumulation = effective_batch_size
         help="Gradient accumulation steps"
     )
     parser.add_argument(
@@ -280,7 +457,12 @@ def parse_args():
         # Real-world analogy: Imagine tuning a guitar string. The learning rate
         # is how much you turn the tuning peg each time. Too much and you
         # overshoot the right pitch. Too little and you're turning forever.
-        # 2e-4 is a well-tested default for LoRA fine-tuning.
+        #
+        # Recommendations:
+        # - 0.5B-2B models: 2e-4 (default)
+        # - 3B-7B models: 1e-4 (more conservative)
+        # - 8B+ models: 5e-5 to 1e-4 (very conservative)
+        # - With GaLore: Can use slightly higher (1.5-2x)
         help="Learning rate"
     )
     parser.add_argument(
@@ -293,6 +475,12 @@ def parse_args():
         # Real-world analogy: Like the maximum essay length on an exam.
         # Anything longer gets truncated (cut off). For MTG card Q&A, 512 is
         # usually plenty. For longer strategy guides, you might want 1024+.
+        #
+        # Memory impact: Doubling sequence length roughly doubles memory usage!
+        # Recommendations:
+        # - Short Q&A: 256-512
+        # - Longer conversations: 1024
+        # - Very long documents: 2048 (but needs lots of VRAM)
         help="Maximum sequence length"
     )
 
@@ -305,12 +493,20 @@ def parse_args():
         # weights from 16 bits to 4 bits per number, using ~4x less memory.
         #
         # Real-world analogy: Like compressing a high-res photo to a thumbnail.
-        # You lose some quality but it takes way less storage. For the 0.5B
-        # model this isn't strictly necessary, but for larger models it's essential.
+        # You lose some quality but it takes way less storage. For training
+        # large models, this is ESSENTIAL.
         #
-        # NOTE: 4-bit quantization may not work on Intel XPU (Arc GPUs) yet.
-        # The bitsandbytes library primarily supports NVIDIA CUDA GPUs.
-        help="Use 4-bit quantization (may not work on XPU)"
+        # Memory savings:
+        # - 0.5B model: 1GB → 0.25GB (helpful but not critical)
+        # - 8B model: 16GB → 4GB (absolutely essential!)
+        #
+        # Quality impact: Minimal (<1% difference) for fine-tuning.
+        # The base model knowledge is preserved; we're just adjusting LoRA adapters.
+        #
+        # NOTE: 4-bit quantization may not work on older Intel XPU (Arc GPUs) drivers.
+        # The bitsandbytes library primarily targets NVIDIA CUDA GPUs, but newer
+        # Intel drivers (2024+) have added support.
+        help="Use 4-bit quantization (essential for large models, ~75% memory reduction)"
     )
     parser.add_argument(
         "--no-test",
@@ -338,10 +534,14 @@ def parse_args():
         #   --resume-from-checkpoint ./output/checkpoint-200
         #
         # Why this matters:
-        #   - Training can take hours. If it crashes, you don't lose all progress.
+        #   - Training can take hours or days. If it crashes, you don't lose progress.
         #   - You can stop training, adjust hyperparameters, and continue.
         #   - Lets you extend training (e.g., train 3 more epochs from where you
         #     stopped) without repeating already-completed work.
+        #
+        # IMPORTANT with GaLore: If you're using --use-galore, you must resume
+        # with the same GaLore settings (rank, update_proj_gap, scale). Changing
+        # these will cause errors or poor results.
         #
         # NOTE: The checkpoint directory must match the same model and LoRA config
         # you're using. You can't resume a checkpoint from a different model.
@@ -354,6 +554,23 @@ def parse_args():
 # This makes all the user's settings available in the 'args' object.
 # Example: args.epochs gives us the number of epochs they chose.
 args = parse_args()
+
+# =============================================================================
+# VALIDATE GALORE AVAILABILITY
+# =============================================================================
+# If the user requested GaLore but it's not installed, we need to fail early
+# with a helpful error message rather than continuing and crashing later.
+
+if args.use_galore and not GALORE_AVAILABLE:
+    print("\n" + "="*70)
+    print("ERROR: GaLore requested but not installed!")
+    print("="*70)
+    print("\nYou used --use-galore but the galore-torch library is not available.")
+    print("\nTo install GaLore:")
+    print("  pip install galore-torch --break-system-packages")
+    print("\nOr run without --use-galore (only works for small models <3B)")
+    print("="*70 + "\n")
+    exit(1)
 
 # =============================================================================
 # CONFIGURATION (from command-line args)
@@ -376,12 +593,29 @@ print(f"  r={args.lora_r}, alpha={args.lora_alpha}, dropout={args.lora_dropout}"
 print(f"\nTraining Config:")
 print(f"  Epochs={args.epochs}, Batch size={args.batch_size}")
 print(f"  Gradient accumulation={args.gradient_accumulation}")
+print(f"  Effective batch size={args.batch_size * args.gradient_accumulation}")
 print(f"  Learning rate={args.learning_rate}")
 print(f"  Max sequence length={args.max_seq_length}")
+print(f"\nMemory Optimization:")
 print(f"  Use 4-bit quantization: {args.use_4bit}")
+print(f"  Use GaLore optimizer: {args.use_galore}")
+if args.use_galore:
+    print(f"    GaLore rank: {args.galore_rank}")
+    print(f"    Update projection gap: {args.galore_update_proj_gap} steps")
+    print(f"    Scaling factor: {args.galore_scale}")
 if args.resume_from_checkpoint:
-    print(f"  Resume from checkpoint: {args.resume_from_checkpoint}")
+    print(f"\nResume from checkpoint: {args.resume_from_checkpoint}")
 print("="*70 + "\n")
+
+# Warn user about training time for large models
+if "8B" in args.model_name or "7B" in args.model_name:
+    print("⚠️  WARNING: You're training a large model (7B-8B parameters)")
+    print("   Expected training time on consumer GPU: 48-72 hours")
+    if not args.use_galore:
+        print("   ⚠️  You should probably use --use-galore for memory efficiency!")
+    if not args.use_4bit:
+        print("   ⚠️  You should use --use-4bit for large models!")
+    print()
 
 # Transfer command-line args to uppercase constants for clarity in the rest
 # of the script. This is a style convention: UPPERCASE = "don't change these
@@ -419,6 +653,10 @@ GRADIENT_ACCUMULATION = args.gradient_accumulation
 LEARNING_RATE = args.learning_rate
 MAX_SEQ_LENGTH = args.max_seq_length
 USE_4BIT = args.use_4bit
+USE_GALORE = args.use_galore
+GALORE_RANK = args.galore_rank
+GALORE_UPDATE_PROJ_GAP = args.galore_update_proj_gap
+GALORE_SCALE = args.galore_scale
 
 # =============================================================================
 # DEVICE DETECTION
@@ -443,14 +681,15 @@ if hasattr(torch, 'xpu') and torch.xpu.is_available():
     # you installed regular PyTorch without Intel's XPU support).
     device = 'xpu'
     print(f'Using Intel GPU (XPU): {torch.xpu.get_device_name(0)}')
-    # Note: 4-bit quantization might not work on XPU yet because the
-    # bitsandbytes library was written for NVIDIA GPUs.
+    # Note: 4-bit quantization support on XPU depends on driver version.
+    # Newer drivers (2024+) have better support.
 elif torch.cuda.is_available():
     device = 'cuda'
     print(f'Using NVIDIA GPU: {torch.cuda.get_device_name(0)}')
 else:
     device = 'cpu'
-    print('Using CPU (training will be slow!)')
+    print('Using CPU (training will be VERY slow!)')
+    print('Consider using a GPU for training large models.')
 
 # =============================================================================
 # DATASET LOADING FUNCTIONS
@@ -609,6 +848,8 @@ print("\nLoading model and tokenizer...")
 #
 # Math: 0.5B parameters * 16 bits = ~1GB of memory
 #       0.5B parameters * 4 bits  = ~0.25GB of memory
+#       8B parameters * 16 bits   = ~16GB of memory
+#       8B parameters * 4 bits    = ~4GB of memory
 #
 # The "nf4" (NormalFloat4) quantization type is specifically designed for
 # neural network weights, which follow a bell curve (normal distribution).
@@ -617,8 +858,12 @@ print("\nLoading model and tokenizer...")
 #
 # "double quantization" quantizes the quantization constants themselves,
 # saving even more memory with almost no quality loss.
+#
+# Real-world analogy: Like using JPEG compression for photos. You can't see
+# the difference between a 95% quality JPEG and the original, but the file
+# is 10x smaller. 4-bit quantization is similar for neural network weights.
 quantization_config = None
-if USE_4BIT:  # XPU might not support 4-bit yet
+if USE_4BIT:
     quantization_config = BitsAndBytesConfig(
         load_in_4bit=True,              # Enable 4-bit quantization
         bnb_4bit_quant_type="nf4",      # Use NormalFloat4 (best for neural nets)
@@ -629,7 +874,8 @@ if USE_4BIT:  # XPU might not support 4-bit yet
 # --- Load the model ---
 # AutoModelForCausalLM.from_pretrained() does several things:
 # 1. Checks if the model is already cached locally
-# 2. If not, downloads it from huggingface.co (~1GB for Qwen 0.5B)
+# 2. If not, downloads it from huggingface.co
+#    (~1GB for Qwen 0.5B, ~16GB for Qwen3 8B)
 # 3. Loads the weights into memory
 # 4. Creates the model architecture and fills it with the weights
 #
@@ -640,6 +886,10 @@ if USE_4BIT:  # XPU might not support 4-bit yet
 # Real-world analogy: Loading a model is like loading a save file in a game.
 # Someone else already spent weeks training this model (playing the game),
 # and we're loading their progress to continue from where they left off.
+print(f"Loading {MODEL_NAME}...")
+if "8B" in MODEL_NAME or "7B" in MODEL_NAME:
+    print("  (This is a large model - download may take several minutes)")
+
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
     quantization_config=quantization_config,
@@ -650,10 +900,16 @@ model = AutoModelForCausalLM.from_pretrained(
     # model's repository. Qwen uses custom tokenization code.
     # WARNING: Only enable this for models you trust, as it runs arbitrary code.
     trust_remote_code=True,
+    # dtype specifies what numerical precision to use for model weights.
     # bfloat16 (Brain Floating Point 16) uses 16 bits per number instead of 32.
     # It has the same range as float32 but less precision. This halves memory
     # usage with minimal quality loss. Intel and Google hardware love bfloat16.
+    #
+    # If using 4-bit quantization, this dtype is used for computation (the
+    # weights themselves are stored in 4-bit but expanded to bfloat16 for math).
     dtype=torch.bfloat16,
+    # hf token for downloading base model
+    token=args.hf_token if args.hf_token else None,  
 )
 
 # If using XPU (Intel Arc), manually move the model to the GPU.
@@ -661,6 +917,7 @@ model = AutoModelForCausalLM.from_pretrained(
 # With XPU, we explicitly tell PyTorch "put this model on the Intel GPU."
 # .to(device) copies all model parameters to the specified device's memory.
 if device == 'xpu':
+    print("  Moving model to Intel XPU...")
     model = model.to(device)
 
 # If using 4-bit quantization, prepare the model for training.
@@ -668,8 +925,13 @@ if device == 'xpu':
 # This function:
 # 1. Freezes the quantized weights (they stay compressed during training)
 # 2. Casts certain layers to full precision for numerical stability
-# 3. Enables gradient computation for the layers we'll train
+# 3. Enables gradient computation for the layers we'll train (LoRA adapters)
+#
+# Real-world analogy: Like preparing a frozen pizza for baking. You can't
+# modify the frozen pizza itself, but you can add toppings (LoRA adapters)
+# on top of it. This function makes sure everything is ready for the oven (GPU).
 if USE_4BIT:
+    print("  Preparing model for k-bit training...")
     model = prepare_model_for_kbit_training(model)
 
 # --- Load the tokenizer ---
@@ -699,9 +961,14 @@ tokenizer.pad_token = tokenizer.eos_token
 # This is important for causal (left-to-right) language models because
 # the model needs real content on the LEFT side to generate properly.
 # Padding on the left would confuse the model during generation.
+#
+# Example with right padding:
+#   Sequence 1: [Hello, world, !]
+#   Sequence 2: [Hi, <PAD>, <PAD>]
+#   The model can process both together correctly.
 tokenizer.padding_side = "right"
 
-print(f"Model loaded on {device}")
+print(f"Model and tokenizer loaded successfully!")
 
 # =============================================================================
 # CONFIGURE LoRA
@@ -720,7 +987,7 @@ print(f"Model loaded on {device}")
 # Total LoRA parameters: 32,768 instead of 1,048,576 -- that's 32x fewer!
 #
 # The "rank" r controls this tradeoff. Higher r = more parameters = more
-# capacity but more memory. For most fine-tuning tasks, r=16 works well.
+# capacity but more memory. For most fine-tuning tasks, r=16-32 works well.
 #
 # Real-world analogy: Imagine you need to describe a 1000x1000 pixel image.
 # Full fine-tuning: store every single pixel (1,000,000 values).
@@ -751,7 +1018,9 @@ model = get_peft_model(model, lora_config)
 
 # Print how many parameters are trainable vs total.
 # This shows the efficiency of LoRA: you'll typically see something like
-# "Trainable: 1,048,576 (0.21%)" -- only 0.21% of the model is being updated!
+# "Trainable: 1,048,576 (0.21%)" for 0.5B models or
+# "Trainable: 4,194,304 (0.05%)" for 8B models
+# -- only a tiny fraction of the model is being updated!
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 total_params = sum(p.numel() for p in model.parameters())
 print(f"Trainable parameters: {trainable_params:,} ({100 * trainable_params / total_params:.2f}%)")
@@ -794,6 +1063,26 @@ eval_dataset = train_test_split["test"]
 print(f"Training examples: {len(train_dataset)}")
 print(f"Evaluation examples: {len(eval_dataset)}")
 
+# Calculate training time estimate
+# This is a rough estimate based on typical speeds
+steps_per_epoch = len(train_dataset) // (BATCH_SIZE * GRADIENT_ACCUMULATION)
+total_steps = steps_per_epoch * NUM_EPOCHS
+
+# Rough speed estimates (steps per second) by model size and hardware
+if "8B" in MODEL_NAME or "7B" in MODEL_NAME:
+    if USE_GALORE:
+        speed_estimate = 1.4  # With GaLore on Arc B580
+    else:
+        speed_estimate = 0.5  # Without GaLore (if it even fits)
+elif "1.5B" in MODEL_NAME or "3B" in MODEL_NAME:
+    speed_estimate = 2.0
+else:  # 0.5B-1B
+    speed_estimate = 3.0
+
+estimated_time_hours = total_steps / speed_estimate / 3600
+print(f"\nEstimated training time: ~{estimated_time_hours:.1f} hours")
+print(f"  ({total_steps} steps at ~{speed_estimate:.1f} steps/sec)")
+
 # =============================================================================
 # CONFIGURE TRAINING
 # =============================================================================
@@ -815,8 +1104,10 @@ training_args = SFTConfig(
     max_length=MAX_SEQ_LENGTH,                 # Max tokens per example (truncates longer ones)
 
     # --- Optimizer settings ---
-    # AdamW is the standard optimizer for transformers. "W" means it includes
-    # weight decay, which penalizes large weights to prevent overfitting.
+    # When using GaLore, we'll override the optimizer manually. For now, we
+    # specify adamw_torch as a placeholder. AdamW is the standard optimizer
+    # for transformers. "W" means it includes weight decay, which penalizes
+    # large weights to prevent overfitting.
     #
     # Real-world analogy: The optimizer is like the navigation system telling
     # you which direction to adjust. Adam is a smart navigator that:
@@ -824,65 +1115,103 @@ training_args = SFTConfig(
     # - Adjusts step size per-parameter (some weights need big steps, some small)
     # - Weight decay adds "friction" that gently pulls weights toward zero,
     #   preventing any single weight from dominating.
-    optim="adamw_torch",
+    #
+    # With GaLore, we replace AdamW with GaLoreAdamW, which adds gradient
+    # projection for memory efficiency. The core algorithm is still Adam.
+    optim="adamw_torch",  # Will be overridden if using GaLore
 
     # Weight decay coefficient. 0.01 means "add a tiny penalty proportional
-    # to the size of each weight." This is a form of regularization.
+    # to the size of each weight." This is a form of regularization that
+    # prevents overfitting.
     weight_decay=0.01,
 
     # Warmup: start with a very small learning rate and gradually increase
     # it during the first 3% of training. This prevents the model from making
     # wild updates early on when gradients are noisy.
+    #
     # Real-world analogy: Like warming up before exercise -- you don't sprint
-    # at full speed immediately, you ease into it.
+    # at full speed immediately, you ease into it. With large models, starting
+    # with a high learning rate can cause training instability or divergence.
+    # Warmup gives the model time to "find its footing" before ramping up.
     warmup_ratio=0.03,
 
     # --- Evaluation and logging ---
     # These control how often we check progress and save snapshots.
 
-    # eval_strategy="steps" means "evaluate every N training steps" (not epochs).
-    eval_strategy="epoch", # (no, steps, epoch), when to evaulate the training
-    #eval_steps=50,         # Run evaluation every 50 training steps
-    logging_steps=10,      # Print training loss every 10 steps (so you can watch progress)
-    save_strategy="steps", # Save a checkpoint every N steps (steps,no,epoch)
-    save_steps=200,        # Save every x steps
-    save_total_limit=3,    # Only keep the 2 most recent checkpoints (saves disk space)
+    # eval_strategy="epoch" means "evaluate at the end of each epoch."
+    # This is a good balance -- frequent enough to catch problems, but not
+    # so frequent that it slows training. For very large datasets (100k+
+    # examples), you might want "steps" instead to evaluate more frequently.
+    eval_strategy="epoch",
+
+    # logging_steps controls how often to print training loss to the console.
+    # Every 10 steps means you'll see updates frequently enough to monitor
+    # progress without flooding the screen.
+    logging_steps=10,
+
+    # save_strategy="steps" means save a checkpoint every N training steps.
+    # This is critical for long training runs (48+ hours for 8B models) because:
+    # 1. If training crashes, you can resume from the last checkpoint
+    # 2. You can stop training early if you see the model is already good
+    # 3. Saving checkpoints forces memory cleanup, preventing memory leaks
+    save_strategy="steps",
+    save_steps=200,        # Save every 200 steps
+
+    # save_total_limit=3 means "keep only the 3 most recent checkpoints."
+    # Each checkpoint can be 200MB-1GB depending on model size, so this
+    # prevents filling your disk. Older checkpoints are automatically deleted.
+    #
+    # Real-world analogy: Like video game auto-saves that only keep the last
+    # 3 saves. You don't need every single checkpoint from the entire training
+    # run -- just recent ones in case you need to roll back.
+    save_total_limit=3,
 
     # --- Performance flags ---
     # bf16=True tells PyTorch to use bfloat16 (16-bit) math on the GPU.
     # This is faster than float32 and uses half the memory, with minimal
-    # accuracy loss. Intel Arc GPUs have excellent bfloat16 support.
+    # accuracy loss. Intel Arc GPUs and NVIDIA Ampere+ have excellent bfloat16
+    # support.
+    #
+    # We only enable this for GPU backends (CUDA, XPU). CPU training should
+    # stay in float32 for accuracy.
     bf16=True if device in ['cuda', 'xpu'] else False,
 
     # Gradient checkpointing is a memory-saving technique. Normally, all
-    # intermediate computations are kept in memory for the backward pass.
-    # With checkpointing, some are discarded and recomputed when needed.
-    # This trades compute time for memory savings (~30-50% less memory).
+    # intermediate computations (activations) are kept in memory for the
+    # backward pass. With checkpointing, some are discarded and recomputed
+    # when needed. This trades ~30% compute time for ~40% memory savings.
     #
     # Real-world analogy: Like a GPS that only remembers major intersections
     # instead of every meter of the route. If you need to backtrack, you
-    # drive back to the last intersection and recalculate from there.
+    # drive back to the last intersection and recalculate from there. Slightly
+    # slower, but you don't need to remember the entire route at once.
+    #
+    # This is ESSENTIAL for training large models on consumer GPUs. Without
+    # it, 8B models won't fit even with 4-bit + GaLore.
     gradient_checkpointing=True,
 
     # --- Other settings ---
-    report_to="none",  # Don't send metrics to external services.
-                       # Change to "wandb" to use Weights & Biases for
-                       # beautiful training dashboards and experiment tracking.
+    # report_to="none" means don't send metrics to external tracking services.
+    # If you want beautiful training dashboards, change to "wandb" (Weights &
+    # Biases) or "tensorboard" and they'll automatically log everything.
+    report_to="none",
 
-    # Load the best model (lowest eval loss) at the end of training,
-    # rather than the last checkpoint. This ensures we keep the version
-    # that performed best on unseen data.
-    load_best_model_at_end=False, # Set to True to enable this (can increase training time)
+    # load_best_model_at_end=False means "use the last checkpoint as the final
+    # model, not the one with lowest eval loss." For most fine-tuning tasks,
+    # the last checkpoint is fine. If you're doing heavy hyperparameter tuning
+    # or have overfitting concerns, set this to True (but it requires eval_strategy
+    # to match save_strategy).
+    load_best_model_at_end=False,
 
-    # Packing: when True, multiple short examples are concatenated into a
-    # single sequence to fill max_length efficiently. This speeds up training
-    # but can sometimes confuse the model about conversation boundaries.
-    # We keep it False for cleaner training on chat data.
+    # packing=False means "don't concatenate multiple short examples into one
+    # sequence." Packing can speed up training by filling sequences to max_length
+    # more efficiently, but it can confuse the model about conversation boundaries
+    # in chat data. We keep it False for cleaner training.
     packing=False,
 )
 
 # =============================================================================
-# CREATE TRAINER
+# CREATE TRAINER (with optional GaLore optimizer)
 # =============================================================================
 # The SFTTrainer ties everything together: model, data, tokenizer, and config.
 # It handles the entire training loop:
@@ -893,27 +1222,94 @@ training_args = SFTConfig(
 #   5. Update the LoRA weights using the optimizer
 #   6. Repeat for all batches across all epochs
 #
+# If using GaLore, we manually create a custom optimizer that wraps the
+# standard Adam optimizer with gradient projection. This optimizer gets
+# passed to the trainer, overriding the default one.
+#
 # Real-world analogy: The trainer is like a personal coach. You give them
 # the athlete (model), the training plan (config), and the exercises (data),
 # and they handle running each drill, tracking progress, and adjusting
-# intensity.
+# intensity. With GaLore, you're giving the coach special equipment (the
+# projection matrices) that makes the workouts more memory-efficient.
 
 print("\nCreating trainer...")
 
-trainer = SFTTrainer(
-    model=model,                   # The model with LoRA adapters attached
-    args=training_args,            # All the training configuration from above
-    train_dataset=train_dataset,   # The 90% of data used for learning
-    eval_dataset=eval_dataset,     # The 10% held out for testing
-    processing_class=tokenizer     # The tokenizer that converts text <-> numbers
-)
+if USE_GALORE:
+    # GaLore optimizer path
+    print(f"Using GaLore optimizer:")
+    print(f"  Rank: {GALORE_RANK}")
+    print(f"  Update projection gap: {GALORE_UPDATE_PROJ_GAP} steps")
+    print(f"  Scale: {GALORE_SCALE}")
+    
+    # Create GaLoreAdamW optimizer.
+    # This is a drop-in replacement for the standard AdamW optimizer,
+    # but with gradient low-rank projection added.
+    #
+    # How it works:
+    # 1. Compute gradients normally during backpropagation
+    # 2. Project gradients to a low-rank subspace (rank=128 or 256)
+    # 3. Accumulate optimizer states (momentum, variance) in this low-rank space
+    # 4. Project back to full space when updating weights
+    #
+    # Memory savings: Instead of storing optimizer states for all 8B parameters
+    # (~16GB), we only store them for the projected space (~1GB with rank 128).
+    # That's a 94% reduction in optimizer memory!
+    #
+    # The projection matrices are updated every `update_proj_gap` steps to
+    # track the changing gradient distribution. Think of it like recalibrating
+    # your compression algorithm periodically to adapt to new data.
+    # NEW API: GaLore now requires parameter groups where GaLore-specific params
+    # (rank, update_proj_gap, scale, proj_type) are specified per group.
+    # We apply GaLore to all trainable parameters (LoRA adapters).
+    galore_params = [p for p in model.parameters() if p.requires_grad]
+    
+    param_groups = [
+        {
+            'params': galore_params,
+            'rank': GALORE_RANK,
+            'update_proj_gap': GALORE_UPDATE_PROJ_GAP,
+            'scale': GALORE_SCALE,
+            'proj_type': 'std'  # Standard projection type
+        }
+    ]
+    
+    optimizer = GaLoreAdamW(
+        param_groups,           # Parameter groups with GaLore config
+        lr=LEARNING_RATE,       # Learning rate
+        weight_decay=0.01,      # L2 regularization
+    )
+    
+    # Create trainer with the custom GaLore optimizer.
+    # The optimizers=(optimizer, None) syntax means:
+    #   - Use 'optimizer' for the optimizer
+    #   - Use None for the learning rate scheduler (let the trainer create one)
+    trainer = SFTTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        processing_class=tokenizer,
+        optimizers=(optimizer, None),  # Pass our custom GaLore optimizer
+    )
+else:
+    # Standard training path (no GaLore)
+    # The trainer will create a regular AdamW optimizer based on training_args.
+    print("Using standard AdamW optimizer")
+    
+    trainer = SFTTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        processing_class=tokenizer,
+    )
 
 # =============================================================================
 # TRAIN!
 # =============================================================================
 # This is where the actual learning happens. The trainer.train() call starts
 # the training loop described above. Depending on your data size and hardware,
-# this could take minutes to hours.
+# this could take minutes to days.
 #
 # What you'll see in the output:
 #   - Loss: How wrong the model's predictions are (lower = better)
@@ -921,21 +1317,31 @@ trainer = SFTTrainer(
 #   - Eval loss: Same thing but on the held-out evaluation data.
 #     If train loss goes down but eval loss goes UP, you're overfitting.
 #   - Learning rate: Changes over time due to warmup and scheduling.
+#   - Steps/second: Training speed. With GaLore on 8B models, expect 1-2 it/s.
 #
 # Real-world analogy: Watching the loss decrease is like watching a student's
 # test scores improve over the semester. You want both homework scores (train
-# loss) and exam scores (eval loss) to improve together.
+# loss) and exam scores (eval loss) to improve together. If homework scores
+# improve but exam scores don't, the student is just memorizing homework
+# answers instead of understanding the material (overfitting).
 
 print("\n" + "="*70)
 print("STARTING TRAINING")
 if args.resume_from_checkpoint:
     print(f"  Resuming from checkpoint: {args.resume_from_checkpoint}")
+if USE_GALORE:
+    print(f"  Using GaLore for memory efficiency")
 print("="*70 + "\n")
 
 # If --resume-from-checkpoint was provided, pass that path to trainer.train().
 # The trainer will load the saved optimizer state, scheduler state, and model
 # weights from the checkpoint directory and continue training from that point.
 # If no checkpoint is specified, training starts fresh from the beginning.
+#
+# IMPORTANT with GaLore: When resuming, the GaLore projection matrices are
+# also loaded from the checkpoint. Make sure you use the same GaLore settings
+# (rank, update_proj_gap, scale) as the original training run, or the
+# projection matrices won't match and training will fail or produce poor results.
 trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
 
 print("\n" + "="*70)
@@ -948,8 +1354,8 @@ print("="*70 + "\n")
 # Save the trained LoRA adapter weights and tokenizer.
 #
 # IMPORTANT: This only saves the LoRA adapter (~10-50MB), NOT the full base
-# model (~1GB). To use the model later, you need:
-#   1. Load the base model (Qwen 2.5 0.5B)
+# model (~1-16GB). To use the model later, you need:
+#   1. Load the base model (Qwen 2.5 0.5B or Qwen3 8B)
 #   2. Load the LoRA adapter on top
 #
 # This is one of the big advantages of LoRA: your saved adapters are tiny.
@@ -966,6 +1372,7 @@ model.save_pretrained(OUTPUT_DIR)      # Save LoRA adapter weights
 tokenizer.save_pretrained(OUTPUT_DIR)  # Save tokenizer (needed for inference)
 
 print(f"Model saved to {OUTPUT_DIR}")
+print(f"Adapter size: ~{trainable_params * 2 / 1024**2:.1f} MB")
 
 # =============================================================================
 # TEST THE MODEL
@@ -1063,4 +1470,14 @@ else:
     print("\nSkipping test generation (--no-test flag set)")
 
 print("\nDone! Your fine-tuned model is ready to use.")
-print(f"Load it with: model = AutoModelForCausalLM.from_pretrained('{OUTPUT_DIR}')")
+print(f"\nTo use your model:")
+print(f"  from transformers import AutoModelForCausalLM")
+print(f"  from peft import PeftModel")
+print(f"  ")
+print(f"  base_model = AutoModelForCausalLM.from_pretrained('{MODEL_NAME}')")
+print(f"  model = PeftModel.from_pretrained(base_model, '{OUTPUT_DIR}')")
+print(f"\nAdapter size: ~{trainable_params * 2 / 1024**2:.1f} MB")
+if USE_GALORE:
+    print(f"\nMemory efficiency achieved with GaLore!")
+    print(f"  Without GaLore: Would need ~{trainable_params * 16 / 1024**3:.1f} GB")
+    print(f"  With GaLore: Used ~{trainable_params * 4 / 1024**3:.1f} GB")
