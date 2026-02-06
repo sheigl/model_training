@@ -170,7 +170,12 @@ import os
 # you work with the compressed version and only expand it when necessary.
 try:
     from galore_torch import GaLoreAdamW, GaLoreAdamW8bit
+    from galore_torch.galore_projector import GaLoreProjector
     GALORE_AVAILABLE = True
+
+    # Register GaLore classes as safe for torch.load (required for PyTorch 2.6+)
+    # This allows checkpoint resumption when GaLore optimizer state is saved
+    torch.serialization.add_safe_globals([GaLoreProjector])
 except ImportError:
     GALORE_AVAILABLE = False
     # GaLore is not installed. This is fine if you're training small models (0.5B-2B).
