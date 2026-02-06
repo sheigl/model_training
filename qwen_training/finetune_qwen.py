@@ -844,7 +844,7 @@ training_args = SFTConfig(
     eval_strategy="epoch", # (no, steps, epoch), when to evaulate the training
     #eval_steps=50,         # Run evaluation every 50 training steps
     logging_steps=10,      # Print training loss every 10 steps (so you can watch progress)
-    save_strategy="epoch", # Save a checkpoint every N steps (steps,no,epoch)
+    save_strategy="steps", # Save a checkpoint every N steps (steps,no,epoch)
     save_steps=200,        # Save every x steps
     save_total_limit=3,    # Only keep the 2 most recent checkpoints (saves disk space)
 
@@ -872,7 +872,7 @@ training_args = SFTConfig(
     # Load the best model (lowest eval loss) at the end of training,
     # rather than the last checkpoint. This ensures we keep the version
     # that performed best on unseen data.
-    load_best_model_at_end=True,
+    load_best_model_at_end=False, # Set to True to enable this (can increase training time)
 
     # Packing: when True, multiple short examples are concatenated into a
     # single sequence to fill max_length efficiently. This speeds up training
