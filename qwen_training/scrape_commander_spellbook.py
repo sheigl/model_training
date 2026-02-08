@@ -10,7 +10,7 @@ db = client['commander_spellbook']
 collection = db['variants']
 
 # Initialize variables
-url = "https://backend.commanderspellbook.com/variants/?count=true&limit=10&q=legal:commander"
+url = "https://backend.commanderspellbook.com/variants"
 results = []
 next_url = url
 
@@ -29,6 +29,9 @@ while next_url:
 
     # Add the current page results to our list
     page_results = data.get("results", [])
+    
+    results_len = len(page_results)  # Check the number of results in the current page
+    print(f"Fetched {results_len} results from {next_url}")
     
     # Check for duplicates before inserting
     if page_results:

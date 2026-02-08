@@ -8,3 +8,4 @@ training_data/
 qwen-mtg-expert/
 output/
 .aider*
+nohup.out
