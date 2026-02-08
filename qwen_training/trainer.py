@@ -21,7 +21,7 @@ projection matrices) that makes the workouts more memory-efficient.
 """
 
 from trl import SFTTrainer, SFTConfig
-from .model import GALORE_AVAILABLE, GaLoreAdamW
+from model import GALORE_AVAILABLE, GaLoreAdamW
 
 
 def create_training_config(

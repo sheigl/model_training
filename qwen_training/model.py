@@ -183,7 +183,7 @@ def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
         #
         # If using 4-bit quantization, this dtype is used for computation (the
         # weights themselves are stored in 4-bit but expanded to bfloat16 for math).
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         # hf token for downloading base model
         token=hf_token,
     )

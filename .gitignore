@@ -7,3 +7,4 @@ training_data/
 *.log
 qwen-mtg-expert/
 output/
+.aider*

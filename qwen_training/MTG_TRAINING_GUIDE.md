@@ -842,7 +842,7 @@ import torch
 base_model = AutoModelForCausalLM.from_pretrained(
     "Qwen/Qwen2.5-0.5B-Instruct",
     device_map="auto",
-    torch_dtype=torch.bfloat16
+    dtype=torch.bfloat16
 )
 model = PeftModel.from_pretrained(base_model, "./qwen-mtg")
 tokenizer = AutoTokenizer.from_pretrained("./qwen-mtg")
@@ -990,7 +990,7 @@ print("Loading model...")
 base_model = AutoModelForCausalLM.from_pretrained(
     "Qwen/Qwen2.5-0.5B-Instruct",
     device_map="auto",
-    torch_dtype=torch.bfloat16
+    dtype=torch.bfloat16
 )
 model = PeftModel.from_pretrained(base_model, "./qwen-mtg-expert")
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
