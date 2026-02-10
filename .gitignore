@@ -7,5 +7,6 @@ training_data/data/
 *.log
 qwen-mtg-expert/
 output/
+output*/
 .aider*
 nohup.out

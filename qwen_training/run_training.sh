@@ -23,8 +23,8 @@ export ZE_FLAT_DEVICE_HIERARCHY=FLAT
   --gradient-accumulation 4 \
   --epochs 3 \
   --max-seq-length 2048 \
-  --output-dir ~/code/model_training/qwen_training/output-3b-mtg-expert \
-  > ~/.log/model_training.log 2>&1 &
+  --output-dir ~/code/model_training/qwen_training/output-3b-mtg-expert
+  #> ~/.log/model_training.log 2>&1 &
 
 
 #   --resume-from-checkpoint ~/code/model_training/qwen_training/output/checkpoint-20592 \
