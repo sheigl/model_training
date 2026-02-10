@@ -21,13 +21,44 @@ This guide walks you through creating a comprehensive Magic: The Gathering exper
 
 ```bash
 # Visit https://magic.wizards.com/en/rules
-# Download the TXT version (latest: November 2025)
+# Download the TXT version (latest: January 16, 2026)
 # Save as: comprehensive_rules.txt
 ```
 
-Or use curl (if your network allows):
+Or use wget if your network allows:
 ```bash
-wget -O comprehensive_rules.txt "https://media.wizards.com/2025/downloads/MagicCompRules%2020251114.txt"
+# Check the latest URL on the Magic rules page
+wget -O comprehensive_rules.txt "https://media.wizards.com/2026/downloads/MagicCompRules%20YYYYMMDD.txt"
+```
+
+**Verify you have the file:**
+```bash
+ls -lh comprehensive_rules.txt
+# Should show a file around 1-2 MB
+```
+
+## Step 1.5: Test the Parser (Recommended)
+
+Before importing, validate the parser works with your file:
+
+```bash
+python test_rules_parser.py
+```
+
+This will:
+- ✅ Confirm the file format is correct
+- ✅ Show estimated rule count (~3000+)
+- ✅ Display sample rules from different sections
+- ✅ Validate glossary detection
+
+**Expected output:**
+```
+=== Testing Parser with Sample Content ===
+✓ Effective Date: January 16, 2026
+✓ Found '1. Game Concepts' at line X
+✓ Found 'Glossary' at line Y
+✓ Found 3241 rules
+✓ File validation complete - ready for import!
 ```
 
 ## Step 2: Import Rules to MongoDB
@@ -291,6 +322,7 @@ Once trained, you can:
 
 ## Files Reference
 
+- `test_rules_parser.py` - Test parser before full import (NEW!)
 - `import_rules_to_mongo.py` - Import Comprehensive Rules to MongoDB
 - `extract_training_data.py` - Generate training JSONL from all MongoDB sources
 - `finetune_qwen.py` - Train the model (your existing script)
