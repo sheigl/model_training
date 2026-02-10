@@ -1,37 +1,93 @@
+from typing import Collection
 import requests
 import json
 import time
 from pymongo import MongoClient
 from datetime import datetime
 
+from pyedhrec import EDHRec
+
+edhrec = EDHRec()
+
 # Initialize MongoDB connection
 client = MongoClient('mongodb://root:whatever@localhost:27017/')  # Adjust connection string as needed
 db = client['edhrec']
-collection = db['articles']
 
-# Initialize variables
-current_page = 2
-url = f"https://edhrec.com/_next/data/IG8IvLWsm-Ef5QjOAu2gN/articles/tag/commander/{current_page}.json?tag=commander&page={current_page}"
-results = []
+def get_guides():
+    collection = db['guides']
+    current_page = 2
+    results = []
+    while True:
+        articles, status_code = edhrec.get_guides(page_number=current_page)    
 
-while True:
-    # Make the API request
-    response = requests.get(url)
+        # Check if the request was successful
+        if status_code != 200:
+            print(f"Failed to fetch data: {status_code}")
+            break
 
-    # Check if the request was successful
-    if response.status_code != 200:
-        print(f"Failed to fetch data: {response.status_code}")
-        break
+        # Add the current page results to our list
+        page_results = articles
+        
+        results_len = len(page_results)  # Check the number of results in the current page
+        print(f"Fetched {results_len} results from page {current_page} of guides")
+        
+        save(page_results=page_results, collection=collection)
 
-    # Parse the JSON response
-    data = response.json()
+        # Check if there are more pages
+        if results_len == 0:
+            break
+        
+        current_page += 1
+        
+        time.sleep(5)  # Sleep to avoid hitting rate limits
 
-    # Add the current page results to our list
-    page_results = data.get("pageProps", {}).get("posts", [])
+def get_first_pages():
+    article_collection = db['articles']
+    guides_collection = db['guides']
     
-    results_len = len(page_results)  # Check the number of results in the current page
-    print(f"Fetched {results_len} results from page {current_page}")
+    page1_articles, articles_status = edhrec.get_next_data("https://edhrec.com/articles")
+    page1_guides, guides_status = edhrec.get_next_data("https://edhrec.com/guides")
     
+    if articles_status == 200:
+        articles = page1_articles.get("props", {}).get("pageProps", {}).get("posts", [])
+        print(f"Got {len(articles)} articles from the first page")
+        save(articles, article_collection)
+    
+    if guides_status == 200:
+        guides = page1_guides.get("props", {}).get("pageProps", {}).get("posts", [])
+        print(f"Got {len(guides)} guides from the first page")
+        save(guides, guides_collection)
+
+
+def get_articles():
+    collection = db['articles']
+    current_page = 2
+    results = []
+    while True:
+        articles, status_code = edhrec.get_articles(page_number=current_page, tag="commander")    
+
+        # Check if the request was successful
+        if status_code != 200:
+            print(f"Failed to fetch data: {status_code}")
+            break
+
+        # Add the current page results to our list
+        page_results = articles
+        
+        results_len = len(page_results)  # Check the number of results in the current page
+        print(f"Fetched {results_len} results from page {current_page} of articles")
+        
+        save(page_results=page_results, collection=collection)
+        
+        # Check if there are more pages
+        if results_len == 0:
+            break
+        
+        current_page += 1
+        
+        time.sleep(5)  # Sleep to avoid hitting rate limits
+        
+def save(page_results: dict, collection: Collection):
     # Check for duplicates before inserting
     if page_results:
         # Create a set of existing IDs to check against
@@ -48,12 +104,7 @@ while True:
             print(f"Inserted {len(unique_results)} new documents")
         else:
             print("No new documents to insert")
-    
-    # Check if there are more pages
-    if results_len == 0:
-        break
-    
-    current_page += 1
-    url = f"https://edhrec.com/_next/data/IG8IvLWsm-Ef5QjOAu2gN/articles/tag/commander/{current_page}.json?tag=commander&page={current_page}"
-    
-    time.sleep(5)  # Sleep to avoid hitting rate limits
+
+get_first_pages()      
+get_guides()
+get_articles()
