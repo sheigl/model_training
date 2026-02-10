@@ -4,10 +4,13 @@ import json
 import time
 from pymongo import MongoClient
 from datetime import datetime
-
 from pyedhrec import EDHRec
+from custom_pyedhrec import Custom_EDHRec
 
-edhrec = EDHRec()
+custom_edhrec = Custom_EDHRec()
+
+# TODO get other items from EDHRec
+#edhrec = EDHRec()
 
 # Initialize MongoDB connection
 client = MongoClient('mongodb://root:whatever@localhost:27017/')  # Adjust connection string as needed
@@ -18,7 +21,7 @@ def get_guides():
     current_page = 2
     results = []
     while True:
-        articles, status_code = edhrec.get_guides(page_number=current_page)    
+        articles, status_code = custom_edhrec.get_guides(page_number=current_page)    
 
         # Check if the request was successful
         if status_code != 200:
@@ -45,8 +48,8 @@ def get_first_pages():
     article_collection = db['articles']
     guides_collection = db['guides']
     
-    page1_articles, articles_status = edhrec.get_next_data("https://edhrec.com/articles")
-    page1_guides, guides_status = edhrec.get_next_data("https://edhrec.com/guides")
+    page1_articles, articles_status = custom_edhrec.get_next_data("https://edhrec.com/articles")
+    page1_guides, guides_status = custom_edhrec.get_next_data("https://edhrec.com/guides")
     
     if articles_status == 200:
         articles = page1_articles.get("props", {}).get("pageProps", {}).get("posts", [])
@@ -64,7 +67,7 @@ def get_articles():
     current_page = 2
     results = []
     while True:
-        articles, status_code = edhrec.get_articles(page_number=current_page, tag="commander")    
+        articles, status_code = custom_edhrec.get_articles(page_number=current_page, tag="commander")    
 
         # Check if the request was successful
         if status_code != 200:

@@ -5,7 +5,7 @@ import requests
 from utils import get_random_ua
 
 
-class EDHRec:
+class Custom_EDHRec:
     def __init__(self, cookies: str = None):
         self.cookies = cookies
         self.session = requests.Session()
