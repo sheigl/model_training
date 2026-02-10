@@ -1,0 +1,312 @@
+# Complete MTG Expert Model Training Pipeline
+
+This guide walks you through creating a comprehensive Magic: The Gathering expert model that knows:
+- ✅ All 108K+ cards and their abilities
+- ✅ 76K+ combos from Commander Spellbook
+- ✅ Strategic advice from EDHRec articles
+- ✅ Comprehensive Rules (292 pages)
+- ✅ When to admit uncertainty
+
+## Prerequisites
+
+1. **MongoDB running** on localhost:27017
+2. **Python 3.8+** with required packages
+3. **Intel ARC B580 GPU** (or CUDA GPU)
+4. **Existing MongoDB databases** (from your previous work):
+   - `mtg_json` - Card database
+   - `edhrec` - Articles and guides
+   - `commander_spellbook` - Combos
+
+## Step 1: Download Comprehensive Rules
+
+```bash
+# Visit https://magic.wizards.com/en/rules
+# Download the TXT version (latest: November 2025)
+# Save as: comprehensive_rules.txt
+```
+
+Or use curl (if your network allows):
+```bash
+wget -O comprehensive_rules.txt "https://media.wizards.com/2025/downloads/MagicCompRules%2020251114.txt"
+```
+
+## Step 2: Import Rules to MongoDB
+
+```bash
+python import_rules_to_mongo.py
+```
+
+This creates a new database `mtg_rules` with:
+- `rules` collection (~3000+ individual rules)
+- `glossary` collection (~200+ terms)
+- `meta` collection (version info)
+
+**Verify the import:**
+```bash
+mongosh
+> use mtg_rules
+> db.rules.countDocuments()  // Should be ~3000+
+> db.glossary.countDocuments()  // Should be ~200+
+> db.rules.findOne({section: "702"})  // Show a keyword ability
+```
+
+## Step 3: Generate Training Data
+
+```bash
+python extract_training_data.py
+```
+
+This creates `mongodb_mtg_training.jsonl` with ~50,000 examples:
+
+**Data Distribution:**
+- ~13,000 - Card facts (what cards do, mana costs, types)
+- ~3,000 - Card rulings (official interactions)
+- ~10,000 - Combo explanations (step-by-step)
+- ~10,000 - Honesty examples (teaching limitations)
+- ~5,000 - Strategic articles (deck building, meta)
+- ~5,000 - EDHRec guides (how-to content)
+- ~4,000 - Comprehensive Rules (keywords, game concepts, glossary)
+
+**Sample output:**
+```
+=== Extracting Card Data ===
+Processing 10000 cards...
+Generated 30000 card training examples
+
+=== Extracting Card Rulings ===
+Processing 3000 rulings...
+Generated 3000 ruling examples
+
+=== Extracting Combo Data ===
+Processing 5000 combos...
+Generated 10000 combo examples
+
+=== Creating Honesty Training Examples ===
+Generated 10000 honesty training examples
+
+=== Extracting Article Data ===
+Processing 500 articles...
+Generated 1000 article examples
+
+=== Extracting Guide Data ===
+Processing 26 guides...
+Generated 5000 guide examples
+
+=== Extracting Comprehensive Rules Data ===
+Found 3241 rules in database
+Extracting keyword abilities...
+Extracting game concepts...
+Extracting glossary terms...
+Extracting general rules...
+Generated 4000 rules examples
+
+=== Balancing Dataset ===
+Final dataset size: 50000
+
+✓ Saved 50000 training examples to mongodb_mtg_training.jsonl
+```
+
+## Step 4: Train the Model
+
+```bash
+python finetune_qwen.py \
+  --model-name Qwen/Qwen2.5-3B-Instruct \
+  --dataset file \
+  --data-file mongodb_mtg_training.jsonl \
+  --use-4bit \
+  --batch-size 4 \
+  --gradient-accumulation 4 \
+  --lora-r 32 \
+  --epochs 3 \
+  --learning-rate 1e-4 \
+  --output-dir ./qwen-3b-mtg-expert-v2
+```
+
+**Training parameters explained:**
+- `--use-4bit` - Memory efficient (fits on 12GB VRAM)
+- `--lora-r 32` - LoRA rank (higher = more capacity)
+- `--epochs 3` - Train for 3 passes (adjust if overfitting)
+- `--learning-rate 1e-4` - Conservative rate for stable training
+
+**Expected training time:**
+- ~6-8 hours on Intel ARC B580
+- ~4-5 hours on RTX 4090
+- ~10-12 hours on RTX 3090
+
+## Step 5: Test the Model
+
+```bash
+python test_model.py
+```
+
+Create a simple test script:
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+
+# Load your trained model
+model = AutoModelForCausalLM.from_pretrained(
+    "./qwen-3b-mtg-expert-v2",
+    device_map="auto",
+    torch_dtype=torch.float16
+)
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-3B-Instruct")
+
+def ask(question):
+    messages = [{"role": "user", "content": question}]
+    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    
+    outputs = model.generate(**inputs, max_new_tokens=512, temperature=0.7)
+    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    
+    # Extract just the assistant's response
+    return response.split("assistant\n")[-1]
+
+# Test card knowledge
+print("Q: What does Lightning Bolt do?")
+print(ask("What does Lightning Bolt do?"))
+print()
+
+# Test rules knowledge
+print("Q: What is deathtouch?")
+print(ask("What is deathtouch?"))
+print()
+
+# Test combo knowledge
+print("Q: How does Thassa's Oracle and Demonic Consultation work?")
+print(ask("How does Thassa's Oracle and Demonic Consultation work?"))
+print()
+
+# Test honesty
+print("Q: Do Fictitious Card A and Fictitious Card B combo?")
+print(ask("Do Fictitious Card A and Fictitious Card B combo?"))
+```
+
+## Expected Results
+
+### ✅ Card Knowledge
+```
+Q: What does Lightning Bolt do?
+A: Lightning Bolt: Lightning Bolt deals 3 damage to any target.
+```
+
+### ✅ Rules Knowledge
+```
+Q: What is deathtouch?
+A: [CR 702.2] Deathtouch is a static ability. Any nonzero amount of combat 
+damage dealt by a source with deathtouch to a creature is considered to be 
+lethal damage...
+```
+
+### ✅ Combo Knowledge
+```
+Q: How does Thassa's Oracle and Demonic Consultation work?
+A: This is a well-known combo. Cast Demonic Consultation and name a card 
+not in your deck, exiling your entire library. Then cast Thassa's Oracle. 
+When it enters, since your library is empty, you win the game.
+```
+
+### ✅ Honest Uncertainty
+```
+Q: Do Fictitious Card A and Fictitious Card B combo?
+A: I don't have information about a combo between those specific cards in 
+my training data. To verify if they combo, I recommend checking Commander 
+Spellbook (commanderspellbook.com)...
+```
+
+## Troubleshooting
+
+### Issue: Rules database is empty
+**Solution:** Make sure `comprehensive_rules.txt` is in the correct location and run `import_rules_to_mongo.py`
+
+### Issue: Training runs out of memory
+**Solutions:**
+- Reduce `--batch-size` to 2 or 1
+- Increase `--gradient-accumulation` to 8
+- Use `--use-4bit` if not already
+
+### Issue: Model gives wrong answers
+**Possible causes:**
+1. Training data quality - Check your MongoDB collections
+2. Overfitting - Reduce epochs to 2
+3. Learning rate too high - Try 5e-5
+
+### Issue: Model still hallucinates combos
+**Solution:** Increase the proportion of honesty examples in the dataset. Edit `create_honesty_examples()` to multiply templates by 100 instead of 50.
+
+## Data Quality Checks
+
+Before training, verify your data:
+
+```bash
+# Check training file exists and has examples
+wc -l mongodb_mtg_training.jsonl  # Should show ~50,000
+
+# Check for valid JSON
+head -n 1 mongodb_mtg_training.jsonl | python -m json.tool
+
+# Sample random examples
+shuf mongodb_mtg_training.jsonl | head -n 5 | python -m json.tool
+```
+
+## Monitoring Training
+
+Watch the training output for:
+- **Loss decreasing** - Good sign (should go from ~2.0 to ~0.5)
+- **Perplexity decreasing** - Model is learning
+- **No NaN values** - If you see NaN, lower learning rate
+
+## Next Steps
+
+Once trained, you can:
+1. **Quantize further** for deployment (GGUF format)
+2. **Create a chat interface** (Gradio, Streamlit)
+3. **Deploy as API** (FastAPI, vLLM)
+4. **Iterate on data** - Add more edge cases if needed
+
+## Database Schema Reference
+
+### mtg_json.cards
+- `name`, `text`, `type`, `manaCost`, `power`, `toughness`
+
+### mtg_json.cardRulings
+- `uuid`, `date`, `text`
+
+### edhrec.articles
+- `title`, `content`, `excerpt`, `tags`, `author`
+
+### edhrec.guides
+- `title`, `guide` (chapters/sections)
+
+### commander_spellbook.variants
+- `uses` (cards in combo), `produces` (results), `description`
+
+### mtg_rules.rules
+- `rule_number`, `section`, `text`, `category`
+
+### mtg_rules.glossary
+- `term`, `definition`
+
+## Files Reference
+
+- `import_rules_to_mongo.py` - Import Comprehensive Rules to MongoDB
+- `extract_training_data.py` - Generate training JSONL from all MongoDB sources
+- `finetune_qwen.py` - Train the model (your existing script)
+- `comprehensive_rules.txt` - Downloaded from Wizards (you provide)
+- `mongodb_mtg_training.jsonl` - Generated training data (50K examples)
+
+## Success Metrics
+
+Your model should:
+1. ✅ Correctly state Lightning Bolt deals 3 damage
+2. ✅ Explain the stack and priority
+3. ✅ Describe known combos accurately
+4. ✅ Cite rules by number [CR XXX]
+5. ✅ Admit when it doesn't know something
+6. ✅ Recommend Commander Spellbook for verification
+7. ✅ Understand keyword abilities (deathtouch, flying, etc.)
+8. ✅ Give strategic advice on deck building
+
+If all these pass, you have a world-class MTG expert model! 🎉
