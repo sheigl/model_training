@@ -175,9 +175,9 @@ def extract_card_training_data_tiered():
     print(f"  Generated {tier1_examples:,} examples from recent cards")
     
     # ============================================================
-    # TIER 2: Commander Legal Cards - HIGH PRIORITY
+    # TIER 2: Commander Legal Cards (ALL ERAS) - HIGH PRIORITY
     # ============================================================
-    print("\n[TIER 2] Commander Legal Cards...")
+    print("\n[TIER 2] Commander Legal Cards (All Eras)...")
     
     # Collect names from tier 1 to avoid duplicates
     tier1_names = {c.get('name', '') for c in tier1_cards}
@@ -194,7 +194,29 @@ def extract_card_training_data_tiered():
     ]
     
     tier2_cards = list(cards_collection.aggregate(tier2_pipeline))
-    print(f"  Sampled {len(tier2_cards)} commander cards (excluding tier 1)")
+    
+    # If we got very few cards, it means most Commander cards were in Tier 1
+    # This is actually GOOD - it means recent cards are Commander-legal
+    if len(tier2_cards) < 1000:
+        print(f"  Note: Only {len(tier2_cards)} Commander cards outside Tier 1")
+        print(f"  This means most Commander staples are already covered in recent sets!")
+        
+        # Let's get some additional cards without the Commander filter
+        # to ensure we have good coverage
+        print(f"  Adding general card coverage to compensate...")
+        
+        tier2_pipeline_alt = [
+            {'$match': {
+                'text': {'$exists': True, '$ne': ''},
+                'type': {'$not': {'$regex': 'Basic Land'}},
+                'language': 'English',
+                'name': {'$nin': list(tier1_names)}
+            }},
+            {'$sample': {'size': 10000}}
+        ]
+        tier2_cards = list(cards_collection.aggregate(tier2_pipeline_alt))
+    
+    print(f"  Sampled {len(tier2_cards)} cards for Tier 2")
     
     tier2_examples = 0
     for card in tier2_cards:
@@ -205,7 +227,7 @@ def extract_card_training_data_tiered():
         if not name or not text:
             continue
         
-        # MEDIUM DETAIL: 2-3 examples per commander card
+        # MEDIUM DETAIL: 2-3 examples per card
         
         # Q1: What does X do?
         training_data.append({
@@ -236,7 +258,7 @@ def extract_card_training_data_tiered():
             })
             tier2_examples += 1
     
-    print(f"  Generated {tier2_examples:,} examples from commander cards")
+    print(f"  Generated {tier2_examples:,} examples from Tier 2 cards")
     
     # ============================================================
     # TIER 3: Additional Coverage
@@ -793,6 +815,233 @@ def balance_dataset(all_data, target_total=50000):
     return all_data
 
 
+def extract_keyword_and_mechanic_examples():
+    """
+    Extract training examples for common keywords, mechanics, and patterns
+    that appear in card text. This helps the model understand Magic terminology.
+    """
+    print("\n=== Extracting Keyword & Mechanic Examples ===")
+    training_data = []
+    
+    # ============================================================
+    # CARD TYPE PATTERNS
+    # ============================================================
+    print("  Generating card type examples...")
+    
+    # Legendary creatures
+    legendary_creatures = list(cards_collection.find({
+        'type': {'$regex': 'Legendary Creature', '$options': 'i'},
+        'text': {'$exists': True, '$ne': ''},
+        'language': 'English'
+    }).limit(50))
+    
+    for card in legendary_creatures:
+        name = card.get('name', '')
+        card_type = card.get('type', '')
+        
+        if 'Legendary Creature' in card_type:
+            # Extract creature types (e.g., "Legendary Creature — Elf Wizard")
+            type_parts = card_type.split('—')
+            if len(type_parts) > 1:
+                creature_types = type_parts[1].strip()
+                
+                training_data.append({
+                    "messages": [
+                        {"role": "user", "content": f"What creature type is {name}?"},
+                        {"role": "assistant", "content": f"{name} is a {creature_types}."}
+                    ]
+                })
+                
+                training_data.append({
+                    "messages": [
+                        {"role": "user", "content": f"Is {name} legendary?"},
+                        {"role": "assistant", "content": f"Yes, {name} is a legendary creature."}
+                    ]
+                })
+    
+    # ============================================================
+    # COMMON MECHANICS & KEYWORDS
+    # ============================================================
+    print("  Generating mechanic examples...")
+    
+    # Define common mechanics and their explanations
+    mechanics = {
+        'enters the battlefield': 'ETB (enters the battlefield)',
+        'when .* enters': 'ETB trigger',
+        'when .* dies': 'death trigger',
+        'leaves the battlefield': 'LTB (leaves the battlefield)',
+        'sacrifice': 'sacrifice effect',
+        'destroy target': 'removal spell',
+        'exile': 'exile effect',
+        'return .* to your hand': 'bounce effect',
+        'search your library': 'tutor effect',
+        'draw .* cards?': 'card draw',
+        'discard': 'discard effect',
+        'put .* onto the battlefield': 'cheat into play',
+        'tap': 'tap ability',
+        'untap': 'untap effect',
+        'counter target': 'counterspell',
+        'create .* token': 'token generation',
+        'graveyard': 'graveyard interaction',
+        'whenever you cast': 'cast trigger',
+        'at the beginning of': 'triggered ability'
+    }
+    
+    for pattern, mechanic_name in mechanics.items():
+        # Find cards with this pattern
+        cards = list(cards_collection.find({
+            'text': {'$regex': pattern, '$options': 'i'},
+            'language': 'English'
+        }).limit(20))
+        
+        if cards:
+            sample_card = cards[0]
+            name = sample_card.get('name', '')
+            text = sample_card.get('text', '')
+            
+            if name and text:
+                # Q: Does X have [mechanic]?
+                training_data.append({
+                    "messages": [
+                        {"role": "user", "content": f"Does {name} have {mechanic_name}?"},
+                        {"role": "assistant", "content": f"Yes, {name} has {mechanic_name}. {text[:200]}"}
+                    ]
+                })
+    
+    # ============================================================
+    # SPECIFIC KEYWORDS (Flying, Trample, etc.)
+    # ============================================================
+    print("  Generating keyword ability examples...")
+    
+    keywords = [
+        'flying', 'trample', 'haste', 'vigilance', 'lifelink', 'deathtouch',
+        'first strike', 'double strike', 'menace', 'reach', 'hexproof',
+        'indestructible', 'flash', 'defender', 'prowess', 'ward'
+    ]
+    
+    for keyword in keywords:
+        # Find cards with this keyword
+        cards = list(cards_collection.find({
+            'text': {'$regex': f'\\b{keyword}\\b', '$options': 'i'},
+            'type': {'$regex': 'Creature'},
+            'language': 'English'
+        }).limit(15))
+        
+        if cards:
+            for card in cards[:5]:  # Use first 5
+                name = card.get('name', '')
+                if name:
+                    training_data.append({
+                        "messages": [
+                            {"role": "user", "content": f"Does {name} have {keyword}?"},
+                            {"role": "assistant", "content": f"Yes, {name} has {keyword}."}
+                        ]
+                    })
+    
+    # ============================================================
+    # TRIBE/CREATURE TYPE QUESTIONS
+    # ============================================================
+    print("  Generating tribal examples...")
+    
+    tribes = [
+        'Elf', 'Goblin', 'Zombie', 'Vampire', 'Dragon', 'Angel', 'Demon',
+        'Human', 'Wizard', 'Warrior', 'Soldier', 'Knight', 'Merfolk',
+        'Beast', 'Spirit', 'Elemental', 'Horror', 'Dinosaur', 'Cat'
+    ]
+    
+    for tribe in tribes:
+        # Find cards of this type
+        cards = list(cards_collection.find({
+            'type': {'$regex': f'Creature.*{tribe}', '$options': 'i'},
+            'language': 'English'
+        }).limit(10))
+        
+        if cards:
+            for card in cards[:3]:  # Use first 3
+                name = card.get('name', '')
+                if name:
+                    training_data.append({
+                        "messages": [
+                            {"role": "user", "content": f"Is {name} a {tribe}?"},
+                            {"role": "assistant", "content": f"Yes, {name} is a {tribe}."}
+                        ]
+                    })
+    
+    # ============================================================
+    # COLOR IDENTITY QUESTIONS
+    # ============================================================
+    print("  Generating color identity examples...")
+    
+    # Sample cards and teach color identity
+    color_samples = list(cards_collection.find({
+        'colors': {'$exists': True},
+        'language': 'English'
+    }).limit(100))
+    
+    for card in color_samples[:30]:
+        name = card.get('name', '')
+        colors = card.get('colors', [])
+        
+        if name and colors:
+            color_str = ', '.join(colors) if len(colors) > 1 else colors[0]
+            
+            training_data.append({
+                "messages": [
+                    {"role": "user", "content": f"What color is {name}?"},
+                    {"role": "assistant", "content": f"{name} is {color_str}."}
+                ]
+            })
+    
+    # ============================================================
+    # CARD ADVANTAGE CONCEPTS
+    # ============================================================
+    print("  Generating strategic concept examples...")
+    
+    concepts = [
+        {
+            'pattern': 'draw .* cards?',
+            'concept': 'card advantage',
+            'question': 'Does {name} provide card advantage?',
+            'answer': 'Yes, {name} draws you cards, which provides card advantage.'
+        },
+        {
+            'pattern': 'destroy all',
+            'concept': 'board wipe',
+            'question': 'Is {name} a board wipe?',
+            'answer': 'Yes, {name} destroys multiple permanents, making it a board wipe.'
+        },
+        {
+            'pattern': 'ramp|search .* land',
+            'concept': 'ramp',
+            'question': 'Is {name} a ramp spell?',
+            'answer': 'Yes, {name} helps you get more mana, which is ramp.'
+        }
+    ]
+    
+    for concept_info in concepts:
+        cards = list(cards_collection.find({
+            'text': {'$regex': concept_info['pattern'], '$options': 'i'},
+            'language': 'English'
+        }).limit(10))
+        
+        if cards:
+            for card in cards[:5]:
+                name = card.get('name', '')
+                if name:
+                    question = concept_info['question'].format(name=name)
+                    answer = concept_info['answer'].format(name=name)
+                    
+                    training_data.append({
+                        "messages": [
+                            {"role": "user", "content": question},
+                            {"role": "assistant", "content": answer}
+                        ]
+                    })
+    
+    print(f"  Generated {len(training_data)} keyword/mechanic examples")
+    return training_data
+
+
 def main():
     print("="*70)
     print("MTG Training Data Extraction from MongoDB")
@@ -803,6 +1052,9 @@ def main():
     # Extract from each source - NEW TIERED APPROACH!
     all_training_data.extend(extract_card_training_data_tiered())
     all_training_data.extend(extract_card_rulings_data(max_rulings=3000))
+    
+    # NEW: Extract keyword and mechanic examples
+    all_training_data.extend(extract_keyword_and_mechanic_examples())
     
     # Get combos for both extraction and honesty training
     combos = list(combos_collection.find({'status': 'OK'}).limit(5000))
@@ -837,8 +1089,8 @@ def main():
     print(f"  Total examples: {len(final_data):,}")
     print(f"\n  Card Coverage:")
     print(f"    - Recent cards (2020-2026): 100% coverage with detailed examples")
-    print(f"    - Commander staples: ~10,000 cards with comprehensive examples")
-    print(f"    - Historical cards: ~5,000 cards with basic examples")
+    print(f"    - Additional cards: ~18,000 cards with varied detail")
+    print(f"    - Keywords & mechanics: Flying, deathtouch, ETB, tribal, etc.")
     print(f"\n  Additional Training:")
     print(f"    - Card rulings and interactions")
     print(f"    - 5,000 combo explanations")
@@ -848,7 +1100,9 @@ def main():
     print(f"\n  Your model will know:")
     print(f"    ✓ ALL cards from 2024-2025 (recent sets)")
     print(f"    ✓ ALL cards from 2020-2023 (Eldraine onwards)")
-    print(f"    ✓ Popular Commander and eternal format cards")
+    print(f"    ✓ Card keywords (flying, trample, lifelink, etc.)")
+    print(f"    ✓ Game mechanics (ETB, ramp, card advantage, etc.)")
+    print(f"    ✓ Creature types (Elf, Zombie, Dragon, etc.)")
     print(f"    ✓ 76,000+ combos from Commander Spellbook")
     print(f"    ✓ Complete Comprehensive Rules")
     print(f"\n  Training time estimate: ~20-24 hours on Intel B580")
