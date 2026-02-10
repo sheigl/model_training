@@ -3,7 +3,7 @@
 __pycache__/
 *.pyc
 .DS_Store
-training_data/
+training_data/data/
 *.log
 qwen-mtg-expert/
 output/
