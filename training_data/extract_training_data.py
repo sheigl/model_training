@@ -27,6 +27,7 @@ rules_db = client['mtg_rules']
 cards_collection = mtg_json_db['cards']
 legalities_collection = mtg_json_db['cardLegalities']
 rulings_collection = mtg_json_db['cardRulings']
+sets_collection = mtg_json_db['sets']  # NEW: For getting release dates
 
 articles_collection = edhrec_db['articles']
 guides_collection = edhrec_db['guides']
@@ -56,31 +57,48 @@ def clean_html(text):
 def extract_card_training_data_tiered():
     """
     Extract card data using a tiered approach for optimal coverage:
-    - Tier 1: ALL recent cards (2020-2026) with detailed examples
-    - Tier 2: Commander staples with comprehensive coverage
-    - Tier 3: Historical cards with basic coverage
+    - Tier 1: Recent cards (2020-2026) using $lookup join with sets collection
+    - Tier 2: Commander legal cards
+    - Tier 3: Additional coverage
     
-    This ensures the model knows:
-    1. 100% of recent cards (what users ask about most)
-    2. Popular eternal format cards
-    3. Broad coverage of Magic's history
+    Uses MongoDB $lookup to join cards with sets to get release dates.
     """
     print("\n=== Extracting Card Data (TIERED APPROACH) ===")
     training_data = []
     
     # ============================================================
-    # TIER 1: Recent Cards (2020-2026) - MAXIMUM PRIORITY
+    # TIER 1: Recent Cards (2020+) via Set Join - MAXIMUM PRIORITY
     # ============================================================
-    print("\n[TIER 1] Recent Cards (2020-2026)...")
+    print("\n[TIER 1] Recent Cards (2020-2026) via set join...")
     
-    tier1_query = {
-        'releaseDate': {'$gte': '2020-01-01'},
-        'text': {'$exists': True, '$ne': ''},
-        'type': {'$not': {'$regex': 'Basic Land'}},
-        'language': 'English'
-    }
+    # Use aggregation pipeline to join cards with sets
+    tier1_pipeline = [
+        # First, filter cards
+        {'$match': {
+            'text': {'$exists': True, '$ne': ''},
+            'type': {'$not': {'$regex': 'Basic Land'}},
+            'language': 'English',
+            'setCode': {'$exists': True}
+        }},
+        # Join with sets collection
+        {'$lookup': {
+            'from': 'sets',
+            'localField': 'setCode',
+            'foreignField': 'code',
+            'as': 'set_info'
+        }},
+        # Unwind the set_info array
+        {'$unwind': {'path': '$set_info', 'preserveNullAndEmptyArrays': False}},
+        # Filter for recent sets
+        {'$match': {
+            'set_info.releaseDate': {'$gte': '2020-01-01'}
+        }},
+        # Limit results
+        {'$limit': 25000}
+    ]
     
-    tier1_cards = list(cards_collection.find(tier1_query).limit(20000))
+    print("  Running aggregation pipeline to join cards with sets...")
+    tier1_cards = list(cards_collection.aggregate(tier1_pipeline))
     print(f"  Found {len(tier1_cards)} recent cards")
     
     tier1_examples = 0
@@ -157,25 +175,26 @@ def extract_card_training_data_tiered():
     print(f"  Generated {tier1_examples:,} examples from recent cards")
     
     # ============================================================
-    # TIER 2: Commander Staples - HIGH PRIORITY
+    # TIER 2: Commander Legal Cards - HIGH PRIORITY
     # ============================================================
-    print("\n[TIER 2] Commander Staples (Pre-2020)...")
+    print("\n[TIER 2] Commander Legal Cards...")
     
-    tier2_query = {
-        'legalities.commander': 'legal',
-        'releaseDate': {'$lt': '2020-01-01'},
-        'text': {'$exists': True, '$ne': ''},
-        'type': {'$not': {'$regex': 'Basic Land'}},
-        'language': 'English'
-    }
+    # Collect names from tier 1 to avoid duplicates
+    tier1_names = {c.get('name', '') for c in tier1_cards}
     
-    # Sample 10K commander cards (not all 80K+)
-    tier2_cards = list(cards_collection.aggregate([
-        {'$match': tier2_query},
-        {'$sample': {'size': 10000}}
-    ]))
+    tier2_pipeline = [
+        {'$match': {
+            'legalities.commander': 'legal',
+            'text': {'$exists': True, '$ne': ''},
+            'type': {'$not': {'$regex': 'Basic Land'}},
+            'language': 'English',
+            'name': {'$nin': list(tier1_names)}  # Exclude tier 1 cards
+        }},
+        {'$sample': {'size': 12000}}
+    ]
     
-    print(f"  Sampled {len(tier2_cards)} commander staples")
+    tier2_cards = list(cards_collection.aggregate(tier2_pipeline))
+    print(f"  Sampled {len(tier2_cards)} commander cards (excluding tier 1)")
     
     tier2_examples = 0
     for card in tier2_cards:
@@ -217,28 +236,28 @@ def extract_card_training_data_tiered():
             })
             tier2_examples += 1
     
-    print(f"  Generated {tier2_examples:,} examples from commander staples")
+    print(f"  Generated {tier2_examples:,} examples from commander cards")
     
     # ============================================================
-    # TIER 3: Historical Coverage - BROAD SAMPLE
+    # TIER 3: Additional Coverage
     # ============================================================
-    print("\n[TIER 3] Historical Cards (Pre-2020, Non-Commander)...")
+    print("\n[TIER 3] Additional Coverage...")
     
-    tier3_query = {
-        'releaseDate': {'$lt': '2020-01-01'},
-        'legalities.commander': {'$ne': 'legal'},
-        'text': {'$exists': True, '$ne': ''},
-        'type': {'$not': {'$regex': 'Basic Land'}},
-        'language': 'English'
-    }
+    # Collect all names covered so far
+    covered_names = tier1_names | {c.get('name', '') for c in tier2_cards}
     
-    # Sample 5K for broad historical coverage
-    tier3_cards = list(cards_collection.aggregate([
-        {'$match': tier3_query},
-        {'$sample': {'size': 5000}}
-    ]))
+    tier3_pipeline = [
+        {'$match': {
+            'text': {'$exists': True, '$ne': ''},
+            'type': {'$not': {'$regex': 'Basic Land'}},
+            'language': 'English',
+            'name': {'$nin': list(covered_names)}
+        }},
+        {'$sample': {'size': 8000}}
+    ]
     
-    print(f"  Sampled {len(tier3_cards)} historical cards")
+    tier3_cards = list(cards_collection.aggregate(tier3_pipeline))
+    print(f"  Sampled {len(tier3_cards)} additional cards")
     
     tier3_examples = 0
     for card in tier3_cards:
@@ -248,7 +267,7 @@ def extract_card_training_data_tiered():
         if not name or not text:
             continue
         
-        # LOW DETAIL: 1-2 examples per historical card
+        # LOW DETAIL: 1-2 examples per card
         
         # Q1: What does X do?
         training_data.append({
@@ -259,7 +278,7 @@ def extract_card_training_data_tiered():
         })
         tier3_examples += 1
     
-    print(f"  Generated {tier3_examples:,} examples from historical cards")
+    print(f"  Generated {tier3_examples:,} examples from additional cards")
     
     # ============================================================
     # SUMMARY
@@ -271,8 +290,20 @@ def extract_card_training_data_tiered():
     print(f"Total cards covered: {total_cards:,}")
     print(f"  Tier 1 (Recent 2020+):    {len(tier1_cards):>6,} cards → {tier1_examples:>7,} examples")
     print(f"  Tier 2 (Commander):       {len(tier2_cards):>6,} cards → {tier2_examples:>7,} examples")
-    print(f"  Tier 3 (Historical):      {len(tier3_cards):>6,} cards → {tier3_examples:>7,} examples")
+    print(f"  Tier 3 (Additional):      {len(tier3_cards):>6,} cards → {tier3_examples:>7,} examples")
     print(f"\nTotal card examples: {len(training_data):,}")
+    
+    # Show some sample sets if available
+    if tier1_cards:
+        sample_sets = set()
+        for card in tier1_cards[:20]:
+            set_info = card.get('set_info', {})
+            set_name = set_info.get('name', '')
+            if set_name:
+                sample_sets.add(set_name)
+        if sample_sets:
+            print(f"\nSample recent sets included: {', '.join(list(sample_sets)[:5])}...")
+    
     print("="*70)
     
     return training_data
