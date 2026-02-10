@@ -11,16 +11,19 @@ export ZE_FLAT_DEVICE_HIERARCHY=FLAT
   --dataset file \
   --data-file ~/code/model_training/training_data/data/mongodb_mtg_training.jsonl \
   --use-4bit \
-  --lora-r 64 \
+  --lora-r 32 \
+  --lora-alpha 64 \
+  --lora-dropout 0.05 \
   --use-galore \
-  --galore-rank 512 \
-  --batch-size 2 \
-  --learning-rate 3e-5 \
-  --gradient-accumulation 8 \
+  --galore-rank 256 \
+  --galore-update-proj-gap 200 \
+  --galore-scale 0.25 \
+  --batch-size 4 \
+  --learning-rate 5e-5 \
+  --gradient-accumulation 4 \
   --epochs 3 \
-  --output-dir ~/code/model_training/qwen_training/output-3b-mtg-expert-highrank \
-  --save-steps 500 \
-  --warmup-steps 100 \
+  --max-seq-length 2048 \
+  --output-dir ~/code/model_training/qwen_training/output-3b-mtg-expert \
   > ~/.log/model_training.log 2>&1 &
 
 
