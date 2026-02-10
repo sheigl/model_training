@@ -190,15 +190,52 @@ python finetune_qwen.py \
   --dataset file \
   --data-file mongodb_mtg_training.jsonl \
   --use-4bit \
-  --batch-size 4 \
-  --gradient-accumulation 4 \
   --lora-r 32 \
+  --use-galore \
+  --galore-rank 256 \
+  --batch-size 4 \
+  --learning-rate 5e-5 \
+  --gradient-accumulation 4 \
   --epochs 3 \
-  --learning-rate 1e-4 \
-  --output-dir ./qwen-3b-mtg-expert-tiered
+  --output-dir ./qwen-3b-mtg-expert-tiered \
+  --save-steps 500 \
+  --warmup-steps 50 \
+  > training.log 2>&1
 ```
 
-**Training time:** ~20-24 hours (can run overnight)
+**Training Parameters Explained:**
+- `--use-4bit` - Quantize base model (saves VRAM)
+- `--use-galore` - Memory-efficient optimizer
+- `--galore-rank 256` - GaLore rank (higher than LoRA for better gradients)
+- `--lora-r 32` - LoRA rank (good capacity for 140K examples)
+- `--learning-rate 5e-5` - Conservative rate (stable with GaLore)
+- `--epochs 3` - Three passes over 140K examples
+- `--save-steps 500` - Save checkpoints every 500 steps (recovery)
+- `--warmup-steps 50` - Gradual learning rate warmup (stability)
+- `2>&1` - Capture both stdout and stderr to log
+
+**Alternative for Maximum Quality (Longer Training):**
+```bash
+python finetune_qwen.py \
+  --model-name Qwen/Qwen2.5-3B-Instruct \
+  --dataset file \
+  --data-file mongodb_mtg_training.jsonl \
+  --use-4bit \
+  --lora-r 64 \
+  --use-galore \
+  --galore-rank 512 \
+  --batch-size 2 \
+  --learning-rate 3e-5 \
+  --gradient-accumulation 8 \
+  --epochs 3 \
+  --output-dir ./qwen-3b-mtg-expert-highrank \
+  --save-steps 500 \
+  --warmup-steps 100 \
+  > training.log 2>&1
+```
+*Trade-off: +30% training time for higher quality*
+
+**Training time:** ~20-22 hours (conservative) or ~26-28 hours (high-quality)
 
 ### 3. Test Your Model
 ```python

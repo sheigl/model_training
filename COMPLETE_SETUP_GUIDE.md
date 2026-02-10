@@ -145,24 +145,70 @@ python finetune_qwen.py \
   --dataset file \
   --data-file mongodb_mtg_training.jsonl \
   --use-4bit \
-  --batch-size 4 \
-  --gradient-accumulation 4 \
   --lora-r 32 \
+  --use-galore \
+  --galore-rank 256 \
+  --batch-size 4 \
+  --learning-rate 5e-5 \
+  --gradient-accumulation 4 \
   --epochs 3 \
-  --learning-rate 1e-4 \
-  --output-dir ./qwen-3b-mtg-expert-v2
+  --output-dir ./qwen-3b-mtg-expert \
+  --save-steps 500 \
+  --warmup-steps 50
 ```
 
 **Training parameters explained:**
 - `--use-4bit` - Memory efficient (fits on 12GB VRAM)
-- `--lora-r 32` - LoRA rank (higher = more capacity)
-- `--epochs 3` - Train for 3 passes (adjust if overfitting)
-- `--learning-rate 1e-4` - Conservative rate for stable training
+- `--use-galore` - Memory-efficient optimizer (reduces optimizer memory by 60%)
+- `--galore-rank 256` - GaLore subspace rank (higher than LoRA for better gradients)
+- `--lora-r 32` - LoRA rank (good capacity for 140K examples)
+- `--learning-rate 5e-5` - Conservative learning rate (stable with GaLore)
+- `--epochs 3` - Train for 3 passes over the full dataset
+- `--save-steps 500` - Save checkpoint every 500 steps (enables recovery)
+- `--warmup-steps 50` - Gradual LR warmup (improves stability)
 
 **Expected training time:**
-- ~6-8 hours on Intel ARC B580
-- ~4-5 hours on RTX 4090
-- ~10-12 hours on RTX 3090
+- ~20-22 hours on Intel ARC B580
+- ~15-18 hours on RTX 4090
+- ~22-25 hours on RTX 3090
+
+**Monitor training:**
+```bash
+# If logging to file
+tail -f training.log
+
+# Watch for:
+# - Loss starting around 2.0 and decreasing
+# - No NaN values
+# - Perplexity decreasing
+```
+
+**If you get Out of Memory:**
+```bash
+# Reduce batch size, increase gradient accumulation
+--batch-size 2 \
+--gradient-accumulation 8 \
+```
+
+**For maximum quality (if you have time):**
+```bash
+python finetune_qwen.py \
+  --model-name Qwen/Qwen2.5-3B-Instruct \
+  --dataset file \
+  --data-file mongodb_mtg_training.jsonl \
+  --use-4bit \
+  --lora-r 64 \
+  --use-galore \
+  --galore-rank 512 \
+  --batch-size 2 \
+  --learning-rate 3e-5 \
+  --gradient-accumulation 8 \
+  --epochs 3 \
+  --output-dir ./qwen-3b-mtg-expert-highrank \
+  --save-steps 500 \
+  --warmup-steps 100
+```
+*Trade-off: +30% training time (~26-28 hours) for higher quality*
 
 ## Step 5: Test the Model
 
