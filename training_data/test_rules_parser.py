@@ -100,16 +100,16 @@ Credits
     print("\n=== Sample Test Complete ===")
 
 
-def test_actual_file():
+def test_actual_file(rules_file='comprehensive_rules.txt'):
     """
     Test parsing with the actual comprehensive_rules.txt file
     """
     print("\n" + "="*70)
-    print("Testing with actual comprehensive_rules.txt file")
+    print(f"Testing with file: {rules_file}")
     print("="*70 + "\n")
     
     try:
-        with open(sys.argv[1], 'r', encoding='utf-8') as f:
+        with open(rules_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
         print(f"✓ File loaded successfully: {len(lines)} lines\n")
@@ -155,10 +155,12 @@ def test_actual_file():
         print("="*70)
         
     except FileNotFoundError:
-        print("✗ comprehensive_rules.txt not found!")
+        print(f"✗ {rules_file} not found!")
         print("\nPlease download it from:")
         print("  https://magic.wizards.com/en/rules")
-        print("\nSave it as 'comprehensive_rules.txt' in this directory")
+        print(f"\nSave it as '{rules_file}' in this directory")
+        print("OR pass the file path as an argument:")
+        print("  python test_rules_parser.py /path/to/rules.txt")
         return False
     except Exception as e:
         print(f"✗ Error reading file: {e}")
@@ -174,12 +176,20 @@ if __name__ == "__main__":
     print("Comprehensive Rules Parser Validation")
     print("="*70 + "\n")
     
+    # Get file path from command line or use default
+    if len(sys.argv) > 1:
+        rules_file = sys.argv[1]
+        print(f"Using file: {rules_file}\n")
+    else:
+        rules_file = 'comprehensive_rules.txt'
+        print(f"Using default file: {rules_file}\n")
+    
     # Test with sample first
     test_parse_sample()
     
     # Then test with actual file
-    if test_actual_file():
+    if test_actual_file(rules_file):
         print("\n✓ All tests passed! You can now run:")
-        print("  python import_rules_to_mongo.py")
+        print(f"  python import_rules_to_mongo.py {rules_file if len(sys.argv) > 1 else ''}")
     else:
         print("\n✗ Tests failed. Please check the file and try again.")

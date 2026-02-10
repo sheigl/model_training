@@ -10,7 +10,12 @@ from collections import defaultdict
 import re
 
 # MongoDB connections
-client = MongoClient('mongodb://localhost:27017/')
+client = MongoClient(
+    'mongodb://localhost:27017/',
+    username='root',
+    password='whatever',
+    authSource='admin'
+)
 
 # Databases
 mtg_json_db = client['mtg_json']

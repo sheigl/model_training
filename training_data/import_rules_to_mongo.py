@@ -27,48 +27,42 @@ def parse_comprehensive_rules(filepath):
                 metadata['effective_date'] = date_match.group(1)
                 break
     
-    # Find where main rules start and glossary begins
+    # Find where rules actually start by looking for rule "100.1"
+    # The file has a table of contents, so section headers appear twice
     rules_start_idx = None
     glossary_start_idx = None
-    credits_start_idx = None
     
     for i, line in enumerate(lines):
-        # Rules start after "1. Game Concepts"
-        if rules_start_idx is None and line.strip() == "1. Game Concepts":
+        # Find first rule
+        if rules_start_idx is None and re.match(r'^100\.1\.', line):
             rules_start_idx = i
-            print(f"Found '1. Game Concepts' at line {i}")
+            print(f"Found first rule (100.1) at line {i}")
         
-        # Glossary section
-        if glossary_start_idx is None and line.strip() == "Glossary":
-            glossary_start_idx = i
-            print(f"Found 'Glossary' at line {i}")
-        
-        # Credits marks the end
-        if credits_start_idx is None and line.strip() == "Credits":
-            credits_start_idx = i
-            print(f"Found 'Credits' at line {i}")
+        # Find glossary - it comes AFTER all the rules
+        # Look for "Glossary" that's followed by glossary terms (capitalized words)
+        if rules_start_idx is not None and i > rules_start_idx + 1000:  # Must be after rules
+            if line.strip() == "Glossary":
+                # Verify next few lines look like glossary entries
+                if i + 5 < len(lines):
+                    # Check if next non-empty lines start with capital letters (glossary terms)
+                    next_lines = [lines[i+j].strip() for j in range(1, 6) if i+j < len(lines) and lines[i+j].strip()]
+                    if next_lines and any(l[0].isupper() for l in next_lines if l):
+                        glossary_start_idx = i
+                        print(f"Found Glossary section at line {i}")
+                        break
     
     # Extract rules section
     if rules_start_idx is not None:
         if glossary_start_idx is not None:
             rules_lines = lines[rules_start_idx:glossary_start_idx]
-        elif credits_start_idx is not None:
-            rules_lines = lines[rules_start_idx:credits_start_idx]
+            print(f"Extracting rules from line {rules_start_idx} to {glossary_start_idx}")
         else:
             rules_lines = lines[rules_start_idx:]
-        print(f"Extracting rules from lines {rules_start_idx} to {glossary_start_idx or credits_start_idx or len(lines)}")
+            print(f"Extracting rules from line {rules_start_idx} to end of file")
         print(f"Total lines in rules section: {len(rules_lines)}")
     else:
-        # Fallback: try to find first rule number
-        print("Warning: Could not find '1. Game Concepts', looking for first rule...")
-        for i, line in enumerate(lines):
-            if re.match(r'^100\.', line):
-                rules_lines = lines[i:]
-                print(f"Found first rule at line {i}")
-                break
-        else:
-            print("Warning: Could not find start of rules, using entire file")
-            rules_lines = lines
+        print("ERROR: Could not find start of rules (looking for rule 100.1)")
+        return {}, {}, metadata
     
     # Join lines back for rule parsing
     rules_content = ''.join(rules_lines)
@@ -152,10 +146,9 @@ def parse_comprehensive_rules(filepath):
     # Parse glossary if present
     glossary = {}
     if glossary_start_idx is not None:
-        if credits_start_idx is not None:
-            glossary_lines = lines[glossary_start_idx:credits_start_idx]
-        else:
-            glossary_lines = lines[glossary_start_idx:]
+        # Glossary goes to end of file
+        glossary_lines = lines[glossary_start_idx:]
+        print(f"Extracting glossary from line {glossary_start_idx} to end of file")
         
         # Parse glossary entries
         current_term = None
@@ -397,8 +390,13 @@ def import_to_mongodb(rules, glossary, metadata):
     """
     print("\n=== Importing to MongoDB ===")
     
-    # Connect to MongoDB
-    client = MongoClient('mongodb://root:whatever@localhost:27017/')
+    # Connect to MongoDB with authentication
+    client = MongoClient(
+        'mongodb://localhost:27017/',
+        username='root',
+        password='whatever',
+        authSource='admin'
+    )
     db = client['mtg_rules']
     
     # Clear existing data
@@ -455,7 +453,12 @@ def verify_import():
     """
     print("\n=== Verifying Import ===")
     
-    client = MongoClient('mongodb://root:whatever@localhost:27017/')
+    client = MongoClient(
+        'mongodb://localhost:27017/',
+        username='root',
+        password='whatever',
+        authSource='admin'
+    )
     db = client['mtg_rules']
     
     # Show metadata
@@ -492,8 +495,13 @@ def main():
     print("MTG Comprehensive Rules MongoDB Importer")
     print("="*70)
     
-    # Check for rules file
-    rules_file = sys.argv[1]
+    # Get rules file from command line argument
+    if len(sys.argv) > 1:
+        rules_file = sys.argv[1]
+        print(f"Using file: {rules_file}\n")
+    else:
+        rules_file = 'comprehensive_rules.txt'
+        print(f"Using default file: {rules_file}\n")
     
     try:
         # Parse the rules
@@ -521,7 +529,8 @@ def main():
         print("1. Visit: https://magic.wizards.com/en/rules")
         print("2. Download the TXT version")
         print("3. Save it as 'comprehensive_rules.txt' in this directory")
-        print("4. Run this script again")
+        print("   OR pass the file path as an argument:")
+        print("   python import_rules_to_mongo.py /path/to/rules.txt")
         return
     except Exception as e:
         print(f"\nERROR during import: {e}")
