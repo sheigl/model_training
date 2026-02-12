@@ -84,35 +84,521 @@ Usage:
         --resume-from-checkpoint ./output/checkpoint-1000
 """
 
+import argparse
+import json
 import os
 
-# Import from our modular components
-from cli import parse_args
-from data import create_sample_dataset, load_custom_dataset, load_hf_dataset
-from model import (
-    GALORE_AVAILABLE,
-    detect_device,
-    load_model,
-    load_tokenizer,
-    apply_lora,
-)
-from trainer import create_training_config, create_trainer
-from inference import test_model
+import torch
+from datasets import Dataset, load_dataset
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from trl import SFTTrainer, SFTConfig
 
+
+# =============================================================================
+# GaLore IMPORTS AND SAFE GLOBALS REGISTRATION
+# =============================================================================
+try:
+    from galore_torch import GaLoreAdamW, GaLoreAdamW8bit
+    from galore_torch.galore_projector import GaLoreProjector
+    GALORE_AVAILABLE = True
+    torch.serialization.add_safe_globals([GaLoreProjector])
+except ImportError:
+    GaLoreAdamW = None
+    GaLoreAdamW8bit = None
+    GALORE_AVAILABLE = False
+
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# TARGET_MODULES defines which layers inside the model get LoRA adapters.
+# q_proj = Query projection  ("What am I looking for?")
+# k_proj = Key projection    ("What information do I have?")
+# v_proj = Value projection   ("What's the actual content?")
+# o_proj = Output projection  ("How do I combine everything?")
+TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj"]
+
+DEFAULT_TEST_PROMPTS = [
+    "What is machine learning?",
+    "Explain photosynthesis simply.",
+    "Write a short poem about the ocean.",
+]
+
+
+# =============================================================================
+# CLI
+# =============================================================================
+
+def parse_args():
+    """Parse command-line arguments for fine-tuning configuration."""
+    parser = argparse.ArgumentParser(
+        description="Fine-tune Qwen models (0.5B to 8B+) with LoRA and optional GaLore"
+    )
+
+    # --- Dataset options ---
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        choices=["sample", "hf", "file"],
+        default="sample",
+        help="Dataset source: 'sample' (built-in), 'hf' (Hugging Face), or 'file' (custom JSONL)"
+    )
+    parser.add_argument(
+        "--hf-dataset",
+        type=str,
+        default="yahma/alpaca-cleaned",
+        help="Hugging Face dataset name (when --dataset=hf)"
+    )
+    parser.add_argument(
+        "--data-file",
+        type=str,
+        default="data.jsonl",
+        help="Path to JSONL data file (when --dataset=file)"
+    )
+
+    # --- Model and output ---
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default="Qwen/Qwen2.5-0.5B-Instruct",
+        help="Base model to fine-tune (0.5B to 8B supported)"
+    )
+    parser.add_argument(
+        "--hf-token",
+        type=str,
+        default=None,
+        help="Hugging Face token for accessing gated models"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="./qwen-finetuned",
+        help="Directory to save fine-tuned model"
+    )
+
+    # --- LoRA configuration ---
+    parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=16,
+        help="LoRA rank (8-64, higher = more capacity)"
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=int,
+        default=32,
+        help="LoRA alpha (typically 2x the rank)"
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.05,
+        help="LoRA dropout for regularization"
+    )
+
+    # --- GaLore configuration ---
+    parser.add_argument(
+        "--use-galore",
+        action="store_true",
+        help="Use GaLore optimizer for memory-efficient training (essential for 7B+ models)"
+    )
+    parser.add_argument(
+        "--galore-rank",
+        type=int,
+        default=128,
+        help="GaLore projection rank (64-256, higher = less compression)"
+    )
+    parser.add_argument(
+        "--galore-update-proj-gap",
+        type=int,
+        default=200,
+        help="Update GaLore projection every N steps (100-500 recommended)"
+    )
+    parser.add_argument(
+        "--galore-scale",
+        type=float,
+        default=0.25,
+        help="GaLore scaling factor (0.1-1.0, lower = more conservative)"
+    )
+
+    # --- Training configuration ---
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=3,
+        help="Number of training epochs"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=4,
+        help="Batch size per device"
+    )
+    parser.add_argument(
+        "--gradient-accumulation",
+        type=int,
+        default=4,
+        help="Gradient accumulation steps"
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=2e-4,
+        help="Learning rate"
+    )
+    parser.add_argument(
+        "--max-seq-length",
+        type=int,
+        default=512,
+        help="Maximum sequence length"
+    )
+
+    # --- Other options ---
+    parser.add_argument(
+        "--use-4bit",
+        action="store_true",
+        help="Use 4-bit quantization (essential for large models, ~75% memory reduction)"
+    )
+    parser.add_argument(
+        "--no-test",
+        action="store_true",
+        help="Skip test generation after training"
+    )
+    parser.add_argument(
+        "--resume-from-checkpoint",
+        type=str,
+        default=None,
+        help="Path to a checkpoint directory to resume training from (e.g., ./output/checkpoint-200)"
+    )
+
+    return parser.parse_args()
+
+
+# =============================================================================
+# DATA
+# =============================================================================
+
+def create_sample_dataset():
+    """Create a small sample instruction dataset for testing."""
+    sample_data = [
+        {
+            "messages": [
+                {"role": "user", "content": "What is the capital of France?"},
+                {"role": "assistant", "content": "The capital of France is Paris."}
+            ]
+        },
+        {
+            "messages": [
+                {"role": "user", "content": "Explain quantum computing in simple terms."},
+                {"role": "assistant", "content": "Quantum computing uses quantum mechanics principles to process information. Unlike classical computers that use bits (0 or 1), quantum computers use qubits that can be in multiple states simultaneously, allowing them to solve certain problems much faster."}
+            ]
+        },
+        {
+            "messages": [
+                {"role": "user", "content": "Write a haiku about programming."},
+                {"role": "assistant", "content": "Code flows like water\nBugs hide in silent shadows\nDebug brings the dawn"}
+            ]
+        },
+        {
+            "messages": [
+                {"role": "user", "content": "What are the three laws of robotics?"},
+                {"role": "assistant", "content": "Isaac Asimov's Three Laws of Robotics are:\n1. A robot may not injure a human being or allow a human to come to harm\n2. A robot must obey human orders unless they conflict with the First Law\n3. A robot must protect its own existence unless it conflicts with the First or Second Law"}
+            ]
+        },
+        {
+            "messages": [
+                {"role": "user", "content": "How do you make scrambled eggs?"},
+                {"role": "assistant", "content": "Here's how to make scrambled eggs:\n1. Crack 2-3 eggs into a bowl\n2. Add a splash of milk and whisk\n3. Heat butter in a pan over medium heat\n4. Pour in eggs and gently stir with a spatula\n5. Cook until just set but still creamy\n6. Season with salt and pepper"}
+            ]
+        },
+    ]
+
+    expanded_data = sample_data * 20
+    return Dataset.from_list(expanded_data)
+
+
+def load_custom_dataset(file_path):
+    """Load dataset from a JSONL file (JSON Lines format)."""
+    with open(file_path, 'r') as f:
+        data = [json.loads(line) for line in f]
+    return Dataset.from_list(data)
+
+
+def load_hf_dataset(dataset_name="yahma/alpaca-cleaned"):
+    """Load a dataset from the Hugging Face Hub and convert to messages format."""
+    dataset = load_dataset(dataset_name, split="train")
+
+    def format_to_messages(example):
+        return {
+            "messages": [
+                {"role": "user", "content": example["instruction"]},
+                {"role": "assistant", "content": example["output"]}
+            ]
+        }
+
+    return dataset.map(format_to_messages)
+
+
+# =============================================================================
+# MODEL
+# =============================================================================
+
+def detect_device():
+    """Detect available hardware for training (XPU, CUDA, or CPU)."""
+    if hasattr(torch, 'xpu') and torch.xpu.is_available():
+        device = 'xpu'
+        print(f'Using Intel GPU (XPU): {torch.xpu.get_device_name(0)}')
+    elif torch.cuda.is_available():
+        device = 'cuda'
+        print(f'Using NVIDIA GPU: {torch.cuda.get_device_name(0)}')
+    else:
+        device = 'cpu'
+        print('Using CPU (training will be VERY slow!)')
+        print('Consider using a GPU for training large models.')
+    return device
+
+
+def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
+    """Load a pre-trained causal language model with optional 4-bit quantization."""
+    print(f"Loading {model_name}...")
+    if "8B" in model_name or "7B" in model_name:
+        print("  (This is a large model - download may take several minutes)")
+
+    quantization_config = None
+    if use_4bit:
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        quantization_config=quantization_config,
+        device_map="auto" if device != 'xpu' else None,
+        trust_remote_code=True,
+        dtype=torch.bfloat16,
+        token=hf_token,
+    )
+
+    if device == 'xpu':
+        print("  Moving model to Intel XPU...")
+        model = model.to(device)
+
+    if use_4bit:
+        print("  Preparing model for k-bit training...")
+        model = prepare_model_for_kbit_training(model)
+
+    print(f"Model loaded successfully!")
+    return model
+
+
+def load_tokenizer(model_name):
+    """Load and configure the tokenizer for the specified model."""
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+    )
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
+    return tokenizer
+
+
+def apply_lora(model, lora_r=16, lora_alpha=32, lora_dropout=0.05):
+    """
+    Apply LoRA (Low-Rank Adaptation) adapters to the model.
+
+    Returns:
+        tuple: (model_with_lora, trainable_params, total_params)
+    """
+    print("\nConfiguring LoRA...")
+
+    lora_config = LoraConfig(
+        r=lora_r,
+        lora_alpha=lora_alpha,
+        target_modules=TARGET_MODULES,
+        lora_dropout=lora_dropout,
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+
+    model = get_peft_model(model, lora_config)
+
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Trainable parameters: {trainable_params:,} ({100 * trainable_params / total_params:.2f}%)")
+    print(f"Total parameters: {total_params:,}")
+
+    return model, trainable_params, total_params
+
+
+# =============================================================================
+# TRAINER
+# =============================================================================
+
+def create_training_config(
+    output_dir,
+    num_epochs=3,
+    batch_size=4,
+    gradient_accumulation=4,
+    learning_rate=2e-4,
+    max_seq_length=512,
+    device='cpu'
+):
+    """Create the SFTConfig training configuration."""
+    print("\nConfiguring training...")
+
+    training_args = SFTConfig(
+        output_dir=output_dir,
+        num_train_epochs=num_epochs,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        gradient_accumulation_steps=gradient_accumulation,
+        learning_rate=learning_rate,
+        max_length=max_seq_length,
+        optim="adamw_torch",
+        weight_decay=0.01,
+        warmup_ratio=0.03,
+        eval_strategy="epoch",
+        logging_steps=10,
+        save_strategy="steps",
+        save_steps=200,
+        save_total_limit=3,
+        bf16=True if device in ['cuda', 'xpu'] else False,
+        gradient_checkpointing=True,
+        report_to="none",
+        load_best_model_at_end=False,
+        packing=False,
+    )
+
+    return training_args
+
+
+def create_trainer(
+    model,
+    tokenizer,
+    train_dataset,
+    eval_dataset,
+    training_args,
+    use_galore=False,
+    galore_rank=128,
+    galore_update_proj_gap=200,
+    galore_scale=0.25,
+    learning_rate=2e-4
+):
+    """Create the SFTTrainer with optional GaLore optimizer."""
+    print("\nCreating trainer...")
+
+    if use_galore:
+        if not GALORE_AVAILABLE:
+            raise RuntimeError(
+                "GaLore requested but not installed! "
+                "Install with: pip install galore-torch"
+            )
+
+        print(f"Using GaLore optimizer:")
+        print(f"  Rank: {galore_rank}")
+        print(f"  Update projection gap: {galore_update_proj_gap} steps")
+        print(f"  Scale: {galore_scale}")
+
+        galore_params = [p for p in model.parameters() if p.requires_grad]
+
+        param_groups = [
+            {
+                'params': galore_params,
+                'rank': galore_rank,
+                'update_proj_gap': galore_update_proj_gap,
+                'scale': galore_scale,
+                'proj_type': 'std'
+            }
+        ]
+
+        optimizer = GaLoreAdamW(
+            param_groups,
+            lr=learning_rate,
+            weight_decay=0.01,
+        )
+
+        trainer = SFTTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            optimizers=(optimizer, None),
+        )
+    else:
+        print("Using standard AdamW optimizer")
+
+        trainer = SFTTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+        )
+
+    return trainer
+
+
+# =============================================================================
+# INFERENCE
+# =============================================================================
+
+def test_model(model, tokenizer, device, prompts=None):
+    """Generate sample responses from the model to verify training worked."""
+    if prompts is None:
+        prompts = DEFAULT_TEST_PROMPTS
+
+    print("\n" + "="*70)
+    print("TESTING FINE-TUNED MODEL")
+    print("="*70 + "\n")
+
+    model.eval()
+
+    for prompt in prompts:
+        messages = [{"role": "user", "content": prompt}]
+
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+
+        inputs = tokenizer(text, return_tensors="pt").to(device)
+
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=128,
+                temperature=0.7,
+                do_sample=True,
+                pad_token_id=tokenizer.eos_token_id
+            )
+
+        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+        if "<|im_start|>assistant" in response:
+            response = response.split("<|im_start|>assistant")[-1].strip()
+
+        print(f"User: {prompt}")
+        print(f"Assistant: {response}\n")
+        print("-" * 70 + "\n")
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
 
 def main():
     """Main entry point for fine-tuning."""
 
-    # ==========================================================================
-    # PARSE ARGUMENTS
-    # ==========================================================================
     args = parse_args()
 
-    # ==========================================================================
-    # VALIDATE GALORE AVAILABILITY
-    # ==========================================================================
-    # If the user requested GaLore but it's not installed, we need to fail early
-    # with a helpful error message rather than continuing and crashing later.
+    # Validate GaLore availability
     if args.use_galore and not GALORE_AVAILABLE:
         print("\n" + "="*70)
         print("ERROR: GaLore requested but not installed!")
@@ -124,11 +610,7 @@ def main():
         print("="*70 + "\n")
         exit(1)
 
-    # ==========================================================================
-    # PRINT CONFIGURATION
-    # ==========================================================================
-    # Print out all the settings so you can verify what you're about to run.
-    # This is like a pre-flight checklist before takeoff -- catch mistakes early.
+    # Print configuration
     print("\n" + "="*70)
     print("CONFIGURATION")
     print("="*70)
@@ -158,24 +640,19 @@ def main():
         print(f"\nResume from checkpoint: {args.resume_from_checkpoint}")
     print("="*70 + "\n")
 
-    # Warn user about training time for large models
     if "8B" in args.model_name or "7B" in args.model_name:
-        print("⚠️  WARNING: You're training a large model (7B-8B parameters)")
+        print("WARNING: You're training a large model (7B-8B parameters)")
         print("   Expected training time on consumer GPU: 48-72 hours")
         if not args.use_galore:
-            print("   ⚠️  You should probably use --use-galore for memory efficiency!")
+            print("   You should probably use --use-galore for memory efficiency!")
         if not args.use_4bit:
-            print("   ⚠️  You should use --use-4bit for large models!")
+            print("   You should use --use-4bit for large models!")
         print()
 
-    # ==========================================================================
-    # DETECT DEVICE
-    # ==========================================================================
+    # Detect device
     device = detect_device()
 
-    # ==========================================================================
-    # LOAD MODEL AND TOKENIZER
-    # ==========================================================================
+    # Load model and tokenizer
     print("\nLoading model and tokenizer...")
 
     model = load_model(
@@ -187,9 +664,7 @@ def main():
 
     tokenizer = load_tokenizer(args.model_name)
 
-    # ==========================================================================
-    # APPLY LoRA
-    # ==========================================================================
+    # Apply LoRA
     model, trainable_params, total_params = apply_lora(
         model,
         lora_r=args.lora_r,
@@ -197,12 +672,9 @@ def main():
         lora_dropout=args.lora_dropout
     )
 
-    # ==========================================================================
-    # PREPARE DATASET
-    # ==========================================================================
+    # Prepare dataset
     print("\nPreparing dataset...")
 
-    # Load dataset based on user selection
     if args.dataset == "sample":
         print("Using built-in sample dataset")
         train_dataset = create_sample_dataset()
@@ -217,14 +689,6 @@ def main():
     else:
         raise ValueError(f"Unknown dataset type: {args.dataset}")
 
-    # Split the dataset into training (90%) and evaluation (10%) sets.
-    # The evaluation set is data the model NEVER trains on -- it's used to
-    # measure how well the model generalizes to unseen examples.
-    #
-    # Real-world analogy: Like a practice test vs the real exam. You study
-    # (train) using the practice tests, then take the real exam (evaluation)
-    # to see if you actually learned the material vs just memorizing answers.
-    # If you do well on practice but poorly on the exam, you've overfit.
     train_test_split = train_dataset.train_test_split(test_size=0.1)
     train_dataset = train_test_split["train"]
     eval_dataset = train_test_split["test"]
@@ -232,29 +696,24 @@ def main():
     print(f"Training examples: {len(train_dataset)}")
     print(f"Evaluation examples: {len(eval_dataset)}")
 
-    # Calculate training time estimate
-    # This is a rough estimate based on typical speeds
     steps_per_epoch = len(train_dataset) // (args.batch_size * args.gradient_accumulation)
     total_steps = steps_per_epoch * args.epochs
 
-    # Rough speed estimates (steps per second) by model size and hardware
     if "8B" in args.model_name or "7B" in args.model_name:
         if args.use_galore:
-            speed_estimate = 1.4  # With GaLore on Arc B580
+            speed_estimate = 1.4
         else:
-            speed_estimate = 0.5  # Without GaLore (if it even fits)
+            speed_estimate = 0.5
     elif "1.5B" in args.model_name or "3B" in args.model_name:
         speed_estimate = 2.0
-    else:  # 0.5B-1B
+    else:
         speed_estimate = 3.0
 
     estimated_time_hours = total_steps / speed_estimate / 3600
     print(f"\nEstimated training time: ~{estimated_time_hours:.1f} hours")
     print(f"  ({total_steps} steps at ~{speed_estimate:.1f} steps/sec)")
 
-    # ==========================================================================
-    # CONFIGURE TRAINING
-    # ==========================================================================
+    # Configure training
     training_args = create_training_config(
         output_dir=args.output_dir,
         num_epochs=args.epochs,
@@ -265,9 +724,7 @@ def main():
         device=device
     )
 
-    # ==========================================================================
-    # CREATE TRAINER
-    # ==========================================================================
+    # Create trainer
     trainer = create_trainer(
         model=model,
         tokenizer=tokenizer,
@@ -281,27 +738,7 @@ def main():
         learning_rate=args.learning_rate
     )
 
-    # ==========================================================================
-    # TRAIN!
-    # ==========================================================================
-    # This is where the actual learning happens. The trainer.train() call starts
-    # the training loop. Depending on your data size and hardware, this could
-    # take minutes to days.
-    #
-    # What you'll see in the output:
-    #   - Loss: How wrong the model's predictions are (lower = better)
-    #     The loss should generally decrease over time.
-    #   - Eval loss: Same thing but on the held-out evaluation data.
-    #     If train loss goes down but eval loss goes UP, you're overfitting.
-    #   - Learning rate: Changes over time due to warmup and scheduling.
-    #   - Steps/second: Training speed. With GaLore on 8B models, expect 1-2 it/s.
-    #
-    # Real-world analogy: Watching the loss decrease is like watching a student's
-    # test scores improve over the semester. You want both homework scores (train
-    # loss) and exam scores (eval loss) to improve together. If homework scores
-    # improve but exam scores don't, the student is just memorizing homework
-    # answers instead of understanding the material (overfitting).
-
+    # Train
     print("\n" + "="*70)
     print("STARTING TRAINING")
     if args.resume_from_checkpoint:
@@ -310,58 +747,28 @@ def main():
         print(f"  Using GaLore for memory efficiency")
     print("="*70 + "\n")
 
-    # If --resume-from-checkpoint was provided, pass that path to trainer.train().
-    # The trainer will load the saved optimizer state, scheduler state, and model
-    # weights from the checkpoint directory and continue training from that point.
-    # If no checkpoint is specified, training starts fresh from the beginning.
-    #
-    # IMPORTANT with GaLore: When resuming, the GaLore projection matrices are
-    # also loaded from the checkpoint. Make sure you use the same GaLore settings
-    # (rank, update_proj_gap, scale) as the original training run, or the
-    # projection matrices won't match and training will fail or produce poor results.
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
 
     print("\n" + "="*70)
     print("TRAINING COMPLETE!")
     print("="*70 + "\n")
 
-    # ==========================================================================
-    # SAVE MODEL
-    # ==========================================================================
-    # Save the trained LoRA adapter weights and tokenizer.
-    #
-    # IMPORTANT: This only saves the LoRA adapter (~10-50MB), NOT the full base
-    # model (~1-16GB). To use the model later, you need:
-    #   1. Load the base model (Qwen 2.5 0.5B or Qwen3 8B)
-    #   2. Load the LoRA adapter on top
-    #
-    # This is one of the big advantages of LoRA: your saved adapters are tiny.
-    # You can train multiple specializations (MTG, cooking, coding) as separate
-    # adapters and swap them onto the same base model.
-    #
-    # Real-world analogy: Like saving a "mod" for a video game instead of saving
-    # a whole copy of the game. The mod file is small and changes the game's
-    # behavior, but you still need the base game installed.
-
+    # Save model
     print("Saving model...")
 
-    model.save_pretrained(args.output_dir)      # Save LoRA adapter weights
-    tokenizer.save_pretrained(args.output_dir)  # Save tokenizer (needed for inference)
+    model.save_pretrained(args.output_dir)
+    tokenizer.save_pretrained(args.output_dir)
 
     print(f"Model saved to {args.output_dir}")
     print(f"Adapter size: ~{trainable_params * 2 / 1024**2:.1f} MB")
 
-    # ==========================================================================
-    # TEST THE MODEL
-    # ==========================================================================
+    # Test the model
     if not args.no_test:
         test_model(model, tokenizer, device)
     else:
         print("\nSkipping test generation (--no-test flag set)")
 
-    # ==========================================================================
-    # DONE!
-    # ==========================================================================
+    # Done
     print("\nDone! Your fine-tuned model is ready to use.")
     print(f"\nTo use your model:")
     print(f"  from transformers import AutoModelForCausalLM")
