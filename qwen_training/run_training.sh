@@ -18,9 +18,9 @@ export ZE_FLAT_DEVICE_HIERARCHY=FLAT
   --galore-rank 256 \
   --galore-update-proj-gap 200 \
   --galore-scale 0.25 \
-  --batch-size 4 \
+  --batch-size 2 \
   --learning-rate 5e-5 \
-  --gradient-accumulation 4 \
+  --gradient-accumulation 8 \
   --epochs 3 \
   --max-seq-length 2048 \
   --output-dir ~/code/model_training/qwen_training/output-3b-mtg-expert

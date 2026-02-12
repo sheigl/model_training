@@ -9,7 +9,7 @@ from peft import PeftModel
 
 # Configuration
 BASE_MODEL = "Qwen/Qwen2.5-3B-Instruct"
-ADAPTER_PATH = "./output"  # Update this to your output directory
+ADAPTER_PATH = "./output-3b-mtg-expert"  # Update this to your output directory
 
 print("Loading model...")
 print(f"Base model: {BASE_MODEL}")
