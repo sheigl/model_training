@@ -33,6 +33,8 @@ from datetime import datetime
 import argparse
 import time
 
+MODEL_NAME="Qwen/Qwen2.5-7B-Instruct"  # Change to 14B when ready
+
 
 # =============================================================================
 # MONGODB SETUP
@@ -77,11 +79,10 @@ def save_to_mongo(synthetic_collection, examples, batch_size=1000):
 # MODEL LOADING (same as before)
 # =============================================================================
 
-def load_qwen_14b():
-    """Load Qwen 2.5 7B"""
-    print("Loading Qwen 2.5 7B model...")
+def loan_model():
+    print(f"Loading {MODEL_NAME} model...")
     
-    model_name = "Qwen/Qwen2.5-7B-Instruct"
+    model_name = MODEL_NAME
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -473,11 +474,11 @@ def generate_comparison_questions(model, tokenizer, cards_collection, target_cou
 
 Card 1: {card1_name}
 Cost: {card1.get('manaCost', 'N/A')}
-Text: {card1.get('text', '')[:150]}
+Text: {card1.get('text', '')}
 
 Card 2: {card2_name}
 Cost: {card2.get('manaCost', 'N/A')}
-Text: {card2.get('text', '')[:150]}
+Text: {card2.get('text', '')}
 
 Generate 2 comparison Q&A pairs in JSON:
 [
@@ -696,7 +697,7 @@ def generate_synergy_questions(model, tokenizer, cards_collection, combos_collec
         prompt = f"""Generate 2 synergy Q&A pairs for {card_name}.
 
 Card: {card_name}
-Text: {card.get('text', '')[:150]}
+Text: {card.get('text', '')}
 
 Cards that synergize with it: {', '.join(list(synergy_cards)[:5])}
 
@@ -808,7 +809,7 @@ def generate_budget_alternatives(model, tokenizer, cards_collection, target_coun
             prompt = f"""Generate 2 budget alternative Q&A pairs for {exp_name}.
 
 Expensive card: {exp_name} (rare/mythic)
-Text: {exp_card.get('text', '')[:150]}
+Text: {exp_card.get('text', '')}
 
 Budget alternatives:
 {budget_details}
@@ -1192,7 +1193,7 @@ def main():
     print("="*80)
     
     # Load model
-    model, tokenizer = load_qwen_14b()
+    model, tokenizer = loan_model()
     
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
