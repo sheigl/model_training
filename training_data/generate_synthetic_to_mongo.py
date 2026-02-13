@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import sys; sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_buffering=True)
 """
 Synthetic Query Generator - Saves to MongoDB
 
@@ -23,7 +24,7 @@ MongoDB Schema:
 }
 """
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
 import torch
 from pymongo import MongoClient
 import json
@@ -95,13 +96,23 @@ def load_qwen_14b():
 def query_model(model, tokenizer, prompt, max_tokens=500):
     """Query model"""
     messages = [{"role": "user", "content": prompt}]
+    print(f"\n{'─'*60}")
+    print(f"  → PROMPT ({len(prompt)} chars, max_tokens={max_tokens}):")
+    print(f"{'─'*60}")
+    print(prompt)
+    print(f"{'─'*60}")
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
-    
+
+    streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=True)
+    print(f"  → RESPONSE (streaming):")
+    print(f"{'─'*60}")
     with torch.no_grad():
-        outputs = model.generate(**inputs, max_new_tokens=max_tokens, temperature=0.7, top_p=0.9, do_sample=True)
-    
+        outputs = model.generate(**inputs, max_new_tokens=max_tokens, temperature=0.7, top_p=0.9, do_sample=True, streamer=streamer)
+
     response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+    print(f"{'─'*60}")
+    print(f"  → ({len(response)} chars total)\n")
     return response.strip()
 
 
@@ -177,7 +188,7 @@ Output ONLY valid JSON."""
                 if 'question' in qa and 'answer' in qa:
                     # Validate
                     valid = any(combo_card in qa['answer'] for combo in combo_descriptions for combo_card in combo['cards'] if combo_card != card_name)
-                    
+
                     if valid:
                         # Create MongoDB document
                         mongo_documents.append({
@@ -188,13 +199,19 @@ Output ONLY valid JSON."""
                             "validated": True,
                             "needs_review": False
                         })
-                        
+                        print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
+
                         if len(mongo_documents) >= target_count:
                             break
+                    else:
+                        print(f"    ✗ REJECTED (no combo cards in answer): {qa['question'][:80]}")
+                else:
+                    print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
         
         except Exception as e:
+            print(f"  ✗ Error generating for {card_name}: {type(e).__name__}: {e}")
             continue
-    
+
     print(f"  ✓ Generated {len(mongo_documents):,} combo queries")
     return mongo_documents
 
@@ -245,7 +262,7 @@ Output ONLY valid JSON."""
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa:
                     mentioned = sum(1 for name in card_names if name in qa['answer'])
-                    
+
                     if mentioned >= 2:
                         mongo_documents.append({
                             "question": qa['question'],
@@ -256,12 +273,18 @@ Output ONLY valid JSON."""
                             "validated": True,
                             "needs_review": False
                         })
-                        
+                        print(f"    ✓ ACCEPTED ({mentioned} cards mentioned): {qa['question'][:80]}")
+
                         if len(mongo_documents) >= target_count:
                             break
-        except:
+                    else:
+                        print(f"    ✗ REJECTED (only {mentioned}/2 cards mentioned): {qa['question'][:80]}")
+                else:
+                    print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+        except Exception as e:
+            print(f"  ✗ Error generating for {pattern['name']}: {type(e).__name__}: {e}")
             continue
-    
+
     print(f"  ✓ Generated {len(mongo_documents):,} card search queries")
     return mongo_documents
 
@@ -307,9 +330,12 @@ Output ONLY valid JSON."""
                     "validated": False,
                     "needs_review": True  # Manual verification needed!
                 })
-    
+                print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
+            else:
+                print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+
     except Exception as e:
-        print(f"  Error: {e}")
+        print(f"  Error: {type(e).__name__}: {e}")
     
     print(f"  ✓ Generated {len(mongo_documents):,} Commander rules")
     print(f"  ⚠️  Needs manual review!")
@@ -358,12 +384,16 @@ Output ONLY valid JSON."""
                         "validated": True,
                         "needs_review": False
                     })
-                    
+                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
+
                     if len(mongo_documents) >= target_count:
                         break
-        except:
+                else:
+                    print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+        except Exception as e:
+            print(f"  ✗ Error generating for {card1} + {card2}: {type(e).__name__}: {e}")
             continue
-    
+
     print(f"  ✓ Generated {len(mongo_documents):,} multi-card usage")
     return mongo_documents
 
@@ -468,12 +498,18 @@ Output ONLY valid JSON."""
                                 "validated": True,
                                 "needs_review": False
                             })
-                            
+                            print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
+
                             if len(mongo_documents) >= target_count:
                                 break
-            except:
+                        else:
+                            print(f"    ✗ REJECTED (neither card in answer): {qa['question'][:80]}")
+                    else:
+                        print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+            except Exception as e:
+                print(f"  ✗ Error generating comparison for {card1_name} vs {card2_name}: {type(e).__name__}: {e}")
                 continue
-    
+
     print(f"  ✓ Generated {len(mongo_documents):,} comparison questions")
     return mongo_documents
 
@@ -572,12 +608,18 @@ Output ONLY valid JSON."""
                             "validated": True,
                             "needs_review": False
                         })
-                        
+                        print(f"    ✓ ACCEPTED ({mentioned} cards mentioned): {qa['question'][:80]}")
+
                         if len(mongo_documents) >= target_count:
                             break
-        except:
+                    else:
+                        print(f"    ✗ REJECTED (only {mentioned}/2 cards mentioned): {qa['question'][:80]}")
+                else:
+                    print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+        except Exception as e:
+            print(f"  ✗ Error generating reverse lookup for '{pattern['feature']}': {type(e).__name__}: {e}")
             continue
-    
+
     print(f"  ✓ Generated {len(mongo_documents):,} reverse lookup questions")
     return mongo_documents
 
@@ -667,7 +709,8 @@ Output ONLY valid JSON."""
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa:
                     # Validate at least one synergy card mentioned
-                    if any(syn in qa['answer'] for syn in synergy_cards):
+                    matched_synergies = [syn for syn in synergy_cards if syn in qa['answer']]
+                    if matched_synergies:
                         mongo_documents.append({
                             "question": qa['question'],
                             "answer": qa['answer'],
@@ -676,12 +719,18 @@ Output ONLY valid JSON."""
                             "validated": True,
                             "needs_review": False
                         })
-                        
+                        print(f"    ✓ ACCEPTED (synergies: {', '.join(matched_synergies[:3])}): {qa['question'][:80]}")
+
                         if len(mongo_documents) >= target_count:
                             break
-        except:
+                    else:
+                        print(f"    ✗ REJECTED (no synergy cards in answer): {qa['question'][:80]}")
+                else:
+                    print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+        except Exception as e:
+            print(f"  ✗ Error generating synergy for {card_name}: {type(e).__name__}: {e}")
             continue
-    
+
     print(f"  ✓ Generated {len(mongo_documents):,} synergy questions")
     return mongo_documents
 
@@ -773,7 +822,9 @@ Output ONLY valid JSON."""
                 for qa in qa_pairs:
                     if 'question' in qa and 'answer' in qa:
                         # Validate budget cards mentioned
-                        if any(name in qa['answer'] for name in budget_names):
+                        matched_budget = [name for name in budget_names if name in qa['answer']]
+                        if matched_budget:
+                            print(f"    ✓ ACCEPTED (budget cards: {', '.join(matched_budget[:3])}): {qa['question'][:80]}")
                             mongo_documents.append({
                                 "question": qa['question'],
                                 "answer": qa['answer'],
@@ -783,7 +834,12 @@ Output ONLY valid JSON."""
                                 "validated": True,
                                 "needs_review": False
                             })
-            except:
+                        else:
+                            print(f"    ✗ REJECTED (no budget cards in answer): {qa['question'][:80]}")
+                    else:
+                        print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+            except Exception as e:
+                print(f"  ✗ Error generating budget alt for {exp_name}: {type(e).__name__}: {e}")
                 continue
     
     print(f"  ✓ Generated {len(mongo_documents):,} budget alternative questions")
@@ -885,12 +941,16 @@ Output ONLY valid JSON."""
                         "validated": True,
                         "needs_review": False
                     })
-                    
+                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
+
                     if len(mongo_documents) >= target_count:
                         break
-        except:
+                else:
+                    print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+        except Exception as e:
+            print(f"  ✗ Error generating color identity for {card_name}/{commander_name}: {type(e).__name__}: {e}")
             continue
-    
+
     print(f"  ✓ Generated {len(mongo_documents):,} color identity questions")
     return mongo_documents
 
@@ -965,10 +1025,14 @@ Output ONLY valid JSON."""
                         "validated": False,
                         "needs_review": True  # Guidelines should be reviewed
                     })
-                    
+                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
+
                     if len(mongo_documents) >= target_count:
                         break
-        except:
+                else:
+                    print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+        except Exception as e:
+            print(f"  ✗ Error generating guideline variation for '{base_question[:50]}...': {type(e).__name__}: {e}")
             # If generation fails, use original
             mongo_documents.append({
                 "question": base_question,
