@@ -118,7 +118,9 @@ except ImportError:
 # k_proj = Key projection    ("What information do I have?")
 # v_proj = Value projection   ("What's the actual content?")
 # o_proj = Output projection  ("How do I combine everything?")
-TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj"]
+# This adds the MLP layers (gate_proj, up_proj, down_proj) which research shows significantly improves performance.
+
+TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
 DEFAULT_TEST_PROMPTS = [
     "What is machine learning?",

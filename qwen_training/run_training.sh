@@ -14,14 +14,10 @@ export ZE_FLAT_DEVICE_HIERARCHY=FLAT
   --lora-r 32 \
   --lora-alpha 64 \
   --lora-dropout 0.05 \
-  --use-galore \
-  --galore-rank 128 \
-  --galore-update-proj-gap 200 \
-  --galore-scale 0.25 \
   --batch-size 2 \
-  --learning-rate 1e-4 \
+  --learning-rate 2e-4 \
   --gradient-accumulation 8 \
-  --epochs 1 \
+  --epochs 3 \
   --max-seq-length 2048 \
-  --output-dir ~/code/model_training/qwen_training/test-1epoch-1e4 \
-  2>&1 | tee ~/.log/test_training_1e4.log
+  --output-dir ~/code/model_training/qwen_training/output-3b-mtg-qlora \
+  2>&1 | tee ~/.log/model_training_qlora.log
