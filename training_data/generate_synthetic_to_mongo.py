@@ -78,10 +78,10 @@ def save_to_mongo(synthetic_collection, examples, batch_size=1000):
 # =============================================================================
 
 def load_qwen_14b():
-    """Load Qwen 2.5 14B"""
-    print("Loading Qwen 2.5 14B model...")
+    """Load Qwen 2.5 7B"""
+    print("Loading Qwen 2.5 7B model...")
     
-    model_name = "Qwen/Qwen2.5-14B-Instruct"
+    model_name = "Qwen/Qwen2.5-7B-Instruct"
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -106,7 +106,7 @@ def query_model(model: PreTrainedModel, tokenizer, prompt, max_tokens=500):
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
-    #streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=True)
+    streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=True)
     print(f"  → RESPONSE (streaming):")
     print(f"{'─'*60}")
     with torch.no_grad():
@@ -116,7 +116,7 @@ def query_model(model: PreTrainedModel, tokenizer, prompt, max_tokens=500):
             temperature=0.7, 
             top_p=0.9, 
             do_sample=True, 
-            #streamer=streamer,
+            streamer=streamer,
             use_cache=True,
             pad_token_id=tokenizer.eos_token_id,
             num_beams=1)
