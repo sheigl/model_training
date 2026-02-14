@@ -81,7 +81,7 @@ def save_to_mongo(synthetic_collection, examples, batch_size=1000):
 
 
 # =============================================================================
-# MODEL LOADING (same as before)
+# MODEL LOADING
 # =============================================================================
 
 def load_model():
@@ -599,7 +599,7 @@ Answers should compare costs, effects, flexibility, and give a situational recom
 Output ONLY valid JSON."""
 
             try:
-                response = query_ollama(MODEL_NAME, prompt, max_tokens=500) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
+                response = query_ollama(MODEL_NAME, prompt, max_tokens=1000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
@@ -708,7 +708,7 @@ Answers should list 3-5 best cards from the matching cards above.
 Output ONLY valid JSON."""
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=600) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=600)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=1000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=600)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -820,7 +820,7 @@ Answers should explain why the synergy works and list 2-3 cards.
 Output ONLY valid JSON."""
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=1000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
