@@ -32,8 +32,12 @@ import random
 from datetime import datetime
 import argparse
 import time
+import ollama
 
-MODEL_NAME="Qwen/Qwen2.5-7B-Instruct"  # Change to 14B when ready
+MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
+
+global USE_OLLAMA
+USE_OLLAMA=True  # Set to True to use Ollama API instead of local model (make sure Ollama is running with the model)
 
 
 # =============================================================================
@@ -79,7 +83,7 @@ def save_to_mongo(synthetic_collection, examples, batch_size=1000):
 # MODEL LOADING (same as before)
 # =============================================================================
 
-def loan_model():
+def load_model():
     print(f"Loading {MODEL_NAME} model...")
     
     model_name = MODEL_NAME
@@ -129,6 +133,30 @@ def query_model(model: PreTrainedModel, tokenizer, prompt, max_tokens=500):
     print(f"  ✓ Response generated in {end - start:.2f} seconds")
     return response.strip()
 
+def query_ollama(model_name, prompt, max_tokens=500):
+    """Query Ollama API"""
+    start = time.time()
+    print(f"\n{'─'*60}")
+    print(f"  → PROMPT ({len(prompt)} chars, max_tokens={max_tokens}):")
+    print(f"{'─'*60}")
+    print(prompt)
+    print(f"{'─'*60}")
+    
+    try:
+        response = ollama.chat(model=model_name, messages=[{"role": "user", "content": prompt}], options={"num_predict": max_tokens, "temperature": 0.7})
+        response_content = response.message.get("content", "")
+        
+        print(f"  → RESPONSE:")
+        print(f"{'─'*60}")
+        print(response_content)
+        print(f"{'─'*60}")
+        end = time.time()
+        print(f"  ✓ Response generated in {end - start:.2f} seconds")
+        return response_content.strip()
+    except Exception as e:
+        end = time.time()
+        print(f"  ✗ Error querying Ollama: {type(e).__name__}: {e} (after {end - start:.2f} seconds)")
+        raise e
 
 # =============================================================================
 # GENERATION FUNCTIONS (adapted to save MongoDB format)
@@ -194,7 +222,7 @@ Make questions varied and natural. Base answers on combo data above.
 Output ONLY valid JSON."""
 
         try:
-            response = query_model(model, tokenizer, prompt, max_tokens=800)
+            response =  query_ollama(MODEL_NAME, prompt, max_tokens=800) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=800)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -269,7 +297,7 @@ Output JSON with natural questions and helpful answers listing 3-5 best cards.
 Output ONLY valid JSON."""
 
         try:
-            response = query_model(model, tokenizer, prompt, max_tokens=1000)
+            response =  query_ollama(MODEL_NAME, prompt, max_tokens=1000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=1000)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -330,7 +358,7 @@ Output JSON array. Keep answers 2-3 sentences, accurate and concise.
 Output ONLY valid JSON."""
 
     try:
-        response = query_model(model, tokenizer, prompt, max_tokens=2000)
+        response =  query_ollama(MODEL_NAME, prompt, max_tokens=2000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=2000)
         response = response.replace("```json", "").replace("```", "").strip()
         qa_pairs = json.loads(response)
         
@@ -384,7 +412,7 @@ Output JSON with natural questions like "How do I use X with Y?"
 Output ONLY valid JSON."""
 
         try:
-            response = query_model(model, tokenizer, prompt, max_tokens=400)
+            response =  query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -495,7 +523,7 @@ Answers should compare costs, effects, flexibility, and give a situational recom
 Output ONLY valid JSON."""
 
             try:
-                response = query_model(model, tokenizer, prompt, max_tokens=500)
+                response = query_ollama(MODEL_NAME, prompt, max_tokens=500) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
@@ -604,7 +632,7 @@ Answers should list 3-5 best cards from the matching cards above.
 Output ONLY valid JSON."""
 
         try:
-            response = query_model(model, tokenizer, prompt, max_tokens=600)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=600) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=600)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -716,7 +744,7 @@ Answers should explain why the synergy works and list 2-3 cards.
 Output ONLY valid JSON."""
 
         try:
-            response = query_model(model, tokenizer, prompt, max_tokens=400)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -829,7 +857,7 @@ Answers should list 2-3 budget cards and explain they do similar things for less
 Output ONLY valid JSON."""
 
             try:
-                response = query_model(model, tokenizer, prompt, max_tokens=400)
+                response = query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
@@ -938,7 +966,7 @@ Answers should explain color identity rules and give YES/NO.
 Output ONLY valid JSON."""
 
         try:
-            response = query_model(model, tokenizer, prompt, max_tokens=300)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=300) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=300)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -1024,7 +1052,7 @@ Keep the core answer the same but phrase questions naturally and diversely.
 Output ONLY valid JSON."""
 
         try:
-            response = query_model(model, tokenizer, prompt, max_tokens=500)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=500) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -1156,6 +1184,7 @@ def main():
     parser.add_argument('--color-identity', type=int, default=0, help='Color identity questions')
     parser.add_argument('--guidelines', type=int, default=0, help='Deckbuilding guidelines')
     parser.add_argument('--terminology', type=int, default=0, help='MTG terminology/slang')
+    parser.add_argument('--use-ollama', action='store_true', help='Use Ollama API for text generation instead of local model')
     
     # Preset modes
     parser.add_argument('--phase1', action='store_true', help='Generate all Phase 1 formats (15K total)')
@@ -1163,8 +1192,15 @@ def main():
     
     args = parser.parse_args()
     
+    if args.use_ollama:
+        global USE_OLLAMA
+        USE_OLLAMA = True
+        print("\n⚡ Using Ollama API for text generation")
+    else:
+        print("\n⚡ Using local model for text generation (this may take longer)")
+    
     # Apply presets
-    if args.phase1:
+    if True: #args.phase1:
         args.comparison = 2000
         args.reverse_lookup = 3000
         args.synergy = 3000
@@ -1193,7 +1229,9 @@ def main():
     print("="*80)
     
     # Load model
-    model, tokenizer = loan_model()
+    model, tokenizer = None, None
+    if not USE_OLLAMA:
+        model, tokenizer = load_model()
     
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
