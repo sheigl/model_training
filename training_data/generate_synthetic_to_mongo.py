@@ -81,7 +81,7 @@ def save_to_mongo(synthetic_collection, examples, batch_size=1000):
 
 
 # =============================================================================
-# MODEL LOADING
+# MODEL LOADING (same as before)
 # =============================================================================
 
 def load_model():
@@ -599,31 +599,53 @@ Answers should compare costs, effects, flexibility, and give a situational recom
 Output ONLY valid JSON."""
 
             try:
-                response = query_ollama(MODEL_NAME, prompt, max_tokens=1000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
+                response = query_ollama(MODEL_NAME, prompt, max_tokens=500) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
                 for qa in qa_pairs:
-                    if 'question' in qa and 'answer' in qa:
-                        # Validate both cards mentioned
-                        if card1_name in qa['answer'] or card2_name in qa['answer']:
-                            mongo_documents.append({
-                                "question": qa['question'],
-                                "answer": qa['answer'],
-                                "category": "comparison",
-                                "source_data": [card1_name, card2_name],
-                                "effect_type": pattern['effect'],
-                                "validated": True,
-                                "needs_review": False
-                            })
-                            print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
-
-                            if len(mongo_documents) >= target_count:
-                                break
-                        else:
-                            print(f"    ✗ REJECTED (neither card in answer): {qa['question'][:80]}")
-                    else:
+                    # Basic structure check
+                    if 'question' not in qa or 'answer' not in qa:
                         print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+                        continue
+                    
+                    # Quick check: at least one card mentioned (fast filter)
+                    if card1_name not in qa['answer'] and card2_name not in qa['answer']:
+                        print(f"    ✗ REJECTED (neither card in answer): {qa['question'][:80]}")
+                        continue
+                    
+                    # Quick check: not too short
+                    if len(qa['answer']) < 80:
+                        print(f"    ✗ REJECTED (answer too short: {len(qa['answer'])} chars): {qa['question'][:80]}")
+                        continue
+                    
+                    # Model-based validation (the smart filter!)
+                    try:
+                        is_valid, reason, score = validate_with_model(MODEL_NAME, card1, card2, qa)
+                    except Exception as e:
+                        print(f"    ⚠️  Validation failed ({e}), accepting by default")
+                        is_valid = True
+                        score = 5
+                        reason = "validation_error"
+                    
+                    # Accept if score is 7 or higher
+                    if is_valid and score >= 7:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "comparison",
+                            "source_data": [card1_name, card2_name],
+                            "effect_type": pattern['effect'],
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                        
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
             except Exception as e:
                 print(f"  ✗ Error generating comparison for {card1_name} vs {card2_name}: {type(e).__name__}: {e}")
                 continue
@@ -708,7 +730,7 @@ Answers should list 3-5 best cards from the matching cards above.
 Output ONLY valid JSON."""
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=1000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=600)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=600) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=600)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -820,7 +842,7 @@ Answers should explain why the synergy works and list 2-3 cards.
 Output ONLY valid JSON."""
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=1000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
