@@ -295,7 +295,7 @@ Output JSON:
 ]
 
 Make questions varied and natural. Base answers on combo data above.
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
         try:
             response =  query_ollama(MODEL_NAME, prompt, max_tokens=800) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=800)
@@ -370,7 +370,7 @@ Example cards:
 {card_info}
 
 Output JSON with natural questions and helpful answers listing 3-5 best cards.
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
         try:
             response =  query_ollama(MODEL_NAME, prompt, max_tokens=1000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=1000)
@@ -431,7 +431,7 @@ Commander rules:
 Generate 20 common Commander questions with accurate answers.
 
 Output JSON array. Keep answers 2-3 sentences, accurate and concise.
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
     try:
         response =  query_ollama(MODEL_NAME, prompt, max_tokens=2000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=2000)
@@ -485,7 +485,7 @@ def generate_multi_card_usage(model, tokenizer, combos_collection, target_count=
 How they work: {description}
 
 Output JSON with natural questions like "How do I use X with Y?"
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
         try:
             response =  query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
@@ -596,7 +596,7 @@ Questions should be like:
 - "Should I run {card1_name} or {card2_name}?"
 
 Answers should compare costs, effects, flexibility, and give a situational recommendation.
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
             try:
                 response = query_ollama(MODEL_NAME, prompt, max_tokens=500) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
@@ -727,7 +727,7 @@ Questions should be like:
 - "Is there a card that {pattern['feature']}?"
 
 Answers should list 3-5 best cards from the matching cards above.
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
         try:
             response = query_ollama(MODEL_NAME, prompt, max_tokens=600) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=600)
@@ -839,7 +839,7 @@ Questions like:
 - "What commander works with {card_name}?"
 
 Answers should explain why the synergy works and list 2-3 cards.
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
         try:
             response = query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
@@ -952,7 +952,7 @@ Questions like:
 - "Budget version of {exp_name}?"
 
 Answers should list 2-3 budget cards and explain they do similar things for less $$.
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
             try:
                 response = query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
@@ -1061,7 +1061,7 @@ Questions like:
 - "Is {card_name} legal in {commander_name}?"
 
 Answers should explain color identity rules and give YES/NO.
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
         try:
             response = query_ollama(MODEL_NAME, prompt, max_tokens=300) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=300)
@@ -1147,7 +1147,7 @@ Generate 3 variations in JSON:
 ]
 
 Keep the core answer the same but phrase questions naturally and diversely.
-Output ONLY valid JSON."""
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
 
         try:
             response = query_ollama(MODEL_NAME, prompt, max_tokens=500) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
