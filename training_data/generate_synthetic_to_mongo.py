@@ -1273,7 +1273,7 @@ def main():
     parser.add_argument('--card-search', type=int, default=0)
     parser.add_argument('--commander', type=int, default=0)
     parser.add_argument('--multi-card', type=int, default=0)
-    parser.add_argument()
+    #parser.add_argument('--model', type=str, default=0)
     
     # Phase 1 formats (NEW!)
     parser.add_argument('--comparison', type=int, default=0, help='Card comparison questions')
