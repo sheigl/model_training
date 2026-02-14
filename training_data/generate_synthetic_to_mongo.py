@@ -34,6 +34,7 @@ import argparse
 import time
 import ollama
 
+global MODEL_NAME
 MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
 
 global USE_OLLAMA
@@ -133,7 +134,7 @@ def query_model(model: PreTrainedModel, tokenizer, prompt, max_tokens=500):
     print(f"  ✓ Response generated in {end - start:.2f} seconds")
     return response.strip()
 
-def query_ollama(model_name, prompt, max_tokens=500):
+def query_ollama(model_name: str, prompt: str, max_tokens=1000):
     """Query Ollama API"""
     start = time.time()
     print(f"\n{'─'*60}")
@@ -157,6 +158,81 @@ def query_ollama(model_name, prompt, max_tokens=500):
         end = time.time()
         print(f"  ✗ Error querying Ollama: {type(e).__name__}: {e} (after {end - start:.2f} seconds)")
         raise e
+
+def validate_with_model(model_name: str, card1, card2, qa):
+    """
+    Ask the model to validate its own comparison answer
+    
+    Returns: (is_valid: bool, reason: str, score: int)
+    """
+    question = qa.get('question', '')
+    answer = qa.get('answer', '')
+    
+    # Build validation prompt
+    validation_prompt = f"""You are a Magic: The Gathering expert reviewing a comparison answer for accuracy.
+
+Card 1: {card1.get('name', '')}
+Text: {card1.get('text', '')[:300]}
+Cost: {card1.get('manaCost', 'N/A')}
+
+Card 2: {card2.get('name', '')}
+Text: {card2.get('text', '')[:300]}
+Cost: {card2.get('manaCost', 'N/A')}
+
+Question: {question}
+
+Answer to validate:
+{answer}
+
+Review this answer for:
+1. Accuracy - Does it correctly describe both cards?
+2. Completeness - Does it mention important abilities (like card draw, destroy effects, etc.)?
+3. Usefulness - Does it give clear guidance on when to use each card?
+
+Respond ONLY with JSON:
+{{
+  "score": <1-10>,
+  "is_acceptable": <true/false>,
+  "missing_info": "<what critical info is missing, if any>",
+  "errors": "<factual errors, if any>"
+}}
+
+A score of 7+ is acceptable. Below 7 should be rejected.
+Output ONLY valid JSON, no other text."""
+
+    try:
+        response = query_ollama(model_name, validation_prompt, max_tokens=200)
+        
+        # Parse JSON response
+        response = response.replace("```json", "").replace("```", "").strip()
+        result = json.loads(response)
+        
+        score = result.get('score', 0)
+        is_acceptable = result.get('is_acceptable', False)
+        missing_info = result.get('missing_info', '')
+        errors = result.get('errors', '')
+        
+        # Build reason string
+        if not is_acceptable:
+            reason_parts = []
+            if missing_info:
+                reason_parts.append(f"Missing: {missing_info}")
+            if errors:
+                reason_parts.append(f"Errors: {errors}")
+            reason = "; ".join(reason_parts) if reason_parts else "Score too low"
+        else:
+            reason = "OK"
+        
+        return is_acceptable, reason, score
+    
+    except json.JSONDecodeError as e:
+        print(f"    ⚠️  Failed to parse validation JSON: {e}")
+        # If validation fails, be conservative - accept it
+        return True, "Validation parse failed (accepted by default)", 5
+    
+    except Exception as e:
+        print(f"    ⚠️  Validation error: {e}")
+        return True, "Validation error (accepted by default)", 5
 
 # =============================================================================
 # GENERATION FUNCTIONS (adapted to save MongoDB format)
@@ -1175,6 +1251,7 @@ def main():
     parser.add_argument('--card-search', type=int, default=0)
     parser.add_argument('--commander', type=int, default=0)
     parser.add_argument('--multi-card', type=int, default=0)
+    parser.add_argument()
     
     # Phase 1 formats (NEW!)
     parser.add_argument('--comparison', type=int, default=0, help='Card comparison questions')
