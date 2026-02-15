@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import sys; sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_buffering=True)
+import sys
+from typing import Collection; sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_buffering=True)
 """
 Synthetic Query Generator - Saves to MongoDB
 
@@ -24,8 +25,6 @@ MongoDB Schema:
 }
 """
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel, TextStreamer
-import torch
 from pymongo import MongoClient
 import json
 import random
@@ -36,10 +35,6 @@ import ollama
 
 global MODEL_NAME
 MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
-
-global USE_OLLAMA
-USE_OLLAMA=True  # Set to True to use Ollama API instead of local model (make sure Ollama is running with the model)
-
 
 # =============================================================================
 # MONGODB SETUP
@@ -84,56 +79,6 @@ def save_to_mongo(synthetic_collection, examples, batch_size=1000):
 # MODEL LOADING (same as before)
 # =============================================================================
 
-def load_model():
-    print(f"Loading {MODEL_NAME} model...")
-    
-    model_name = MODEL_NAME
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True
-    )
-    
-    print("  ✓ Model loaded")
-    return model, tokenizer
-
-
-def query_model(model: PreTrainedModel, tokenizer, prompt, max_tokens=500):
-    """Query model"""
-    start = time.time()
-    messages = [{"role": "user", "content": prompt}]
-    print(f"\n{'─'*60}")
-    print(f"  → PROMPT ({len(prompt)} chars, max_tokens={max_tokens}):")
-    print(f"{'─'*60}")
-    print(prompt)
-    print(f"{'─'*60}")
-    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    inputs = tokenizer(text, return_tensors="pt").to(model.device)
-
-    streamer = TextStreamer(tokenizer, skip_special_tokens=True, skip_prompt=True)
-    print(f"  → RESPONSE (streaming):")
-    print(f"{'─'*60}")
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs, 
-            max_new_tokens=max_tokens, 
-            temperature=0.7, 
-            top_p=0.9, 
-            do_sample=True, 
-            streamer=streamer,
-            use_cache=True,
-            pad_token_id=tokenizer.eos_token_id,
-            num_beams=1)
-
-    response = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
-    print(f"{'─'*60}")
-    print(f"  → ({len(response)} chars total)\n")
-    end = time.time()
-    print(f"  ✓ Response generated in {end - start:.2f} seconds")
-    return response.strip()
-
 def query_ollama(model_name: str, prompt: str, max_tokens=1000):
     """Query Ollama API"""
     start = time.time()
@@ -144,7 +89,12 @@ def query_ollama(model_name: str, prompt: str, max_tokens=1000):
     print(f"{'─'*60}")
     
     try:
-        response = ollama.chat(model=model_name, messages=[{"role": "user", "content": prompt}], options={"num_predict": max_tokens, "temperature": 0.7})
+        response = ollama.chat(model=model_name, messages=[{"role": "user", "content": prompt}], options=
+                               {
+                                   "num_predict": max_tokens,
+                                   'num_ctx': 8192, # Set the total context window size
+                                   "temperature": 0.7
+                                })
         response_content = response.message.get("content", "")
         
         print(f"  → RESPONSE:")
@@ -159,24 +109,31 @@ def query_ollama(model_name: str, prompt: str, max_tokens=1000):
         print(f"  ✗ Error querying Ollama: {type(e).__name__}: {e} (after {end - start:.2f} seconds)")
         raise e
 
-def validate_with_model(model_name: str, card1, card2, qa):
-    """
-    Ask the model to validate its own comparison answer
-    
-    Returns: (is_valid: bool, reason: str, score: int)
-    """
-    question = qa.get('question', '')
-    answer = qa.get('answer', '')
-    
+
+# =============================================================================
+# PROMPT BUILDING
+# =============================================================================
+
+def build_card_search_prompt(pattern: dict, card_info: str) -> str:
+    prompt = f"""Generate 5 Q&A pairs for: {pattern['name']}
+
+Example cards:
+{card_info}
+
+Output JSON with natural questions and helpful answers listing 3-5 best cards.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+
+
+def build_card_validation_prompt(card1: dict, card2: dict, question: str, answer:str) -> str:
     # Build validation prompt
-    validation_prompt = f"""You are a Magic: The Gathering expert reviewing a comparison answer for accuracy.
+    prompt = f"""You are a Magic: The Gathering expert reviewing a comparison answer for accuracy.
 
 Card 1: {card1.get('name', '')}
-Text: {card1.get('text', '')[:300]}
+Text: {card1.get('text', '')}
 Cost: {card1.get('manaCost', 'N/A')}
 
 Card 2: {card2.get('name', '')}
-Text: {card2.get('text', '')[:300]}
+Text: {card2.get('text', '')}
 Cost: {card2.get('manaCost', 'N/A')}
 
 Question: {question}
@@ -191,17 +148,232 @@ Review this answer for:
 
 Respond ONLY with JSON:
 {{
-  "score": <1-10>,
-  "is_acceptable": <true/false>,
-  "missing_info": "<what critical info is missing, if any>",
-  "errors": "<factual errors, if any>"
+"score": <1-10>,
+"is_acceptable": <true/false>,
+"missing_info": "<what critical info is missing, if any>",
+"errors": "<factual errors, if any>"
 }}
 
 A score of 7+ is acceptable. Below 7 should be rejected.
 Output ONLY valid JSON, no other text."""
 
+    return prompt
+
+def build_combo_prompt(card_name: str, combo_list: str) -> str:
+    prompt = f"""Generate 3 natural Q&A pairs about combos with {card_name}.
+
+Known combos:
+{combo_list}
+
+Output JSON:
+[
+{{"question": "...", "answer": "..."}},
+{{"question": "...", "answer": "..."}},
+{{"question": "...", "answer": "..."}}
+]
+
+Make questions varied and natural. Base answers on combo data above.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+
+    return prompt
+
+def build_commander_prompt() -> str: 
+    commander_context = """
+Commander rules:
+- 100-card singleton deck
+- One legendary creature commander
+- Commander determines color identity
+- Starting life: 40
+- Command zone where commanders exist
+- Commander tax: +{2} each time cast
+- Commander damage: 21 from one commander kills
+- Multiplayer: typically 4 players
+"""
+        
+    prompt = f"""Based on Commander rules:
+
+{commander_context}
+
+Generate 20 common Commander questions with accurate answers.
+
+Output JSON array. Keep answers 2-3 sentences, accurate and concise.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+
+    return prompt
+
+def build_multi_card_usage_prompt(card1: str, card2: str, description: str) -> str:
+    prompt = f"""Generate 2 usage questions for: {card1} and {card2}
+
+How they work: {description}
+
+Output JSON with natural questions like "How do I use X with Y?"
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    return prompt
+
+def build_card_comparision_prompt(card1: dict, card2: dict) -> str:
+    card1_name = card1.get('name', '')
+    card2_name = card2.get('name', '')
+    
+    prompt = f"""Compare these two Magic cards with similar effects:
+
+Card 1: {card1_name}
+Cost: {card1.get('manaCost', 'N/A')}
+Text: {card1.get('text', '')}
+
+Card 2: {card2_name}
+Cost: {card2.get('manaCost', 'N/A')}
+Text: {card2.get('text', '')}
+
+Generate 2 comparison Q&A pairs in JSON:
+[
+  {{"question": "...", "answer": "..."}},
+  {{"question": "...", "answer": "..."}}
+]
+
+Questions should be like:
+- "Which is better, {card1_name} or {card2_name}?"
+- "{card1_name} vs {card2_name}?"
+- "Should I run {card1_name} or {card2_name}?"
+
+Answers should compare costs, effects, flexibility, and give a situational recommendation.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    return prompt
+
+def build_reverse_lookup_prompt(pattern: dict, card_details: str) -> str:
+    prompt = f"""Generate 3 reverse lookup Q&A pairs for cards that "{pattern['feature']}".
+
+Matching cards:
+{card_details}
+
+Output JSON:
+[
+  {{"question": "...", "answer": "..."}},
+  {{"question": "...", "answer": "..."}},
+  {{"question": "...", "answer": "..."}}
+]
+
+Questions should be like:
+- "What card {pattern['feature']}?"
+- "What cards {pattern['feature']}?"
+- "Is there a card that {pattern['feature']}?"
+
+Answers should list 3-5 best cards from the matching cards above.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    return prompt
+
+def build_synergy_prompt(card: dict, synergy_cards: set) -> str:
+    card_name = card.get('name', '')
+    prompt = f"""Generate 2 synergy Q&A pairs for {card_name}.
+
+Card: {card_name}
+Text: {card.get('text', '')}
+
+Cards that synergize with it: {', '.join(list(synergy_cards)[:5])}
+
+Output JSON:
+[
+  {{"question": "...", "answer": "..."}},
+  {{"question": "...", "answer": "..."}}
+]
+
+Questions like:
+- "What cards synergize with {card_name}?"
+- "What goes well with {card_name}?"
+- "What commander works with {card_name}?"
+
+Answers should explain why the synergy works and list 2-3 cards.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    return prompt
+
+def build_budget_alternative_prompt(exp_card: dict, budget_details: str) -> str:
+    exp_name = exp_card.get('name', '')
+    prompt = f"""Generate 2 budget alternative Q&A pairs for {exp_name}.
+
+Expensive card: {exp_name} (rare/mythic)
+Text: {exp_card.get('text', '')}
+
+Budget alternatives:
+{budget_details}
+
+Output JSON:
+[
+  {{"question": "...", "answer": "..."}},
+  {{"question": "...", "answer": "..."}}
+]
+
+Questions like:
+- "What's a budget alternative to {exp_name}?"
+- "Cheap replacement for {exp_name}?"
+- "Budget version of {exp_name}?"
+
+Answers should list 2-3 budget cards and explain they do similar things for less $$.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    return prompt
+
+def build_color_identity_prompt(card: dict, commander_name: str, commander_colors: list[str], is_legal: bool) -> str:
+    card_name = card.get('name', '')
+    card_colors = card.get('colorIdentity', card.get('colors', []))
+    prompt = f"""Generate 2 color identity Q&A pairs.
+
+Card: {card_name}
+Color identity: {', '.join(card_colors) if card_colors else 'Colorless'}
+Mana cost: {card.get('manaCost', 'N/A')}
+
+Commander: {commander_name}
+Color identity: {', '.join(commander_colors)}
+
+Can this card be played: {"YES" if is_legal else "NO"}
+
+Output JSON:
+[
+  {{"question": "...", "answer": "..."}},
+  {{"question": "...", "answer": "..."}}
+]
+
+Questions like:
+- "Can I play {card_name} in my {commander_name} deck?"
+- "What's the color identity of {card_name}?"
+- "Is {card_name} legal in {commander_name}?"
+
+Answers should explain color identity rules and give YES/NO.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    return prompt
+
+def build_quick_guidelines_prompt(base_question: str, base_answer: str) -> str:
+    prompt = f"""Given this deckbuilding guideline, generate 3 variations with different phrasings.
+
+Original Q&A:
+Q: {base_question}
+A: {base_answer}
+
+Generate 3 variations in JSON:
+[
+  {{"question": "...", "answer": "..."}},
+  {{"question": "...", "answer": "..."}},
+  {{"question": "...", "answer": "..."}}
+]
+
+Keep the core answer the same but phrase questions naturally and diversely.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    return prompt
+
+# ============================================================================
+# VALIDATION
+# ============================================================================
+
+def validate_with_model(model_name: str, card1: dict, card2: dict, qa: dict):
+    """
+    Ask the model to validate its own comparison answer
+    
+    Returns: (is_valid: bool, reason: str, score: int)
+    """
+    question = qa.get('question', '')
+    answer = qa.get('answer', '')
+    
+    validation_prompt = build_card_validation_prompt(card1, card2, question, answer)
+
     try:
-        response = query_ollama(model_name, validation_prompt, max_tokens=200)
+        response = query_ollama(model_name, validation_prompt)
         
         # Parse JSON response
         response = response.replace("```json", "").replace("```", "").strip()
@@ -238,13 +410,13 @@ Output ONLY valid JSON, no other text."""
 # GENERATION FUNCTIONS (adapted to save MongoDB format)
 # =============================================================================
 
-def generate_combo_queries(model, tokenizer, combos_collection, target_count=5000):
+def generate_combo_queries(combos_collection: Collection, target_count=5000) -> list:
     """Generate combo queries - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} COMBO QUERIES ===")
     mongo_documents = []
     
     # Get combos grouped by card
-    all_combos = list(combos_collection.find({'status': 'OK'}).limit(15000))
+    all_combos = list(combos_collection.find({'status': 'OK'}))
     
     combos_by_card = {}
     for combo in all_combos:
@@ -282,23 +454,10 @@ def generate_combo_queries(model, tokenizer, combos_collection, target_count=500
         # Build prompt
         combo_list = "\n".join([f"  - {' + '.join(c['cards'])}: {c['description']}" for c in combo_descriptions])
         
-        prompt = f"""Generate 3 natural Q&A pairs about combos with {card_name}.
-
-Known combos:
-{combo_list}
-
-Output JSON:
-[
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}}
-]
-
-Make questions varied and natural. Base answers on combo data above.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+        prompt = build_combo_prompt(card_name, combo_list)
 
         try:
-            response =  query_ollama(MODEL_NAME, prompt, max_tokens=800) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=800)
+            response =  query_ollama(MODEL_NAME, prompt)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -333,8 +492,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     print(f"  ✓ Generated {len(mongo_documents):,} combo queries")
     return mongo_documents
 
-
-def generate_card_search_queries(model, tokenizer, cards_collection, target_count=3000):
+def generate_card_search_queries(cards_collection: Collection, target_count=3000) -> list:
     """Generate card search queries - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} CARD SEARCH QUERIES ===")
     mongo_documents = []
@@ -364,16 +522,10 @@ def generate_card_search_queries(model, tokenizer, cards_collection, target_coun
         card_info = "\n".join([f"  - {c.get('name', '')} ({c.get('manaCost', '')}): {c.get('text', '')[:100]}..." for c in matching_cards[:10]])
         card_names = [c.get('name', '') for c in matching_cards]
         
-        prompt = f"""Generate 5 Q&A pairs for: {pattern['name']}
-
-Example cards:
-{card_info}
-
-Output JSON with natural questions and helpful answers listing 3-5 best cards.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+        prompt = build_card_search_prompt(pattern, card_info)
 
         try:
-            response =  query_ollama(MODEL_NAME, prompt, max_tokens=1000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=1000)
+            response =  query_ollama(MODEL_NAME, prompt)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -407,34 +559,15 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return mongo_documents
 
 
-def generate_commander_knowledge(model, tokenizer, target_count=200):
+def generate_commander_knowledge(target_count=200) -> list[dict]:
     """Generate Commander knowledge - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} COMMANDER KNOWLEDGE ===")
     mongo_documents = []
     
-    commander_context = """
-Commander rules:
-- 100-card singleton deck
-- One legendary creature commander
-- Commander determines color identity
-- Starting life: 40
-- Command zone where commanders exist
-- Commander tax: +{2} each time cast
-- Commander damage: 21 from one commander kills
-- Multiplayer: typically 4 players
-"""
-    
-    prompt = f"""Based on Commander rules:
-
-{commander_context}
-
-Generate 20 common Commander questions with accurate answers.
-
-Output JSON array. Keep answers 2-3 sentences, accurate and concise.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    prompt = build_commander_prompt()
 
     try:
-        response =  query_ollama(MODEL_NAME, prompt, max_tokens=2000) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=2000)
+        response =  query_ollama(MODEL_NAME, prompt, max_tokens=2000)
         response = response.replace("```json", "").replace("```", "").strip()
         qa_pairs = json.loads(response)
         
@@ -460,7 +593,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return mongo_documents
 
 
-def generate_multi_card_usage(model, tokenizer, combos_collection, target_count=2000):
+def generate_multi_card_usage(combos_collection: Collection, target_count=2000) -> list[dict]:
     """Generate multi-card usage - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} MULTI-CARD USAGE ===")
     mongo_documents = []
@@ -480,15 +613,10 @@ def generate_multi_card_usage(model, tokenizer, combos_collection, target_count=
         
         card1, card2 = card_names[0], card_names[1]
         
-        prompt = f"""Generate 2 usage questions for: {card1} and {card2}
-
-How they work: {description}
-
-Output JSON with natural questions like "How do I use X with Y?"
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+        prompt = build_multi_card_usage_prompt(card1, card2, description)
 
         try:
-            response =  query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
+            response =  query_ollama(MODEL_NAME, prompt)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -520,7 +648,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 # PHASE 1: HIGH-VALUE QUESTION FORMATS (Easy + High Impact)
 # =============================================================================
 
-def generate_comparison_questions(model, tokenizer, cards_collection, target_count=2000):
+def generate_comparison_questions(cards_collection: Collection, target_count=2000) -> list[dict]:
     """
     Generate card comparison questions
     
@@ -574,32 +702,10 @@ def generate_comparison_questions(model, tokenizer, cards_collection, target_cou
                 continue
             
             # Build prompt
-            prompt = f"""Compare these two Magic cards with similar effects:
-
-Card 1: {card1_name}
-Cost: {card1.get('manaCost', 'N/A')}
-Text: {card1.get('text', '')}
-
-Card 2: {card2_name}
-Cost: {card2.get('manaCost', 'N/A')}
-Text: {card2.get('text', '')}
-
-Generate 2 comparison Q&A pairs in JSON:
-[
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}}
-]
-
-Questions should be like:
-- "Which is better, {card1_name} or {card2_name}?"
-- "{card1_name} vs {card2_name}?"
-- "Should I run {card1_name} or {card2_name}?"
-
-Answers should compare costs, effects, flexibility, and give a situational recommendation.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
-
+            prompt = build_card_comparision_prompt(card1, card2)
+            
             try:
-                response = query_ollama(MODEL_NAME, prompt, max_tokens=500) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
+                response = query_ollama(MODEL_NAME, prompt)
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
@@ -654,7 +760,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return mongo_documents
 
 
-def generate_reverse_lookup_questions(model, tokenizer, cards_collection, target_count=3000):
+def generate_reverse_lookup_questions(cards_collection: Collection, target_count=3000) -> list[dict]:
     """
     Generate reverse lookup questions (feature → card)
     
@@ -709,28 +815,11 @@ def generate_reverse_lookup_questions(model, tokenizer, cards_collection, target
         card_details = "\n".join([f"  - {c.get('name', '')}: {c.get('text', '')[:80]}..." for c in matching_cards[:5]])
         
         # Generate varied questions
-        prompt = f"""Generate 3 reverse lookup Q&A pairs for cards that "{pattern['feature']}".
-
-Matching cards:
-{card_details}
-
-Output JSON:
-[
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}}
-]
-
-Questions should be like:
-- "What card {pattern['feature']}?"
-- "What cards {pattern['feature']}?"
-- "Is there a card that {pattern['feature']}?"
-
-Answers should list 3-5 best cards from the matching cards above.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+        
+        prompt = build_reverse_lookup_prompt(pattern, card_details)
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=600) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=600)
+            response = query_ollama(MODEL_NAME, prompt)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -764,7 +853,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return mongo_documents
 
 
-def generate_synergy_questions(model, tokenizer, cards_collection, combos_collection, target_count=3000):
+def generate_synergy_questions(cards_collection: Collection, combos_collection: Collection, target_count=3000):
     """
     Generate synergy discovery questions
     
@@ -820,29 +909,10 @@ def generate_synergy_questions(model, tokenizer, cards_collection, combos_collec
         if not synergy_cards:
             continue
         
-        prompt = f"""Generate 2 synergy Q&A pairs for {card_name}.
-
-Card: {card_name}
-Text: {card.get('text', '')}
-
-Cards that synergize with it: {', '.join(list(synergy_cards)[:5])}
-
-Output JSON:
-[
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}}
-]
-
-Questions like:
-- "What cards synergize with {card_name}?"
-- "What goes well with {card_name}?"
-- "What commander works with {card_name}?"
-
-Answers should explain why the synergy works and list 2-3 cards.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+        prompt = build_synergy_prompt(card, synergy_cards)
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
+            response = query_ollama(MODEL_NAME, prompt)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -875,7 +945,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return mongo_documents
 
 
-def generate_budget_alternatives(model, tokenizer, cards_collection, target_count=2000):
+def generate_budget_alternatives(cards_collection: Collection, target_count=2000) -> list[dict]:
     """
     Generate budget alternative questions
     
@@ -932,30 +1002,10 @@ def generate_budget_alternatives(model, tokenizer, cards_collection, target_coun
             budget_names = [c.get('name', '') for c in budget_cards[:5]]
             budget_details = "\n".join([f"  - {c.get('name', '')} ({c.get('rarity', '')})" for c in budget_cards[:5]])
             
-            prompt = f"""Generate 2 budget alternative Q&A pairs for {exp_name}.
-
-Expensive card: {exp_name} (rare/mythic)
-Text: {exp_card.get('text', '')}
-
-Budget alternatives:
-{budget_details}
-
-Output JSON:
-[
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}}
-]
-
-Questions like:
-- "What's a budget alternative to {exp_name}?"
-- "Cheap replacement for {exp_name}?"
-- "Budget version of {exp_name}?"
-
-Answers should list 2-3 budget cards and explain they do similar things for less $$.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+            prompt = build_budget_alternative_prompt(exp_name, exp_card, budget_details)
 
             try:
-                response = query_ollama(MODEL_NAME, prompt, max_tokens=400) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=400)
+                response = query_ollama(MODEL_NAME, prompt)
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
@@ -986,7 +1036,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return mongo_documents
 
 
-def generate_color_identity_questions(model, tokenizer, cards_collection, target_count=2000):
+def generate_color_identity_questions(cards_collection: Collection, target_count=2000) -> list[dict]:
     """
     Generate color identity questions
     
@@ -1038,33 +1088,10 @@ def generate_color_identity_questions(model, tokenizer, cards_collection, target
         commander_color_set = set(commander_colors)
         is_legal = card_color_set.issubset(commander_color_set)
         
-        prompt = f"""Generate 2 color identity Q&A pairs.
-
-Card: {card_name}
-Color identity: {', '.join(card_colors) if card_colors else 'Colorless'}
-Mana cost: {card.get('manaCost', 'N/A')}
-
-Commander: {commander_name}
-Color identity: {', '.join(commander_colors)}
-
-Can this card be played: {"YES" if is_legal else "NO"}
-
-Output JSON:
-[
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}}
-]
-
-Questions like:
-- "Can I play {card_name} in my {commander_name} deck?"
-- "What's the color identity of {card_name}?"
-- "Is {card_name} legal in {commander_name}?"
-
-Answers should explain color identity rules and give YES/NO.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+        prompt = build_color_identity_prompt(card_name, card_colors, commander_name, commander_colors, is_legal)
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=300) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=300)
+            response = query_ollama(MODEL_NAME, prompt)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -1095,7 +1122,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return mongo_documents
 
 
-def generate_quick_guidelines(model, tokenizer, target_count=2000):
+def generate_quick_guidelines(target_count=2000) -> list[dict]:
     """
     Generate quick deckbuilding guideline questions
     
@@ -1133,24 +1160,10 @@ def generate_quick_guidelines(model, tokenizer, target_count=2000):
         if len(mongo_documents) >= target_count:
             break
         
-        prompt = f"""Given this deckbuilding guideline, generate 3 variations with different phrasings.
-
-Original Q&A:
-Q: {base_question}
-A: {base_answer}
-
-Generate 3 variations in JSON:
-[
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}}
-]
-
-Keep the core answer the same but phrase questions naturally and diversely.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+        prompt = build_quick_guidelines_prompt(base_question, base_answer)
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=500) if USE_OLLAMA else query_model(model, tokenizer, prompt, max_tokens=500)
+            response = query_ollama(MODEL_NAME, prompt)
             response = response.replace("```json", "").replace("```", "").strip()
             qa_pairs = json.loads(response)
             
@@ -1188,7 +1201,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return mongo_documents
 
 
-def generate_terminology_questions(model, tokenizer, target_count=1000):
+def generate_terminology_questions(target_count=1000):
     """
     Generate MTG terminology/slang questions
     
@@ -1327,11 +1340,6 @@ def main():
     print("SYNTHETIC QUERY GENERATION → MongoDB")
     print("="*80)
     
-    # Load model
-    model, tokenizer = None, None
-    if not USE_OLLAMA:
-        model, tokenizer = load_model()
-    
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
     cards, combos, synthetic = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
@@ -1342,38 +1350,38 @@ def main():
     
     # Original formats
     if args.combo_queries > 0:
-        all_documents.extend(generate_combo_queries(model, tokenizer, combos, args.combo_queries))
+        all_documents.extend(generate_combo_queries(combos, args.combo_queries))
     
     if args.card_search > 0:
-        all_documents.extend(generate_card_search_queries(model, tokenizer, cards, args.card_search))
+        all_documents.extend(generate_card_search_queries(cards, args.card_search))
     
     if args.commander > 0:
-        all_documents.extend(generate_commander_knowledge(model, tokenizer, args.commander))
+        all_documents.extend(generate_commander_knowledge(args.commander))
     
     if args.multi_card > 0:
-        all_documents.extend(generate_multi_card_usage(model, tokenizer, combos, args.multi_card))
+        all_documents.extend(generate_multi_card_usage(combos, args.multi_card))
     
     # Phase 1 formats (NEW!)
     if args.comparison > 0:
-        all_documents.extend(generate_comparison_questions(model, tokenizer, cards, args.comparison))
+        all_documents.extend(generate_comparison_questions(cards, args.comparison))
     
     if args.reverse_lookup > 0:
-        all_documents.extend(generate_reverse_lookup_questions(model, tokenizer, cards, args.reverse_lookup))
+        all_documents.extend(generate_reverse_lookup_questions(cards, args.reverse_lookup))
     
     if args.synergy > 0:
-        all_documents.extend(generate_synergy_questions(model, tokenizer, cards, combos, args.synergy))
+        all_documents.extend(generate_synergy_questions(cards, combos, args.synergy))
     
     if args.budget > 0:
-        all_documents.extend(generate_budget_alternatives(model, tokenizer, cards, args.budget))
+        all_documents.extend(generate_budget_alternatives(cards, args.budget))
     
     if args.color_identity > 0:
-        all_documents.extend(generate_color_identity_questions(model, tokenizer, cards, args.color_identity))
+        all_documents.extend(generate_color_identity_questions(cards, args.color_identity))
     
     if args.guidelines > 0:
-        all_documents.extend(generate_quick_guidelines(model, tokenizer, args.guidelines))
+        all_documents.extend(generate_quick_guidelines(args.guidelines))
     
     if args.terminology > 0:
-        all_documents.extend(generate_terminology_questions(model, tokenizer, args.terminology))
+        all_documents.extend(generate_terminology_questions(args.terminology))
     
     # Save to MongoDB
     if all_documents:
