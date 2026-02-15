@@ -1286,7 +1286,7 @@ def main():
     parser.add_argument('--card-search', type=int, default=0)
     parser.add_argument('--commander', type=int, default=0)
     parser.add_argument('--multi-card', type=int, default=0)
-    #parser.add_argument('--model', type=str, default=0)
+    parser.add_argument('--model', type=str, default='qwen2.5:14b', help='Ollama model name for generation and validation')
     
     # Phase 1 formats (NEW!)
     parser.add_argument('--comparison', type=int, default=0, help='Card comparison questions')
@@ -1296,7 +1296,6 @@ def main():
     parser.add_argument('--color-identity', type=int, default=0, help='Color identity questions')
     parser.add_argument('--guidelines', type=int, default=0, help='Deckbuilding guidelines')
     parser.add_argument('--terminology', type=int, default=0, help='MTG terminology/slang')
-    parser.add_argument('--use-ollama', action='store_true', help='Use Ollama API for text generation instead of local model')
     
     # Preset modes
     parser.add_argument('--phase1', action='store_true', help='Generate all Phase 1 formats (15K total)')
@@ -1304,12 +1303,10 @@ def main():
     
     args = parser.parse_args()
     
-    if args.use_ollama:
-        global USE_OLLAMA
-        USE_OLLAMA = True
-        print("\n⚡ Using Ollama API for text generation")
-    else:
-        print("\n⚡ Using local model for text generation (this may take longer)")
+    if args.model:
+        global MODEL_NAME
+        MODEL_NAME = args.model
+        print(f"\n⚡ Using {MODEL_NAME} for text generation and validation")
     
     # Apply presets
     if True: #args.phase1:
@@ -1361,7 +1358,6 @@ def main():
     if args.multi_card > 0:
         all_documents.extend(generate_multi_card_usage(combos, args.multi_card))
     
-    # Phase 1 formats (NEW!)
     if args.comparison > 0:
         all_documents.extend(generate_comparison_questions(cards, args.comparison))
     
