@@ -99,7 +99,7 @@ def query_ollama(model_name: str, prompt: str, max_tokens=1000):
                 "temperature": 0.7
             })
         
-        response_content = response.message.get("content", "")
+        response_content = response['message']['content']
         
         print(f"  → RESPONSE:")
         print(f"{'─'*60}")
@@ -177,7 +177,7 @@ COMMON ERROR PATTERNS TO REJECT:
 - Ignoring that a card draws cards, destroys things, or has other important effects
 - Missing that colored mana ≠ colorless mana
 - Confusing one-time effects with repeatable effects
-- Backwards cost comparisons (saying {2} is cheaper than {1})
+- Backwards cost comparisons (saying {{2}} is cheaper than {{1}})
 
 Review this answer for:
 1. Accuracy - Does it correctly describe both cards' mechanics?
@@ -235,7 +235,7 @@ Commander rules:
 - Commander determines color identity
 - Starting life: 40
 - Command zone where commanders exist
-- Commander tax: +{2} each time cast
+- Commander tax: +{{2}} each time cast
 - Commander damage: 21 from one commander kills
 - Multiplayer: typically 4 players
 """
@@ -279,11 +279,11 @@ CRITICAL ANALYSIS REQUIREMENTS:
 Before writing your answer, analyze step-by-step:
 
 1. Mana Economics:
-   - What does each card COST to cast? (compare {1} vs {2} vs {3}, etc.)
+   - What does each card COST to cast? (compare {{1}} vs {{2}} vs {{3}}, etc.)
    - What does each card PRODUCE or DO?
    - Net benefit = (what you get) - (what you pay)
    - IMPORTANT: If a card costs X mana and produces X mana, that's NET ZERO (mana conversion, not ramp)
-   - Example: Paying {3} to untap and tapping for {3} = break even, not profit
+   - Example: Paying {{3}} to untap and tapping for {{3}} = break even, not profit
 
 2. Key Mechanics:
    - Does it sacrifice itself? (one-time use only)
@@ -297,7 +297,7 @@ Before writing your answer, analyze step-by-step:
    - DON'T claim a card "produces more mana" if it costs X to produce X (that's conversion)
    - DON'T ignore important text like "enters tapped", "draw a card", "destroy", "exile"
    - DON'T forget to mention if mana is colored vs colorless (this matters a lot)
-   - DON'T get costs backwards ({2} is MORE expensive than {1})
+   - DON'T get costs backwards ({{2}} is MORE expensive than {{1}})
 
 4. Context Matters - Consider:
    - Which is better for fast mana acceleration (ramp)?
@@ -308,7 +308,7 @@ Before writing your answer, analyze step-by-step:
 
 EXAMPLE OF GOOD COMPARISON:
 Q: "Which is better, Sol Ring or Fellwar Stone?"
-A: "Sol Ring is generally better. Sol Ring costs {{1}} and taps for {C}{C}, giving you net +1 colorless mana per turn. Fellwar Stone costs {2} and taps for one mana of any color an opponent could produce, also net +1 per turn but more expensive to cast. Sol Ring's lower cost makes it faster, though Fellwar Stone offers color fixing that Sol Ring lacks. For pure ramp, Sol Ring wins. For multicolor decks needing color fixing, Fellwar Stone has merit."
+A: "Sol Ring is generally better. Sol Ring costs {{1}} and taps for {{C}}{{C}}, giving you net +1 colorless mana per turn. Fellwar Stone costs {{2}} and taps for one mana of any color an opponent could produce, also net +1 per turn but more expensive to cast. Sol Ring's lower cost makes it faster, though Fellwar Stone offers color fixing that Sol Ring lacks. For pure ramp, Sol Ring wins. For multicolor decks needing color fixing, Fellwar Stone has merit."
 
 EXAMPLE OF BAD COMPARISON (DO NOT DO THIS):
 Q: "Which is better, X or Y?"
@@ -804,7 +804,7 @@ def generate_comparison_questions(cards_collection: Collection, target_count=200
     
     # Define comparison patterns (cards with similar effects)
     comparison_patterns = [
-        {'effect': 'fast mana', 'query': {'text': {'$regex': 'add.*mana|add {C}', '$options': 'i'}, 'type': {'$regex': 'Artifact'}}},
+        {'effect': 'fast mana', 'query': {'text': {'$regex': 'add.*mana|add {{C}}', '$options': 'i'}, 'type': {'$regex': 'Artifact'}}},
         {'effect': 'ramp', 'query': {'text': {'$regex': 'search.*land', '$options': 'i'}, 'colors': ['G']}},
         {'effect': 'removal', 'query': {'text': {'$regex': 'destroy|exile', '$options': 'i'}}},
         {'effect': 'card draw', 'query': {'text': {'$regex': 'draw.*card', '$options': 'i'}}},
