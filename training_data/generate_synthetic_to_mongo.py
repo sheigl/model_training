@@ -70,6 +70,146 @@ KEY MECHANICS:
 """
 
 # =============================================================================
+# INSTRUCTION BLOCKS FOR PROMPTS
+# =============================================================================
+
+CARD_COMPARISON_INSTRUCTIONS = """
+CRITICAL ANALYSIS REQUIREMENTS:
+Before writing your answer, analyze step-by-step:
+
+0. Card Types:
+   - What TYPE is each card? (Creature, Artifact, Enchantment, Land, etc.)
+   - If one is a CREATURE and one is NOT, this is CRITICAL information
+   - Creatures have summoning sickness (can't tap immediately)
+   - Creatures die to creature removal AND board wipes
+   - Non-creature permanents are generally more resilient
+   - ALWAYS mention if card types differ
+
+1. Mana Economics:
+   - What does each card COST to cast? (compare {{1}} vs {{2}} vs {{3}}, etc.)
+   - What does each card PRODUCE or DO?
+   - Net benefit = (what you get) - (what you pay)
+   - IMPORTANT: If a card costs X mana and produces X mana, that's NET ZERO (mana conversion, not ramp)
+   - Example: Paying {{3}} to untap and tapping for {{3}} = break even, not profit
+   - A card that costs {{2}} and taps for {{C}} gives you net +1 mana per turn (after initial investment)
+
+2. Key Mechanics:
+   - Does it sacrifice itself? (one-time use only)
+   - Does it tap repeatedly? (ongoing value each turn)
+   - Does it produce colored mana or colorless mana? (colored is more flexible)
+   - Does it draw cards, destroy permanents, or have other effects?
+   - Does it enter tapped? (delayed value)
+   - If it's a creature, remember it has SUMMONING SICKNESS
+
+3. Common Errors to Avoid:
+   - DON'T confuse casting cost with activation cost (they're different things)
+   - DON'T claim a card "produces more mana" if it costs X to produce X (that's conversion)
+   - DON'T ignore important text like "enters tapped", "draw a card", "destroy", "exile"
+   - DON'T forget to mention if mana is colored vs colorless (this matters a lot)
+   - DON'T get costs backwards ({{2}} is MORE expensive than {{1}})
+   - DON'T ignore card types (Creature vs Artifact is HUGE)
+   - DON'T forget summoning sickness for creatures
+
+4. Context Matters - Consider:
+   - Which is better for fast mana acceleration (ramp)?
+   - Which is better for color fixing?
+   - Which is better for card advantage?
+   - Which is better for removal/control?
+   - Which is more resilient to removal?
+   - Are there specific deck types or strategies where one shines?
+
+EXAMPLE OF GOOD COMPARISON:
+Q: "Which is better, Sol Ring or Fellwar Stone?"
+A: "Sol Ring is generally better. Sol Ring costs {{1}} and taps for {{C}}{{C}}, giving you net +1 colorless mana per turn. Fellwar Stone costs {{2}} and taps for one mana of any color an opponent could produce, also net +1 per turn but more expensive to cast. Sol Ring's lower cost makes it faster, though Fellwar Stone offers color fixing that Sol Ring lacks. For pure ramp, Sol Ring wins. For multicolor decks needing color fixing, Fellwar Stone has merit."
+
+EXAMPLE OF BAD COMPARISON (DO NOT DO THIS):
+Q: "Which is better, Hedron Crawler or Dragon's Hoard?"
+A: "Hedron Crawler costs {{2}} and taps for {{C}}, suitable for any deck. Dragon's Hoard costs {{3}} and requires Dragons."
+[ERROR: Doesn't mention Hedron Crawler is a CREATURE with summoning sickness and dies to board wipes]
+"""
+
+VALIDATION_CHECKLIST = """
+CRITICAL CARD TYPE CHECKS:
+Before anything else, verify the answer addresses card types:
+
+1. Are the card types mentioned?
+   - Creature vs Non-Creature is CRITICAL
+   - Artifact vs Enchantment vs Land matters
+   - If one is a creature and one isn't, this MUST be discussed
+
+2. Type-specific mechanics mentioned?
+   - Creatures: Summoning sickness (can't {{T}} or attack first turn), vulnerable to creature removal, can attack/block
+   - Artifacts: No summoning sickness, only vulnerable to artifact removal
+   - Enchantments: Only vulnerable to enchantment removal
+   - Lands: Can't be countered, don't cost mana to play
+   - Instants/Sorceries: One-time spells, not affected by board wipes
+
+3. Vulnerability differences explained?
+   - If comparing creature vs non-creature, answer MUST mention board wipes
+   - If comparing different permanent types, answer MUST mention removal types
+   - If comparing instants/sorceries, focus on EFFECTS not vulnerability
+
+VERIFICATION CHECKLIST:
+Check each of these carefully:
+
+1. Casting costs correct?
+   - Does the answer correctly state which card costs more to cast?
+   - Are mana symbols and costs accurate?
+
+2. Mechanics accurate?
+   - Does it correctly describe what each card DOES?
+   - Are activation costs vs casting costs distinguished properly?
+   - Is net mana production calculated correctly?
+   - If a card costs X and produces X, is it correctly identified as net zero (conversion, not ramp)?
+   
+3. CARD TYPES mentioned and explained?
+   - If one card is a creature and one isn't, is this addressed?
+   - Are type-specific vulnerabilities mentioned?
+   - Is summoning sickness mentioned for creatures?
+   - For instants/sorceries, are effects discussed (not board wipe vulnerability)?
+   
+4. Important details mentioned?
+   - Card draw effects mentioned if present?
+   - "Enters tapped" mentioned if relevant?
+   - Sacrifice requirements mentioned if present?
+   - Color restrictions mentioned (colored vs colorless mana)?
+   - Destruction/removal effects mentioned if present?
+
+5. No false claims?
+   - No invented abilities or effects?
+   - No confusion between "costs X, produces X" (net zero) vs actual ramp?
+   - No claiming cheaper cards are more expensive?
+   - No ignoring critical card text?
+
+COMMON ERROR PATTERNS TO REJECT:
+- Claiming "costs less to activate" when actually comparing casting costs
+- Saying a card "produces more mana if you pay more" when it's X-for-X conversion
+- Ignoring that a card draws cards, destroys things, or has other important effects
+- Missing that colored mana ≠ colorless mana
+- Confusing one-time effects with repeatable effects
+- Backwards cost comparisons (saying {{2}} is cheaper than {{1}})
+- IGNORING CARD TYPES (creature vs artifact is a HUGE difference)
+- NOT MENTIONING summoning sickness for creatures
+- MISSING vulnerability differences between card types
+- Discussing board wipe vulnerability for INSTANTS/SORCERIES (they're spells, not permanents!)
+"""
+
+VALIDATION_SCORING_GUIDE = """
+SCORING GUIDE:
+- 9-10: Perfect, all mechanics correct, comprehensive, card types addressed
+- 7-8: Good, minor omissions but no errors
+- 5-6: Acceptable but missing important context
+- 3-4: Significant errors or missing critical info (like ignoring card types)
+- 1-2: Fundamentally wrong about card mechanics
+
+CRITICAL: 
+- If card types are ignored when comparing creature vs non-creature, max score is 4
+- If there are ANY factual errors about card mechanics, max score is 4
+- If discussing board wipes for instant/sorcery cards, max score is 4
+- A score of 7+ is acceptable. Below 7 should be rejected.
+"""
+
+# =============================================================================
 # MONGODB SETUP
 # =============================================================================
 
@@ -152,6 +292,8 @@ def query_ollama(model_name: str, prompt: str, max_tokens=1000):
 # =============================================================================
 
 def build_card_search_prompt(pattern: dict, card_info: str) -> str:
+    """Generate card search prompt with MTG notation guide."""
+    
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 Generate 5 Q&A pairs for: {pattern['name']}
@@ -166,6 +308,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_card_validation_prompt(card1: dict, card2: dict, question: str, answer: str) -> str:
+    """Build validation prompt for card comparison answers."""
+    
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are a Magic: The Gathering expert reviewing a comparison answer for accuracy.
@@ -185,65 +329,7 @@ Question: {question}
 Answer to validate:
 {answer}
 
-CRITICAL CARD TYPE CHECKS:
-Before anything else, verify the answer addresses card types:
-
-1. Are the card types mentioned?
-   - Creature vs Non-Creature is CRITICAL
-   - Artifact vs Enchantment vs Land matters
-   - If one is a creature and one isn't, this MUST be discussed
-
-2. Type-specific mechanics mentioned?
-   - Creatures: Summoning sickness (can't {{T}} or attack first turn), vulnerable to creature removal, can attack/block
-   - Artifacts: No summoning sickness, only vulnerable to artifact removal
-   - Enchantments: Only vulnerable to enchantment removal
-   - Lands: Can't be countered, don't cost mana to play
-
-3. Vulnerability differences explained?
-   - If comparing creature vs non-creature, answer MUST mention board wipes
-   - If comparing different permanent types, answer MUST mention removal types
-
-VERIFICATION CHECKLIST:
-Check each of these carefully:
-
-1. Casting costs correct?
-   - Does the answer correctly state which card costs more to cast?
-   - Are mana symbols and costs accurate?
-
-2. Mechanics accurate?
-   - Does it correctly describe what each card DOES?
-   - Are activation costs vs casting costs distinguished properly?
-   - Is net mana production calculated correctly?
-   - If a card costs X and produces X, is it correctly identified as net zero (conversion, not ramp)?
-   
-3. CARD TYPES mentioned and explained?
-   - If one card is a creature and one isn't, is this addressed?
-   - Are type-specific vulnerabilities mentioned?
-   - Is summoning sickness mentioned for creatures?
-   
-4. Important details mentioned?
-   - Card draw effects mentioned if present?
-   - "Enters tapped" mentioned if relevant?
-   - Sacrifice requirements mentioned if present?
-   - Color restrictions mentioned (colored vs colorless mana)?
-   - Destruction/removal effects mentioned if present?
-
-5. No false claims?
-   - No invented abilities or effects?
-   - No confusion between "costs X, produces X" (net zero) vs actual ramp?
-   - No claiming cheaper cards are more expensive?
-   - No ignoring critical card text?
-
-COMMON ERROR PATTERNS TO REJECT:
-- Claiming "costs less to activate" when actually comparing casting costs
-- Saying a card "produces more mana if you pay more" when it's X-for-X conversion
-- Ignoring that a card draws cards, destroys things, or has other important effects
-- Missing that colored mana ≠ colorless mana
-- Confusing one-time effects with repeatable effects
-- Backwards cost comparisons (saying {{2}} is cheaper than {{1}})
-- IGNORING CARD TYPES (creature vs artifact is a HUGE difference)
-- NOT MENTIONING summoning sickness for creatures
-- MISSING vulnerability differences between card types
+{VALIDATION_CHECKLIST}
 
 Review this answer for:
 1. Accuracy - Does it correctly describe both cards' mechanics AND types?
@@ -262,23 +348,15 @@ Respond ONLY with JSON:
 "card_types_addressed": "<are card types mentioned and their implications explained?>"
 }}
 
-SCORING GUIDE:
-- 9-10: Perfect, all mechanics correct, comprehensive, card types addressed
-- 7-8: Good, minor omissions but no errors
-- 5-6: Acceptable but missing important context
-- 3-4: Significant errors or missing critical info (like ignoring card types)
-- 1-2: Fundamentally wrong about card mechanics
-
-CRITICAL: 
-- If card types are ignored when comparing creature vs non-creature, max score is 4
-- If there are ANY factual errors about card mechanics, max score is 4
-- A score of 7+ is acceptable. Below 7 should be rejected.
+{VALIDATION_SCORING_GUIDE}
 
 Output ONLY valid JSON, no other text."""
     return prompt
 
 
 def build_combo_prompt(card_name: str, combo_list: str) -> str:
+    """Generate combo question prompt with MTG notation guide."""
+    
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 Generate 3 natural Q&A pairs about combos with {card_name}.
@@ -299,7 +377,9 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return prompt
 
 
-def build_commander_prompt() -> str: 
+def build_commander_prompt() -> str:
+    """Generate Commander rules questions with MTG notation guide."""
+    
     commander_context = """
 Commander rules:
 - 100-card singleton deck
@@ -326,6 +406,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_multi_card_usage_prompt(card1: str, card2: str, description: str) -> str:
+    """Generate multi-card usage prompt with MTG notation guide."""
+    
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 Generate 2 usage questions for: {card1} and {card2}
@@ -339,6 +421,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_card_comparision_prompt(card1: dict, card2: dict) -> str:
+    """Generate card comparison prompt with full MTG notation and analysis requirements."""
+    
     card1_name = card1.get('name', '')
     card2_name = card2.get('name', '')
     
@@ -356,58 +440,7 @@ Type: {card2.get('type', 'N/A')}
 Cost: {card2.get('manaCost', 'N/A')}
 Text: {card2.get('text', '')}
 
-CRITICAL ANALYSIS REQUIREMENTS:
-Before writing your answer, analyze step-by-step:
-
-0. Card Types:
-   - What TYPE is each card? (Creature, Artifact, Enchantment, Land, etc.)
-   - If one is a CREATURE and one is NOT, this is CRITICAL information
-   - Creatures have summoning sickness (can't tap immediately)
-   - Creatures die to creature removal AND board wipes
-   - Non-creature permanents are generally more resilient
-   - ALWAYS mention if card types differ
-
-1. Mana Economics:
-   - What does each card COST to cast? (compare {{1}} vs {{2}} vs {{3}}, etc.)
-   - What does each card PRODUCE or DO?
-   - Net benefit = (what you get) - (what you pay)
-   - IMPORTANT: If a card costs X mana and produces X mana, that's NET ZERO (mana conversion, not ramp)
-   - Example: Paying {{3}} to untap and tapping for {{3}} = break even, not profit
-   - A card that costs {{2}} and taps for {{C}} gives you net +1 mana per turn (after initial investment)
-
-2. Key Mechanics:
-   - Does it sacrifice itself? (one-time use only)
-   - Does it tap repeatedly? (ongoing value each turn)
-   - Does it produce colored mana or colorless mana? (colored is more flexible)
-   - Does it draw cards, destroy permanents, or have other effects?
-   - Does it enter tapped? (delayed value)
-   - If it's a creature, remember it has SUMMONING SICKNESS
-
-3. Common Errors to Avoid:
-   - DON'T confuse casting cost with activation cost (they're different things)
-   - DON'T claim a card "produces more mana" if it costs X to produce X (that's conversion)
-   - DON'T ignore important text like "enters tapped", "draw a card", "destroy", "exile"
-   - DON'T forget to mention if mana is colored vs colorless (this matters a lot)
-   - DON'T get costs backwards ({{2}} is MORE expensive than {{1}})
-   - DON'T ignore card types (Creature vs Artifact is HUGE)
-   - DON'T forget summoning sickness for creatures
-
-4. Context Matters - Consider:
-   - Which is better for fast mana acceleration (ramp)?
-   - Which is better for color fixing?
-   - Which is better for card advantage?
-   - Which is better for removal/control?
-   - Which is more resilient to removal?
-   - Are there specific deck types or strategies where one shines?
-
-EXAMPLE OF GOOD COMPARISON:
-Q: "Which is better, Sol Ring or Fellwar Stone?"
-A: "Sol Ring is generally better. Sol Ring costs {{1}} and taps for {{C}}{{C}}, giving you net +1 colorless mana per turn. Fellwar Stone costs {{2}} and taps for one mana of any color an opponent could produce, also net +1 per turn but more expensive to cast. Sol Ring's lower cost makes it faster, though Fellwar Stone offers color fixing that Sol Ring lacks. For pure ramp, Sol Ring wins. For multicolor decks needing color fixing, Fellwar Stone has merit."
-
-EXAMPLE OF BAD COMPARISON (DO NOT DO THIS):
-Q: "Which is better, Hedron Crawler or Dragon's Hoard?"
-A: "Hedron Crawler costs {{2}} and taps for {{C}}, suitable for any deck. Dragon's Hoard costs {{3}} and requires Dragons."
-[ERROR: Doesn't mention Hedron Crawler is a CREATURE with summoning sickness and dies to board wipes]
+{CARD_COMPARISON_INSTRUCTIONS}
 
 Generate 2 comparison Q&A pairs in JSON:
 [
@@ -434,6 +467,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_reverse_lookup_prompt(pattern: dict, card_details: str) -> str:
+    """Generate reverse lookup (feature → cards) prompt with MTG notation guide."""
+    
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 Generate 3 reverse lookup Q&A pairs for cards that "{pattern['feature']}".
@@ -459,6 +494,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_synergy_prompt(card: dict, synergy_cards: set) -> str:
+    """Generate card synergy discovery prompt with MTG notation guide."""
+    
     card_name = card.get('name', '')
     prompt = f"""{MTG_NOTATION_LEGEND}
 
@@ -486,6 +523,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_budget_alternative_prompt(exp_card: dict, budget_details: str) -> str:
+    """Generate budget alternative recommendations prompt with MTG notation guide."""
+    
     exp_name = exp_card.get('name', '')
     prompt = f"""{MTG_NOTATION_LEGEND}
 
@@ -514,6 +553,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_color_identity_prompt(card: dict, commander_name: str, commander_colors: list[str], is_legal: bool) -> str:
+    """Generate color identity legality prompt with MTG notation guide."""
+    
     card_name = card.get('name', '')
     card_colors = card.get('colorIdentity', card.get('colors', []))
     prompt = f"""{MTG_NOTATION_LEGEND}
@@ -546,6 +587,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_quick_guidelines_prompt(base_question: str, base_answer: str) -> str:
+    """Generate deckbuilding guideline variations (no MTG legend needed - already provided in base)."""
+    
     prompt = f"""Given this deckbuilding guideline, generate 3 variations with different phrasings.
 
 Original Q&A:
