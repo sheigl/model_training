@@ -89,12 +89,16 @@ def query_ollama(model_name: str, prompt: str, max_tokens=1000):
     print(f"{'─'*60}")
     
     try:
-        response = ollama.chat(model=model_name, messages=[{"role": "user", "content": prompt}], options=
-                               {
-                                   "num_predict": max_tokens,
-                                   'num_ctx': 8192, # Set the total context window size
-                                   "temperature": 0.7
-                                })
+        response = ollama.chat(
+            model=model_name, 
+            messages=[{"role": "user", "content": prompt}], 
+            #stream=True,
+            options= {
+                "num_predict": max_tokens,
+                'num_ctx': 8192, # Set the total context window size
+                "temperature": 0.7
+            })
+        
         response_content = response.message.get("content", "")
         
         print(f"  → RESPONSE:")
@@ -145,6 +149,7 @@ Review this answer for:
 1. Accuracy - Does it correctly describe both cards?
 2. Completeness - Does it mention important abilities (like card draw, destroy effects, etc.)?
 3. Usefulness - Does it give clear guidance on when to use each card?
+4. Factual correctness - Are there any outright errors or misconceptions? If it is not factually correct, it should automatically be not acceptable (MOST IMPORTANT)
 
 Respond ONLY with JSON:
 {{
