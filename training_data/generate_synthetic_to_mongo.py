@@ -37,6 +37,39 @@ global MODEL_NAME
 MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
 
 # =============================================================================
+# MTG NOTATION LEGEND
+# =============================================================================
+
+MTG_NOTATION_LEGEND = """
+MTG NOTATION GUIDE:
+- {{T}}: Tap symbol (rotate card 90°, can only use if untapped)
+- {{C}}: Colorless mana
+- {{W}}: White mana
+- {{U}}: Blue mana  
+- {{B}}: Black mana
+- {{R}}: Red mana
+- {{G}}: Green mana
+- {{X}}: Variable amount chosen when casting
+- {{1}}, {{2}}, {{3}}, etc.: Generic mana (can be paid with any color or colorless)
+- Example: {{2}}{{U}}{{U}} = 2 generic + 2 blue mana = 4 total mana
+
+CARD TYPES:
+- Creature: Can attack/block, has summoning sickness (can't tap or attack first turn)
+- Artifact: Permanent that stays on battlefield, no summoning sickness
+- Enchantment: Permanent that stays on battlefield
+- Instant: Cast anytime, goes to graveyard after resolving
+- Sorcery: Cast only on your turn, goes to graveyard after resolving
+- Land: Played once per turn (not cast), produces mana
+
+KEY MECHANICS:
+- ETB (Enters the Battlefield): Triggers when permanent comes into play
+- Summoning Sickness: Creatures can't tap or attack the turn they enter
+- Sacrifice: Put into graveyard as a cost (can't be prevented)
+- Destroy: Put into graveyard (can be prevented by indestructible)
+- Exile: Remove from game (harder to recover than graveyard)
+"""
+
+# =============================================================================
 # MONGODB SETUP
 # =============================================================================
 
@@ -119,24 +152,31 @@ def query_ollama(model_name: str, prompt: str, max_tokens=1000):
 # =============================================================================
 
 def build_card_search_prompt(pattern: dict, card_info: str) -> str:
-    prompt = f"""Generate 5 Q&A pairs for: {pattern['name']}
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Generate 5 Q&A pairs for: {pattern['name']}
 
 Example cards:
 {card_info}
 
 Output JSON with natural questions and helpful answers listing 3-5 best cards.
+Answers should explain what the cards do and why they're good for this purpose.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
 
 def build_card_validation_prompt(card1: dict, card2: dict, question: str, answer: str) -> str:
-    prompt = f"""You are a Magic: The Gathering expert reviewing a comparison answer for accuracy.
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+You are a Magic: The Gathering expert reviewing a comparison answer for accuracy.
 
 Card 1: {card1.get('name', '')}
+Type: {card1.get('type', 'N/A')}
 Text: {card1.get('text', '')}
 Cost: {card1.get('manaCost', 'N/A')}
 
 Card 2: {card2.get('name', '')}
+Type: {card2.get('type', 'N/A')}
 Text: {card2.get('text', '')}
 Cost: {card2.get('manaCost', 'N/A')}
 
@@ -144,6 +184,24 @@ Question: {question}
 
 Answer to validate:
 {answer}
+
+CRITICAL CARD TYPE CHECKS:
+Before anything else, verify the answer addresses card types:
+
+1. Are the card types mentioned?
+   - Creature vs Non-Creature is CRITICAL
+   - Artifact vs Enchantment vs Land matters
+   - If one is a creature and one isn't, this MUST be discussed
+
+2. Type-specific mechanics mentioned?
+   - Creatures: Summoning sickness (can't {{T}} or attack first turn), vulnerable to creature removal, can attack/block
+   - Artifacts: No summoning sickness, only vulnerable to artifact removal
+   - Enchantments: Only vulnerable to enchantment removal
+   - Lands: Can't be countered, don't cost mana to play
+
+3. Vulnerability differences explained?
+   - If comparing creature vs non-creature, answer MUST mention board wipes
+   - If comparing different permanent types, answer MUST mention removal types
 
 VERIFICATION CHECKLIST:
 Check each of these carefully:
@@ -158,14 +216,19 @@ Check each of these carefully:
    - Is net mana production calculated correctly?
    - If a card costs X and produces X, is it correctly identified as net zero (conversion, not ramp)?
    
-3. Important details mentioned?
+3. CARD TYPES mentioned and explained?
+   - If one card is a creature and one isn't, is this addressed?
+   - Are type-specific vulnerabilities mentioned?
+   - Is summoning sickness mentioned for creatures?
+   
+4. Important details mentioned?
    - Card draw effects mentioned if present?
    - "Enters tapped" mentioned if relevant?
    - Sacrifice requirements mentioned if present?
    - Color restrictions mentioned (colored vs colorless mana)?
    - Destruction/removal effects mentioned if present?
 
-4. No false claims?
+5. No false claims?
    - No invented abilities or effects?
    - No confusion between "costs X, produces X" (net zero) vs actual ramp?
    - No claiming cheaper cards are more expensive?
@@ -178,10 +241,13 @@ COMMON ERROR PATTERNS TO REJECT:
 - Missing that colored mana ≠ colorless mana
 - Confusing one-time effects with repeatable effects
 - Backwards cost comparisons (saying {{2}} is cheaper than {{1}})
+- IGNORING CARD TYPES (creature vs artifact is a HUGE difference)
+- NOT MENTIONING summoning sickness for creatures
+- MISSING vulnerability differences between card types
 
 Review this answer for:
-1. Accuracy - Does it correctly describe both cards' mechanics?
-2. Completeness - Does it mention ALL important abilities?
+1. Accuracy - Does it correctly describe both cards' mechanics AND types?
+2. Completeness - Does it mention ALL important abilities AND type-specific concerns?
 3. Usefulness - Does it give clear, context-dependent guidance?
 4. Factual correctness - Are there any outright errors or misconceptions?
 
@@ -192,25 +258,30 @@ Respond ONLY with JSON:
 "missing_info": "<what critical info is missing, if any>",
 "errors": "<factual errors, if any>",
 "mechanical_accuracy": "<are the card mechanics described correctly?>",
-"cost_comparison_correct": "<are costs compared accurately?>"
+"cost_comparison_correct": "<are costs compared accurately?>",
+"card_types_addressed": "<are card types mentioned and their implications explained?>"
 }}
 
 SCORING GUIDE:
-- 9-10: Perfect, all mechanics correct, comprehensive
+- 9-10: Perfect, all mechanics correct, comprehensive, card types addressed
 - 7-8: Good, minor omissions but no errors
 - 5-6: Acceptable but missing important context
-- 3-4: Significant errors or missing critical info
+- 3-4: Significant errors or missing critical info (like ignoring card types)
 - 1-2: Fundamentally wrong about card mechanics
 
-CRITICAL: If there are ANY factual errors about card mechanics, max score is 4.
-A score of 7+ is acceptable. Below 7 should be rejected.
+CRITICAL: 
+- If card types are ignored when comparing creature vs non-creature, max score is 4
+- If there are ANY factual errors about card mechanics, max score is 4
+- A score of 7+ is acceptable. Below 7 should be rejected.
 
 Output ONLY valid JSON, no other text."""
     return prompt
 
 
 def build_combo_prompt(card_name: str, combo_list: str) -> str:
-    prompt = f"""Generate 3 natural Q&A pairs about combos with {card_name}.
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Generate 3 natural Q&A pairs about combos with {card_name}.
 
 Known combos:
 {combo_list}
@@ -223,6 +294,7 @@ Output JSON:
 ]
 
 Make questions varied and natural. Base answers on combo data above.
+Explain how the combos work and what they achieve.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
@@ -240,7 +312,9 @@ Commander rules:
 - Multiplayer: typically 4 players
 """
         
-    prompt = f"""Based on Commander rules:
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Based on Commander rules:
 
 {commander_context}
 
@@ -252,11 +326,14 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_multi_card_usage_prompt(card1: str, card2: str, description: str) -> str:
-    prompt = f"""Generate 2 usage questions for: {card1} and {card2}
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Generate 2 usage questions for: {card1} and {card2}
 
 How they work: {description}
 
 Output JSON with natural questions like "How do I use X with Y?"
+Explain the mechanics and why the combo is effective.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
@@ -265,18 +342,30 @@ def build_card_comparision_prompt(card1: dict, card2: dict) -> str:
     card1_name = card1.get('name', '')
     card2_name = card2.get('name', '')
     
-    prompt = f"""Compare these two Magic cards with similar effects:
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Compare these two Magic cards with similar effects:
 
 Card 1: {card1_name}
+Type: {card1.get('type', 'N/A')}
 Cost: {card1.get('manaCost', 'N/A')}
 Text: {card1.get('text', '')}
 
 Card 2: {card2_name}
+Type: {card2.get('type', 'N/A')}
 Cost: {card2.get('manaCost', 'N/A')}
 Text: {card2.get('text', '')}
 
 CRITICAL ANALYSIS REQUIREMENTS:
 Before writing your answer, analyze step-by-step:
+
+0. Card Types:
+   - What TYPE is each card? (Creature, Artifact, Enchantment, Land, etc.)
+   - If one is a CREATURE and one is NOT, this is CRITICAL information
+   - Creatures have summoning sickness (can't tap immediately)
+   - Creatures die to creature removal AND board wipes
+   - Non-creature permanents are generally more resilient
+   - ALWAYS mention if card types differ
 
 1. Mana Economics:
    - What does each card COST to cast? (compare {{1}} vs {{2}} vs {{3}}, etc.)
@@ -284,6 +373,7 @@ Before writing your answer, analyze step-by-step:
    - Net benefit = (what you get) - (what you pay)
    - IMPORTANT: If a card costs X mana and produces X mana, that's NET ZERO (mana conversion, not ramp)
    - Example: Paying {{3}} to untap and tapping for {{3}} = break even, not profit
+   - A card that costs {{2}} and taps for {{C}} gives you net +1 mana per turn (after initial investment)
 
 2. Key Mechanics:
    - Does it sacrifice itself? (one-time use only)
@@ -291,6 +381,7 @@ Before writing your answer, analyze step-by-step:
    - Does it produce colored mana or colorless mana? (colored is more flexible)
    - Does it draw cards, destroy permanents, or have other effects?
    - Does it enter tapped? (delayed value)
+   - If it's a creature, remember it has SUMMONING SICKNESS
 
 3. Common Errors to Avoid:
    - DON'T confuse casting cost with activation cost (they're different things)
@@ -298,12 +389,15 @@ Before writing your answer, analyze step-by-step:
    - DON'T ignore important text like "enters tapped", "draw a card", "destroy", "exile"
    - DON'T forget to mention if mana is colored vs colorless (this matters a lot)
    - DON'T get costs backwards ({{2}} is MORE expensive than {{1}})
+   - DON'T ignore card types (Creature vs Artifact is HUGE)
+   - DON'T forget summoning sickness for creatures
 
 4. Context Matters - Consider:
    - Which is better for fast mana acceleration (ramp)?
    - Which is better for color fixing?
    - Which is better for card advantage?
    - Which is better for removal/control?
+   - Which is more resilient to removal?
    - Are there specific deck types or strategies where one shines?
 
 EXAMPLE OF GOOD COMPARISON:
@@ -311,9 +405,9 @@ Q: "Which is better, Sol Ring or Fellwar Stone?"
 A: "Sol Ring is generally better. Sol Ring costs {{1}} and taps for {{C}}{{C}}, giving you net +1 colorless mana per turn. Fellwar Stone costs {{2}} and taps for one mana of any color an opponent could produce, also net +1 per turn but more expensive to cast. Sol Ring's lower cost makes it faster, though Fellwar Stone offers color fixing that Sol Ring lacks. For pure ramp, Sol Ring wins. For multicolor decks needing color fixing, Fellwar Stone has merit."
 
 EXAMPLE OF BAD COMPARISON (DO NOT DO THIS):
-Q: "Which is better, X or Y?"
-A: "X is better because it costs less to activate."
-[ERROR: Confuses casting cost with activation cost, no actual analysis]
+Q: "Which is better, Hedron Crawler or Dragon's Hoard?"
+A: "Hedron Crawler costs {{2}} and taps for {{C}}, suitable for any deck. Dragon's Hoard costs {{3}} and requires Dragons."
+[ERROR: Doesn't mention Hedron Crawler is a CREATURE with summoning sickness and dies to board wipes]
 
 Generate 2 comparison Q&A pairs in JSON:
 [
@@ -328,6 +422,7 @@ Questions should be like:
 
 Answers MUST:
 - Accurately state what each card does mechanically (read the card text carefully)
+- MENTION CARD TYPES and their implications (especially if one is a creature)
 - Compare costs and benefits correctly (do the math)
 - Mention ALL important abilities (card draw, color fixing, destruction, etc.)
 - Give context-dependent recommendations (not just "X is always better")
@@ -339,7 +434,9 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 
 def build_reverse_lookup_prompt(pattern: dict, card_details: str) -> str:
-    prompt = f"""Generate 3 reverse lookup Q&A pairs for cards that "{pattern['feature']}".
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Generate 3 reverse lookup Q&A pairs for cards that "{pattern['feature']}".
 
 Matching cards:
 {card_details}
@@ -356,14 +453,16 @@ Questions should be like:
 - "What cards {pattern['feature']}?"
 - "Is there a card that {pattern['feature']}?"
 
-Answers should list 3-5 best cards from the matching cards above.
+Answers should list 3-5 best cards from the matching cards above and briefly explain what they do.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
 
 def build_synergy_prompt(card: dict, synergy_cards: set) -> str:
     card_name = card.get('name', '')
-    prompt = f"""Generate 2 synergy Q&A pairs for {card_name}.
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Generate 2 synergy Q&A pairs for {card_name}.
 
 Card: {card_name}
 Text: {card.get('text', '')}
@@ -388,7 +487,9 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_budget_alternative_prompt(exp_card: dict, budget_details: str) -> str:
     exp_name = exp_card.get('name', '')
-    prompt = f"""Generate 2 budget alternative Q&A pairs for {exp_name}.
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Generate 2 budget alternative Q&A pairs for {exp_name}.
 
 Expensive card: {exp_name} (rare/mythic)
 Text: {exp_card.get('text', '')}
@@ -415,7 +516,9 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 def build_color_identity_prompt(card: dict, commander_name: str, commander_colors: list[str], is_legal: bool) -> str:
     card_name = card.get('name', '')
     card_colors = card.get('colorIdentity', card.get('colors', []))
-    prompt = f"""Generate 2 color identity Q&A pairs.
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Generate 2 color identity Q&A pairs.
 
 Card: {card_name}
 Color identity: {', '.join(card_colors) if card_colors else 'Colorless'}
