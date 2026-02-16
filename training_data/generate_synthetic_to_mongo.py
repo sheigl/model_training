@@ -126,10 +126,10 @@ Example cards:
 
 Output JSON with natural questions and helpful answers listing 3-5 best cards.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    return prompt
 
 
-def build_card_validation_prompt(card1: dict, card2: dict, question: str, answer:str) -> str:
-    # Build validation prompt
+def build_card_validation_prompt(card1: dict, card2: dict, question: str, answer: str) -> str:
     prompt = f"""You are a Magic: The Gathering expert reviewing a comparison answer for accuracy.
 
 Card 1: {card1.get('name', '')}
@@ -145,24 +145,69 @@ Question: {question}
 Answer to validate:
 {answer}
 
+VERIFICATION CHECKLIST:
+Check each of these carefully:
+
+1. Casting costs correct?
+   - Does the answer correctly state which card costs more to cast?
+   - Are mana symbols and costs accurate?
+
+2. Mechanics accurate?
+   - Does it correctly describe what each card DOES?
+   - Are activation costs vs casting costs distinguished properly?
+   - Is net mana production calculated correctly?
+   - If a card costs X and produces X, is it correctly identified as net zero (conversion, not ramp)?
+   
+3. Important details mentioned?
+   - Card draw effects mentioned if present?
+   - "Enters tapped" mentioned if relevant?
+   - Sacrifice requirements mentioned if present?
+   - Color restrictions mentioned (colored vs colorless mana)?
+   - Destruction/removal effects mentioned if present?
+
+4. No false claims?
+   - No invented abilities or effects?
+   - No confusion between "costs X, produces X" (net zero) vs actual ramp?
+   - No claiming cheaper cards are more expensive?
+   - No ignoring critical card text?
+
+COMMON ERROR PATTERNS TO REJECT:
+- Claiming "costs less to activate" when actually comparing casting costs
+- Saying a card "produces more mana if you pay more" when it's X-for-X conversion
+- Ignoring that a card draws cards, destroys things, or has other important effects
+- Missing that colored mana ≠ colorless mana
+- Confusing one-time effects with repeatable effects
+- Backwards cost comparisons (saying {2} is cheaper than {1})
+
 Review this answer for:
-1. Accuracy - Does it correctly describe both cards?
-2. Completeness - Does it mention important abilities (like card draw, destroy effects, etc.)?
-3. Usefulness - Does it give clear guidance on when to use each card?
-4. Factual correctness - Are there any outright errors or misconceptions? If it is not factually correct, it should automatically be not acceptable (MOST IMPORTANT)
+1. Accuracy - Does it correctly describe both cards' mechanics?
+2. Completeness - Does it mention ALL important abilities?
+3. Usefulness - Does it give clear, context-dependent guidance?
+4. Factual correctness - Are there any outright errors or misconceptions?
 
 Respond ONLY with JSON:
 {{
 "score": <1-10>,
 "is_acceptable": <true/false>,
 "missing_info": "<what critical info is missing, if any>",
-"errors": "<factual errors, if any>"
+"errors": "<factual errors, if any>",
+"mechanical_accuracy": "<are the card mechanics described correctly?>",
+"cost_comparison_correct": "<are costs compared accurately?>"
 }}
 
-A score of 7+ is acceptable. Below 7 should be rejected.
-Output ONLY valid JSON, no other text."""
+SCORING GUIDE:
+- 9-10: Perfect, all mechanics correct, comprehensive
+- 7-8: Good, minor omissions but no errors
+- 5-6: Acceptable but missing important context
+- 3-4: Significant errors or missing critical info
+- 1-2: Fundamentally wrong about card mechanics
 
+CRITICAL: If there are ANY factual errors about card mechanics, max score is 4.
+A score of 7+ is acceptable. Below 7 should be rejected.
+
+Output ONLY valid JSON, no other text."""
     return prompt
+
 
 def build_combo_prompt(card_name: str, combo_list: str) -> str:
     prompt = f"""Generate 3 natural Q&A pairs about combos with {card_name}.
@@ -179,8 +224,8 @@ Output JSON:
 
 Make questions varied and natural. Base answers on combo data above.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
-
     return prompt
+
 
 def build_commander_prompt() -> str: 
     commander_context = """
@@ -203,8 +248,8 @@ Generate 20 common Commander questions with accurate answers.
 
 Output JSON array. Keep answers 2-3 sentences, accurate and concise.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
-
     return prompt
+
 
 def build_multi_card_usage_prompt(card1: str, card2: str, description: str) -> str:
     prompt = f"""Generate 2 usage questions for: {card1} and {card2}
@@ -214,6 +259,7 @@ How they work: {description}
 Output JSON with natural questions like "How do I use X with Y?"
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
+
 
 def build_card_comparision_prompt(card1: dict, card2: dict) -> str:
     card1_name = card1.get('name', '')
@@ -229,6 +275,46 @@ Card 2: {card2_name}
 Cost: {card2.get('manaCost', 'N/A')}
 Text: {card2.get('text', '')}
 
+CRITICAL ANALYSIS REQUIREMENTS:
+Before writing your answer, analyze step-by-step:
+
+1. Mana Economics:
+   - What does each card COST to cast? (compare {1} vs {2} vs {3}, etc.)
+   - What does each card PRODUCE or DO?
+   - Net benefit = (what you get) - (what you pay)
+   - IMPORTANT: If a card costs X mana and produces X mana, that's NET ZERO (mana conversion, not ramp)
+   - Example: Paying {3} to untap and tapping for {3} = break even, not profit
+
+2. Key Mechanics:
+   - Does it sacrifice itself? (one-time use only)
+   - Does it tap repeatedly? (ongoing value each turn)
+   - Does it produce colored mana or colorless mana? (colored is more flexible)
+   - Does it draw cards, destroy permanents, or have other effects?
+   - Does it enter tapped? (delayed value)
+
+3. Common Errors to Avoid:
+   - DON'T confuse casting cost with activation cost (they're different things)
+   - DON'T claim a card "produces more mana" if it costs X to produce X (that's conversion)
+   - DON'T ignore important text like "enters tapped", "draw a card", "destroy", "exile"
+   - DON'T forget to mention if mana is colored vs colorless (this matters a lot)
+   - DON'T get costs backwards ({2} is MORE expensive than {1})
+
+4. Context Matters - Consider:
+   - Which is better for fast mana acceleration (ramp)?
+   - Which is better for color fixing?
+   - Which is better for card advantage?
+   - Which is better for removal/control?
+   - Are there specific deck types or strategies where one shines?
+
+EXAMPLE OF GOOD COMPARISON:
+Q: "Which is better, Sol Ring or Fellwar Stone?"
+A: "Sol Ring is generally better. Sol Ring costs {{1}} and taps for {C}{C}, giving you net +1 colorless mana per turn. Fellwar Stone costs {2} and taps for one mana of any color an opponent could produce, also net +1 per turn but more expensive to cast. Sol Ring's lower cost makes it faster, though Fellwar Stone offers color fixing that Sol Ring lacks. For pure ramp, Sol Ring wins. For multicolor decks needing color fixing, Fellwar Stone has merit."
+
+EXAMPLE OF BAD COMPARISON (DO NOT DO THIS):
+Q: "Which is better, X or Y?"
+A: "X is better because it costs less to activate."
+[ERROR: Confuses casting cost with activation cost, no actual analysis]
+
 Generate 2 comparison Q&A pairs in JSON:
 [
   {{"question": "...", "answer": "..."}},
@@ -240,9 +326,17 @@ Questions should be like:
 - "{card1_name} vs {card2_name}?"
 - "Should I run {card1_name} or {card2_name}?"
 
-Answers should compare costs, effects, flexibility, and give a situational recommendation.
+Answers MUST:
+- Accurately state what each card does mechanically (read the card text carefully)
+- Compare costs and benefits correctly (do the math)
+- Mention ALL important abilities (card draw, color fixing, destruction, etc.)
+- Give context-dependent recommendations (not just "X is always better")
+- Use correct MTG terminology
+- Be 3-5 sentences with clear reasoning
+
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
+
 
 def build_reverse_lookup_prompt(pattern: dict, card_details: str) -> str:
     prompt = f"""Generate 3 reverse lookup Q&A pairs for cards that "{pattern['feature']}".
@@ -265,6 +359,7 @@ Questions should be like:
 Answers should list 3-5 best cards from the matching cards above.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
+
 
 def build_synergy_prompt(card: dict, synergy_cards: set) -> str:
     card_name = card.get('name', '')
@@ -290,6 +385,7 @@ Answers should explain why the synergy works and list 2-3 cards.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
+
 def build_budget_alternative_prompt(exp_card: dict, budget_details: str) -> str:
     exp_name = exp_card.get('name', '')
     prompt = f"""Generate 2 budget alternative Q&A pairs for {exp_name}.
@@ -314,6 +410,7 @@ Questions like:
 Answers should list 2-3 budget cards and explain they do similar things for less $$.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
+
 
 def build_color_identity_prompt(card: dict, commander_name: str, commander_colors: list[str], is_legal: bool) -> str:
     card_name = card.get('name', '')
@@ -343,6 +440,7 @@ Questions like:
 Answers should explain color identity rules and give YES/NO.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
+
 
 def build_quick_guidelines_prompt(base_question: str, base_answer: str) -> str:
     prompt = f"""Given this deckbuilding guideline, generate 3 variations with different phrasings.
@@ -380,36 +478,75 @@ def validate_with_model(model_name: str, card1: dict, card2: dict, qa: dict):
     try:
         response = query_ollama(model_name, validation_prompt)
         
-        # Parse JSON response
+        # Parse JSON response - handle common formatting issues
         response = response.replace("```json", "").replace("```", "").strip()
+        
+        # Try to extract JSON if there's extra text
+        if not response.startswith('{'):
+            # Find first { and last }
+            start = response.find('{')
+            end = response.rfind('}')
+            if start != -1 and end != -1:
+                response = response[start:end+1]
+        
         result = json.loads(response)
         
         score = result.get('score', 0)
         is_acceptable = result.get('is_acceptable', False)
         missing_info = result.get('missing_info', '')
         errors = result.get('errors', '')
+        mechanical_accuracy = result.get('mechanical_accuracy', '')
+        cost_comparison_correct = result.get('cost_comparison_correct', '')
         
-        # Build reason string
-        if not is_acceptable:
-            reason_parts = []
-            if missing_info:
-                reason_parts.append(f"Missing: {missing_info}")
-            if errors:
-                reason_parts.append(f"Errors: {errors}")
-            reason = "; ".join(reason_parts) if reason_parts else "Score too low"
+        # Build detailed reason string
+        reason_parts = []
+        
+        if errors:
+            reason_parts.append(f"Errors: {errors}")
+        
+        if missing_info:
+            reason_parts.append(f"Missing: {missing_info}")
+        
+        if mechanical_accuracy and 'incorrect' in mechanical_accuracy.lower():
+            reason_parts.append(f"Mechanics: {mechanical_accuracy}")
+        
+        if cost_comparison_correct and 'incorrect' in cost_comparison_correct.lower():
+            reason_parts.append(f"Costs: {cost_comparison_correct}")
+        
+        # Additional validation: if score is low, flag it
+        if score < 7 and not errors:
+            reason_parts.append(f"Low score ({score}/10)")
+        
+        # Build final reason
+        if not is_acceptable or reason_parts:
+            reason = "; ".join(reason_parts) if reason_parts else f"Score too low ({score}/10)"
         else:
             reason = "OK"
+        
+        # Extra safety check: if there are errors mentioned, force rejection
+        if errors and errors.lower() not in ['none', 'n/a', '']:
+            is_acceptable = False
+            score = min(score, 4)  # Cap score at 4 if there are errors
+        
+        # Extra safety check: if mechanical accuracy is wrong, force rejection
+        if mechanical_accuracy and any(word in mechanical_accuracy.lower() 
+                                       for word in ['no', 'incorrect', 'wrong', 'false']):
+            is_acceptable = False
+            score = min(score, 4)
         
         return is_acceptable, reason, score
     
     except json.JSONDecodeError as e:
         print(f"    ⚠️  Failed to parse validation JSON: {e}")
-        # If validation fails, be conservative - accept it
-        return True, "Validation parse failed (accepted by default)", 5
+        print(f"    Raw response: {response[:200]}...")
+        # Be conservative - REJECT if we can't validate
+        # (Changed from accepting by default)
+        return False, f"Validation parse failed: {str(e)}", 0
     
     except Exception as e:
         print(f"    ⚠️  Validation error: {e}")
-        return True, "Validation error (accepted by default)", 5
+        # Be conservative - REJECT if validation fails
+        return False, f"Validation error: {str(e)}", 0
 
 # =============================================================================
 # GENERATION FUNCTIONS (adapted to save MongoDB format)
