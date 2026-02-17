@@ -249,7 +249,7 @@ def save_to_mongo(synthetic_collection, examples, batch_size=1000):
 
 
 # =============================================================================
-# MODEL LOADING (same as before)
+# MODEL QUERYING
 # =============================================================================
 
 def query_ollama(model_name: str, prompt: str, max_tokens=1000):
@@ -262,20 +262,27 @@ def query_ollama(model_name: str, prompt: str, max_tokens=1000):
     print(f"{'─'*60}")
     
     try:
-        response = ollama.chat(
+        print(f"  → RESPONSE:")
+        print(f"{'─'*60}")
+        
+        response_content = ""
+        
+        stream = ollama.chat(
             model=model_name, 
             messages=[{"role": "user", "content": prompt}], 
-            #stream=True,
+            stream=True,
             options= {
                 "num_predict": max_tokens,
                 'num_ctx': 8192, # Set the total context window size
                 "temperature": 0.7
             })
         
-        response_content = response['message']['content']
+        for chunk in stream:
+            if 'message' in chunk and 'content' in chunk['message']:
+                content_chunk = chunk['message']['content']
+                print(content_chunk, end='', flush=True)
+                response_content += content_chunk
         
-        print(f"  → RESPONSE:")
-        print(f"{'─'*60}")
         print(response_content)
         print(f"{'─'*60}")
         end = time.time()
@@ -1178,7 +1185,7 @@ def generate_synergy_questions(cards_collection: Collection, combos_collection: 
             print(f"    Generated {len(mongo_documents):,}/{target_count:,}...")
         
         # Get card details
-        card = cards_collection.find_one({'name': card_name}, {'text': 1, 'type': 1})
+        card = cards_collection.find_one({'name': card_name})
         if not card:
             continue
         
@@ -1635,41 +1642,70 @@ def main():
     
     # Original formats
     if args.combo_queries > 0:
-        all_documents.extend(generate_combo_queries(combos, args.combo_queries))
+        docs = generate_combo_queries(combos, args.combo_queries)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} combo query documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.card_search > 0:
-        all_documents.extend(generate_card_search_queries(cards, args.card_search))
+        docs = generate_card_search_queries(cards, args.card_search)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} card search documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.commander > 0:
-        all_documents.extend(generate_commander_knowledge(args.commander))
+        docs = generate_commander_knowledge(args.commander)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} commander knowledge documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.multi_card > 0:
-        all_documents.extend(generate_multi_card_usage(combos, args.multi_card))
+        docs = generate_multi_card_usage(combos, args.multi_card)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} multi-card usage documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.comparison > 0:
-        all_documents.extend(generate_comparison_questions(cards, args.comparison))
+        docs = generate_comparison_questions(cards, args.comparison)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} comparison question documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.reverse_lookup > 0:
-        all_documents.extend(generate_reverse_lookup_questions(cards, args.reverse_lookup))
+        docs = generate_reverse_lookup_questions(cards, args.reverse_lookup)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} reverse lookup question documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.synergy > 0:
-        all_documents.extend(generate_synergy_questions(cards, combos, args.synergy))
+        docs =generate_synergy_questions(cards, combos, args.synergy)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} synergy question documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.budget > 0:
-        all_documents.extend(generate_budget_alternatives(cards, args.budget))
+        docs = generate_budget_alternatives(cards, args.budget)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} budget alternative question documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.color_identity > 0:
-        all_documents.extend(generate_color_identity_questions(cards, args.color_identity))
+        docs = generate_color_identity_questions(cards, args.color_identity)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} color identity question documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.guidelines > 0:
-        all_documents.extend(generate_quick_guidelines(args.guidelines))
+        docs = generate_quick_guidelines(args.guidelines)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} guideline question documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.terminology > 0:
-        all_documents.extend(generate_terminology_questions(args.terminology))
-    
-    # Save to MongoDB
-    if all_documents:
-        save_to_mongo(synthetic, all_documents)
+        docs = generate_terminology_questions(args.terminology)
+        all_documents.extend(docs)
+        print(f"  ✓ Generated {len(docs):,} terminology question documents")
+        save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     # Summary
     print("\n" + "="*80)
