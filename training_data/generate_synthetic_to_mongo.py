@@ -1297,7 +1297,7 @@ def generate_budget_alternatives(cards_collection: Collection, target_count=2000
             budget_names = [c.get('name', '') for c in budget_cards[:5]]
             budget_details = "\n".join([f"  - {c.get('name', '')} ({c.get('rarity', '')})" for c in budget_cards[:5]])
             
-            prompt = build_budget_alternative_prompt(exp_name, exp_card, budget_details)
+            prompt = build_budget_alternative_prompt(exp_card, budget_details)
 
             try:
                 response = query_ollama(MODEL_NAME, prompt)
@@ -1331,6 +1331,7 @@ def generate_budget_alternatives(cards_collection: Collection, target_count=2000
     return mongo_documents
 
 
+# TODO Get common commanders from EDHREC data and generate questions about color identity and card legality in those decks
 def generate_color_identity_questions(cards_collection: Collection, target_count=2000) -> list[dict]:
     """
     Generate color identity questions
@@ -1382,8 +1383,8 @@ def generate_color_identity_questions(cards_collection: Collection, target_count
         card_color_set = set(card_colors) if card_colors else set()
         commander_color_set = set(commander_colors)
         is_legal = card_color_set.issubset(commander_color_set)
-        
-        prompt = build_color_identity_prompt(card_name, card_colors, commander_name, commander_colors, is_legal)
+
+        prompt = build_color_identity_prompt(card, commander_name, commander_colors, is_legal)
 
         try:
             response = query_ollama(MODEL_NAME, prompt)
@@ -1604,7 +1605,7 @@ def main():
         print(f"\n⚡ Using {MODEL_NAME} for text generation and validation")
     
     # Apply presets
-    if True: #args.phase1:
+    if args.phase1: #args.phase1:
         args.comparison = 2000
         args.reverse_lookup = 3000
         args.synergy = 3000
