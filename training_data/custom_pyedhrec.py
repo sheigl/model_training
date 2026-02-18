@@ -30,8 +30,15 @@ class Custom_EDHRec:
         cookie_jar = requests.cookies.cookiejar_from_dict(d)
         return cookie_jar
     
+    def get(self, uri: str, query_params: dict =None, return_type: str = "json") -> tuple[dict, int]:
+        return self._get(uri, query_params=query_params, return_type=return_type)
     def _get(self, uri: str, query_params: dict =None, return_type: str = "json") -> tuple[dict, int]:
         res = self.session.get(uri, params=query_params)
+        
+        if res.status_code != 200:
+            print(f"Error fetching data from {uri}: {res.status_code}")
+            return None, res.status_code
+        
         if return_type == "json":
             res_json = res.json()
             return res_json, res.status_code
