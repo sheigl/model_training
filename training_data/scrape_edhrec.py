@@ -9,9 +9,7 @@ from custom_pyedhrec import Custom_EDHRec
 import argparse
 
 custom_edhrec = Custom_EDHRec()
-
-# TODO get other items from EDHRec
-#edhrec = EDHRec()
+edhrec = EDHRec()
 
 # Initialize MongoDB connection
 client = MongoClient('mongodb://root:whatever@localhost:27017/')  # Adjust connection string as needed

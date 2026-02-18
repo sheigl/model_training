@@ -224,7 +224,9 @@ def get_mongo_collections(uri, username, password):
     # New collection (synthetic data)
     synthetic = client['synthetic_queries']['queries']
     
-    return cards, combos, synthetic
+    commanders = client['edhrec']['commanders']
+    
+    return cards, combos, synthetic, commanders
 
 
 def save_to_mongo(synthetic_collection, examples, batch_size=1000):
@@ -1332,7 +1334,7 @@ def generate_budget_alternatives(cards_collection: Collection, target_count=2000
 
 
 # TODO Get common commanders from EDHREC data and generate questions about color identity and card legality in those decks
-def generate_color_identity_questions(cards_collection: Collection, target_count=2000) -> list[dict]:
+def generate_color_identity_questions(cards_collection: Collection, commanders_collection: Collection, target_count=2000) -> list[dict]:
     """
     Generate color identity questions
     
@@ -1353,18 +1355,17 @@ def generate_color_identity_questions(cards_collection: Collection, target_count
     print(f"  → Processing {len(cards_sample)} cards...")
     
     # Common commander color identities
+    commanders: list[dict] = commanders_collection.find(
+        {'color_identity': {'$exists': True}},
+        {'name': 1, 'color_identity': 1}
+    ).limit(100)
+    
     commander_identities = [
-        ('Atraxa', ['W', 'U', 'B', 'G']),
-        ('Muldrotha', ['U', 'B', 'G']),
-        ('Edgar Markov', ['W', 'B', 'R']),
-        ('Chulane', ['W', 'U', 'G']),
-        ('Korvold', ['B', 'R', 'G']),
-        ('Kenrith', ['W', 'U', 'B', 'R', 'G']),
-        ('Teysa', ['W', 'B']),
-        ('Niv-Mizzet', ['U', 'R']),
-        ('Golgari deck', ['B', 'G']),
         ('mono-red deck', ['R']),
     ]
+    
+    for card in commanders:
+        commander_identities.append((card.get('name'), card.get('color_identity')))
     
     for card in random.sample(cards_sample, min(200, len(cards_sample))):
         if len(mongo_documents) >= target_count:
@@ -1584,7 +1585,7 @@ def main():
     parser.add_argument('--multi-card', type=int, default=0)
     parser.add_argument('--model', type=str, default='qwen2.5:14b', help='Ollama model name for generation and validation')
     
-    # Phase 1 formats (NEW!)
+    # Phase 1 formats
     parser.add_argument('--comparison', type=int, default=0, help='Card comparison questions')
     parser.add_argument('--reverse-lookup', type=int, default=0, help='Feature-to-card lookup')
     parser.add_argument('--synergy', type=int, default=0, help='Card synergy discovery')
@@ -1635,7 +1636,7 @@ def main():
     
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
-    cards, combos, synthetic = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
+    cards, combos, synthetic, commanders = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
     print("  ✓ Connected")
     
     # Generate all synthetic data
@@ -1679,7 +1680,7 @@ def main():
         save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.synergy > 0:
-        docs =generate_synergy_questions(cards, combos, args.synergy)
+        docs = generate_synergy_questions(cards, combos, args.synergy)
         all_documents.extend(docs)
         print(f"  ✓ Generated {len(docs):,} synergy question documents")
         save_to_mongo(synthetic, docs)  # Save incrementally after each format
@@ -1691,7 +1692,7 @@ def main():
         save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.color_identity > 0:
-        docs = generate_color_identity_questions(cards, args.color_identity)
+        docs = generate_color_identity_questions(cards, commanders, args.color_identity)
         all_documents.extend(docs)
         print(f"  ✓ Generated {len(docs):,} color identity question documents")
         save_to_mongo(synthetic, docs)  # Save incrementally after each format
