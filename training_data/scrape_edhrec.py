@@ -58,7 +58,7 @@ def get_top_first_page(uri: str, top_card_type: str = "commanders"):
                 if card_status_code != 200:
                     continue
                 
-                print(f"[{card_list.get('header')}] Saving card: {first_page_card.get('name')}")
+                print(f"[{card_list.get('header') or top_card_type}] Saving card: {first_page_card.get('name')}")
                 
                 card_to_save = {
                     "rank": first_page_card.get("rank"),
