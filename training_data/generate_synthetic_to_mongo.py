@@ -565,13 +565,13 @@ def build_color_identity_prompt(card: dict, commander_name: str, commander_color
     """Generate color identity legality prompt with MTG notation guide."""
     
     card_name = card.get('name', '')
-    card_colors = card.get('colorIdentity', card.get('colors', []))
+    card_colors: list[str] = card.get('colorIdentity', card.get('colors', []))
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 Generate 2 color identity Q&A pairs.
 
 Card: {card_name}
-Color identity: {', '.join(card_colors) if card_colors else 'Colorless'}
+Color identity: {', '.join(list(filter(None, card_colors))) if card_colors else 'Colorless'}
 Mana cost: {card.get('manaCost', 'N/A')}
 
 Commander: {commander_name}
@@ -590,7 +590,7 @@ Questions like:
 - "What's the color identity of {card_name}?"
 - "Is {card_name} legal in {commander_name}?"
 
-Answers should explain color identity rules and give YES/NO.
+Answers should explain color identity rules and explain to the question asker why.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
@@ -1347,10 +1347,10 @@ def generate_color_identity_questions(cards_collection: Collection, commanders_c
     mongo_documents = []
     
     # Sample diverse cards
-    cards_sample = list(cards_collection.find(
+    cards_sample = list(map(lambda c: { 'name': c.get('name'), 'colors': json.loads(c.get('colors')), 'colorIdentity': json.loads(c.get('colorIdentity')), 'manaCost': c.get('manaCost') }, cards_collection.find(
         {'colors': {'$exists': True}},
         {'name': 1, 'colors': 1, 'colorIdentity': 1, 'manaCost': 1}
-    ).limit(500))
+    ).limit(500)))
     
     print(f"  → Processing {len(cards_sample)} cards...")
     
