@@ -85,6 +85,7 @@ Usage:
 """
 
 from unsloth import FastLanguageModel
+from unsloth.chat_templates import CHAT_TEMPLATES, get_chat_template
 import argparse
 import json
 import os
@@ -197,7 +198,7 @@ def parse_args():
     parser.add_argument(
         "--lora-dropout",
         type=float,
-        default=0.05,
+        default=0,
         help="LoRA dropout for regularization"
     )
 
@@ -395,11 +396,17 @@ def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
         dtype=torch.bfloat16,
         token=hf_token,
         load_in_4bit=use_4bit,
+        #gpu_memory_utilization=0.9 
+    )
+    
+    tokenizer = get_chat_template(
+        tokenizer,
+        chat_template = "chatml",
     )
 
-    if device == 'xpu':
-        print("  Moving model to Intel XPU...")
-        model = model.to(device)
+    #if device == 'xpu':
+    #    print("  Moving model to Intel XPU...")
+    #    model = model.to(device)
 
     if use_4bit:
         print("  Preparing model for k-bit training...")
@@ -409,18 +416,18 @@ def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
     return model, tokenizer
 
 
-def load_tokenizer(model_name):
-    """Load and configure the tokenizer for the specified model."""
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name,
-        trust_remote_code=True,
-    )
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
-    return tokenizer
+# def load_tokenizer(model_name):
+#     """Load and configure the tokenizer for the specified model."""
+#     tokenizer = AutoTokenizer.from_pretrained(
+#         model_name,
+#         trust_remote_code=True,
+#     )
+#     tokenizer.pad_token = tokenizer.eos_token
+#     tokenizer.padding_side = "right"
+#     return tokenizer
 
 
-def apply_lora(model, lora_r=16, lora_alpha=32, lora_dropout=0.05):
+def apply_lora(model, lora_r=16, lora_alpha=32, lora_dropout=0):
     """
     Apply LoRA (Low-Rank Adaptation) adapters to the model.
 
@@ -448,9 +455,8 @@ def apply_lora(model, lora_r=16, lora_alpha=32, lora_dropout=0.05):
         lora_dropout=lora_dropout,
         target_modules=TARGET_MODULES,
         use_gradient_checkpointing="unsloth",  # Unsloth's optimized checkpointing
-        random_state=42,
-        bias="none",
-        task_type="CAUSAL_LM",
+        random_state=3407,
+        bias="none"
     )
 
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -518,54 +524,23 @@ def create_trainer(
     """Create the SFTTrainer with optional GaLore optimizer."""
     print("\nCreating trainer...")
 
-    if use_galore:
-        if not GALORE_AVAILABLE:
-            raise RuntimeError(
-                "GaLore requested but not installed! "
-                "Install with: pip install galore-torch"
+    print("Using standard AdamW optimizer")
+        
+    trainer = SFTTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        processing_class=tokenizer,
+        formatting_func=lambda examples: [
+            tokenizer.apply_chat_template(
+                convo if isinstance(convo, list) else [convo],
+                tokenize=False,
+                add_generation_prompt=False
             )
-
-        print(f"Using GaLore optimizer:")
-        print(f"  Rank: {galore_rank}")
-        print(f"  Update projection gap: {galore_update_proj_gap} steps")
-        print(f"  Scale: {galore_scale}")
-
-        galore_params = [p for p in model.parameters() if p.requires_grad]
-
-        param_groups = [
-            {
-                'params': galore_params,
-                'rank': galore_rank,
-                'update_proj_gap': galore_update_proj_gap,
-                'scale': galore_scale,
-                'proj_type': 'std'
-            }
-        ]
-
-        optimizer = GaLoreAdamW(
-            param_groups,
-            lr=learning_rate,
-            weight_decay=0.01,
-        )
-
-        trainer = SFTTrainer(
-            model=model,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            processing_class=tokenizer,
-            optimizers=(optimizer, None),
-        )
-    else:
-        print("Using standard AdamW optimizer")
-
-        trainer = SFTTrainer(
-            model=model,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            processing_class=tokenizer,
-        )
+            for convo in examples["messages"]
+        ],
+    )
 
     return trainer
 
