@@ -14,10 +14,10 @@
   --lora-r 32 \
   --lora-alpha 64 \
   --lora-dropout 0 \
-  --batch-size 2 \
+  --batch-size 1 \
   --learning-rate 2e-4 \
-  --gradient-accumulation 8 \
+  --gradient-accumulation 16 \
   --epochs 3 \
-  --max-seq-length 2048 \
+  --max-seq-length 512 \
   --output-dir ~/code/model_training/qwen_training/output-3b-mtg-unsloth #\
   #2>&1 | tee ~/.log/model_training_unsloth.log
