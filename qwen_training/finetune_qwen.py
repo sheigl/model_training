@@ -375,7 +375,7 @@ def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_compute_dtype=torch.float16,
             bnb_4bit_use_double_quant=True,
         )
 
@@ -393,7 +393,7 @@ def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
         quantization_config=quantization_config,
         device_map="auto" if device != 'xpu' else None,
         trust_remote_code=True,
-        dtype=torch.bfloat16,
+        dtype=None,
         token=hf_token,
         load_in_4bit=use_4bit,
         #gpu_memory_utilization=0.9 
@@ -499,7 +499,8 @@ def create_training_config(
         save_strategy="steps",
         save_steps=200,
         save_total_limit=3,
-        bf16=True if device in ['cuda', 'xpu'] else False,
+        bf16=True,
+        fp16=False,
         gradient_checkpointing=True,
         report_to="none",
         load_best_model_at_end=False,
