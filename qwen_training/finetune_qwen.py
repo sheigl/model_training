@@ -84,6 +84,7 @@ Usage:
         --resume-from-checkpoint ./output/checkpoint-1000
 """
 
+from unsloth import FastLanguageModel
 import argparse
 import json
 import os
@@ -377,13 +378,23 @@ def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
             bnb_4bit_use_double_quant=True,
         )
 
-    model = AutoModelForCausalLM.from_pretrained(
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     model_name,
+    #     quantization_config=quantization_config,
+    #     device_map="auto" if device != 'xpu' else None,
+    #     trust_remote_code=True,
+    #     dtype=torch.bfloat16,
+    #     token=hf_token,
+    # )
+    
+    model, tokenizer = FastLanguageModel.from_pretrained(
         model_name,
         quantization_config=quantization_config,
         device_map="auto" if device != 'xpu' else None,
         trust_remote_code=True,
         dtype=torch.bfloat16,
         token=hf_token,
+        load_in_4bit=use_4bit,
     )
 
     if device == 'xpu':
@@ -395,7 +406,7 @@ def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
         model = prepare_model_for_kbit_training(model)
 
     print(f"Model loaded successfully!")
-    return model
+    return model, tokenizer
 
 
 def load_tokenizer(model_name):
@@ -418,16 +429,29 @@ def apply_lora(model, lora_r=16, lora_alpha=32, lora_dropout=0.05):
     """
     print("\nConfiguring LoRA...")
 
-    lora_config = LoraConfig(
+    #lora_config = LoraConfig(
+    #    r=lora_r,
+    #    lora_alpha=lora_alpha,
+    #    target_modules=TARGET_MODULES,
+    #    lora_dropout=lora_dropout,
+    #    bias="none",
+    #    task_type="CAUSAL_LM",
+    #)
+
+    #model = get_peft_model(model, lora_config)
+    
+     # Apply LoRA with Unsloth (same settings)
+    model = FastLanguageModel.get_peft_model(
+        model,
         r=lora_r,
         lora_alpha=lora_alpha,
-        target_modules=TARGET_MODULES,
         lora_dropout=lora_dropout,
+        target_modules=TARGET_MODULES,
+        use_gradient_checkpointing="unsloth",  # Unsloth's optimized checkpointing
+        random_state=42,
         bias="none",
         task_type="CAUSAL_LM",
     )
-
-    model = get_peft_model(model, lora_config)
 
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total_params = sum(p.numel() for p in model.parameters())
@@ -461,7 +485,7 @@ def create_training_config(
         gradient_accumulation_steps=gradient_accumulation,
         learning_rate=learning_rate,
         max_length=max_seq_length,
-        optim="adamw_torch",
+        optim="adamw_8bit",
         weight_decay=0.01,
         warmup_ratio=0.03,
         eval_strategy="epoch",
@@ -657,14 +681,14 @@ def main():
     # Load model and tokenizer
     print("\nLoading model and tokenizer...")
 
-    model = load_model(
+    model, tokenizer = load_model(
         model_name=args.model_name,
         use_4bit=args.use_4bit,
         device=device,
         hf_token=args.hf_token
     )
 
-    tokenizer = load_tokenizer(args.model_name)
+    #tokenizer = load_tokenizer(args.model_name)
 
     # Apply LoRA
     model, trainable_params, total_params = apply_lora(
