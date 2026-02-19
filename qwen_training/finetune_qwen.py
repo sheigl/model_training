@@ -68,32 +68,30 @@ Usage:
     python finetune_qwen.py --dataset file --data-file my_data.jsonl
 
     # Qwen3 8B with LoRA + 4-bit + GaLore (advanced, better quality)
-    python finetune_qwen.py \
-        --model-name Qwen/Qwen3-8B \
-        --dataset file \
-        --data-file my_data.jsonl \
-        --use-4bit \
-        --use-galore \
-        --batch-size 2 \
+    python finetune_qwen.py \\
+        --model-name Qwen/Qwen3-8B \\
+        --dataset file \\
+        --data-file my_data.jsonl \\
+        --use-4bit \\
+        --use-galore \\
+        --batch-size 2 \\
         --gradient-accumulation 8
 
     # With checkpoint resumption
-    python finetune_qwen.py \
-        --dataset file \
-        --data-file my_data.jsonl \
+    python finetune_qwen.py \\
+        --dataset file \\
+        --data-file my_data.jsonl \\
         --resume-from-checkpoint ./output/checkpoint-1000
 """
 
 from unsloth import FastLanguageModel
-from unsloth.chat_templates import CHAT_TEMPLATES, get_chat_template
+from unsloth.chat_templates import get_chat_template
 import argparse
 import json
 import os
 
 import torch
 from datasets import Dataset, load_dataset
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import SFTTrainer, SFTConfig
 
 
@@ -120,7 +118,7 @@ except ImportError:
 # k_proj = Key projection    ("What information do I have?")
 # v_proj = Value projection   ("What's the actual content?")
 # o_proj = Output projection  ("How do I combine everything?")
-# This adds the MLP layers (gate_proj, up_proj, down_proj) which research shows significantly improves performance.
+# MLP layers (gate_proj, up_proj, down_proj) significantly improve performance.
 
 TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
@@ -345,6 +343,28 @@ def load_hf_dataset(dataset_name="yahma/alpaca-cleaned"):
     return dataset.map(format_to_messages)
 
 
+def prepare_dataset_for_unsloth(dataset, tokenizer):
+    """
+    Convert messages format to a flat 'text' column using the chat template.
+
+    Unsloth's SFTTrainer works best when given a dataset with a pre-formatted
+    'text' column rather than a formatting_func. This avoids dtype mismatches
+    that can occur when the trainer tries to format on the fly.
+    """
+    def format_example(examples):
+        texts = []
+        for convo in examples["messages"]:
+            text = tokenizer.apply_chat_template(
+                convo,
+                tokenize=False,
+                add_generation_prompt=False
+            )
+            texts.append(text)
+        return {"text": texts}
+
+    return dataset.map(format_example, batched=True, remove_columns=dataset.column_names)
+
+
 # =============================================================================
 # MODEL
 # =============================================================================
@@ -365,96 +385,58 @@ def detect_device():
 
 
 def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
-    """Load a pre-trained causal language model with optional 4-bit quantization."""
+    """
+    Load a pre-trained causal language model using Unsloth.
+
+    IMPORTANT: Do NOT call prepare_model_for_kbit_training() after this.
+    Unsloth's FastLanguageModel.from_pretrained() handles all quantization
+    and dtype setup internally. Calling prepare_model_for_kbit_training()
+    afterward will corrupt dtypes (converting some weights back to float32)
+    and cause dtype mismatch errors during training.
+    """
     print(f"Loading {model_name}...")
     if "8B" in model_name or "7B" in model_name:
         print("  (This is a large model - download may take several minutes)")
 
-    quantization_config = None
-    if use_4bit:
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-        )
-
-    # model = AutoModelForCausalLM.from_pretrained(
-    #     model_name,
-    #     quantization_config=quantization_config,
-    #     device_map="auto" if device != 'xpu' else None,
-    #     trust_remote_code=True,
-    #     dtype=torch.bfloat16,
-    #     token=hf_token,
-    # )
-    
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name,
-        #quantization_config=quantization_config,
-        dtype=None,
+        dtype=None,           # Auto-detect best dtype (bfloat16 on modern GPUs)
         token=hf_token,
         load_in_4bit=use_4bit,
-        #gpu_memory_utilization=0.9 
     )
-    
+
+    # Apply Qwen's chatml chat template to the tokenizer
     tokenizer = get_chat_template(
         tokenizer,
-        chat_template = "chatml",
+        chat_template="chatml",
     )
 
-    #if device == 'xpu':
-    #    print("  Moving model to Intel XPU...")
-    #    model = model.to(device)
-
-    if use_4bit:
-        print("  Preparing model for k-bit training...")
-        model = prepare_model_for_kbit_training(model)
+    # NOTE: No prepare_model_for_kbit_training() call here!
+    # Unsloth manages this internally during from_pretrained().
+    # Adding it again would cause float32/bfloat16 dtype mismatches.
 
     print(f"Model loaded successfully!")
     return model, tokenizer
 
 
-# def load_tokenizer(model_name):
-#     """Load and configure the tokenizer for the specified model."""
-#     tokenizer = AutoTokenizer.from_pretrained(
-#         model_name,
-#         trust_remote_code=True,
-#     )
-#     tokenizer.pad_token = tokenizer.eos_token
-#     tokenizer.padding_side = "right"
-#     return tokenizer
-
-
 def apply_lora(model, lora_r=16, lora_alpha=32, lora_dropout=0):
     """
-    Apply LoRA (Low-Rank Adaptation) adapters to the model.
+    Apply LoRA (Low-Rank Adaptation) adapters to the model using Unsloth.
 
     Returns:
         tuple: (model_with_lora, trainable_params, total_params)
     """
     print("\nConfiguring LoRA...")
 
-    #lora_config = LoraConfig(
-    #    r=lora_r,
-    #    lora_alpha=lora_alpha,
-    #    target_modules=TARGET_MODULES,
-    #    lora_dropout=lora_dropout,
-    #    bias="none",
-    #    task_type="CAUSAL_LM",
-    #)
-
-    #model = get_peft_model(model, lora_config)
-    
-     # Apply LoRA with Unsloth (same settings)
     model = FastLanguageModel.get_peft_model(
         model,
         r=lora_r,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
         target_modules=TARGET_MODULES,
-        use_gradient_checkpointing="unsloth",  # Unsloth's optimized checkpointing
+        use_gradient_checkpointing="unsloth",  # Unsloth's memory-efficient checkpointing
         random_state=3407,
-        bias="none"
+        bias="none",
     )
 
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -503,6 +485,7 @@ def create_training_config(
         report_to="none",
         load_best_model_at_end=False,
         packing=False,
+        dataset_text_field="text",  # Tell SFTTrainer which column has the formatted text
     )
 
     return training_args
@@ -520,25 +503,24 @@ def create_trainer(
     galore_scale=0.25,
     learning_rate=2e-4
 ):
-    """Create the SFTTrainer with optional GaLore optimizer."""
+    """
+    Create the SFTTrainer.
+
+    The datasets passed in should already have a 'text' column (pre-formatted
+    via prepare_dataset_for_unsloth). We do NOT use a formatting_func here
+    because that approach can trigger dtype issues with Unsloth's patched layers.
+    """
     print("\nCreating trainer...")
 
     print("Using standard AdamW optimizer")
-        
+
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
-        formatting_func=lambda examples: [
-            tokenizer.apply_chat_template(
-                convo if isinstance(convo, list) else [convo],
-                tokenize=False,
-                add_generation_prompt=False
-            )
-            for convo in examples["messages"]
-        ],
+        # No formatting_func - dataset already has pre-formatted 'text' column
     )
 
     return trainer
@@ -557,7 +539,8 @@ def test_model(model, tokenizer, device, prompts=None):
     print("TESTING FINE-TUNED MODEL")
     print("="*70 + "\n")
 
-    model.eval()
+    # Switch to inference mode
+    FastLanguageModel.for_inference(model)
 
     for prompt in prompts:
         messages = [{"role": "user", "content": prompt}]
@@ -662,8 +645,6 @@ def main():
         hf_token=args.hf_token
     )
 
-    #tokenizer = load_tokenizer(args.model_name)
-
     # Apply LoRA
     model, trainable_params, total_params = apply_lora(
         model,
@@ -671,10 +652,6 @@ def main():
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout
     )
-    
-    for name, param in model.named_parameters():
-        if param.dtype == torch.float32:
-            print(f"{name}: {param.dtype}")
 
     # Prepare dataset
     print("\nPreparing dataset...")
@@ -696,6 +673,12 @@ def main():
     train_test_split = train_dataset.train_test_split(test_size=0.1)
     train_dataset = train_test_split["train"]
     eval_dataset = train_test_split["test"]
+
+    # Pre-format datasets into 'text' column using the chat template.
+    # This must happen AFTER the tokenizer is configured with get_chat_template().
+    print("Formatting datasets with chat template...")
+    train_dataset = prepare_dataset_for_unsloth(train_dataset, tokenizer)
+    eval_dataset = prepare_dataset_for_unsloth(eval_dataset, tokenizer)
 
     print(f"Training examples: {len(train_dataset)}")
     print(f"Evaluation examples: {len(eval_dataset)}")
