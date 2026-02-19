@@ -390,9 +390,7 @@ def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
     
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name,
-        quantization_config=quantization_config,
-        device_map="auto" if device != 'xpu' else None,
-        trust_remote_code=True,
+        #quantization_config=quantization_config,
         dtype=None,
         token=hf_token,
         load_in_4bit=use_4bit,
@@ -673,6 +671,10 @@ def main():
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout
     )
+    
+    for name, param in model.named_parameters():
+        if param.dtype == torch.float32:
+            print(f"{name}: {param.dtype}")
 
     # Prepare dataset
     print("\nPreparing dataset...")
