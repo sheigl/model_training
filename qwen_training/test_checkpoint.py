@@ -1,22 +1,18 @@
+from unsloth import FastLanguageModel
+from unsloth.chat_templates import get_chat_template
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
-BASE_MODEL = "Qwen/Qwen2.5-3B-Instruct"
+BASE_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 # Use the latest checkpoint
-CHECKPOINT = "./output-3b-mtg-qlora/checkpoint-10800"  # Adjust to your latest
+CHECKPOINT = "./output/checkpoint-20800"  # Adjust to your latest
 
 print("Loading model...")
-base_model = AutoModelForCausalLM.from_pretrained(
-    BASE_MODEL,
-    torch_dtype=torch.float32,
-    trust_remote_code=True,
-)
+base_model, tokenizer = FastLanguageModel.from_pretrained(BASE_MODEL, dtype=None)
 
 model = PeftModel.from_pretrained(base_model, CHECKPOINT)
 model.eval()
-
-tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
 
 # Test questions
 questions = [

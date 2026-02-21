@@ -7,7 +7,7 @@
 #export ZE_FLAT_DEVICE_HIERARCHY=FLAT
 
 ~/code/model_training/.venv/bin/python finetune_qwen.py \
-  --model-name Qwen/Qwen2.5-3B-Instruct \
+  --model-name Qwen/Qwen2.5-7B-Instruct \
   --dataset file \
   --data-file ~/code/model_training/training_data/data/mongodb_mtg_training.jsonl \
   --use-4bit \
@@ -19,5 +19,6 @@
   --gradient-accumulation 8 \
   --epochs 3 \
   --max-seq-length 2048 \
-  --output-dir ~/code/model_training/qwen_training/output-3b-mtg-unsloth #\
-  #2>&1 | tee ~/.log/model_training_unsloth.log
+  --resume-from-checkpoint ./output/checkpoint-20800 \
+  --output-dir ~/code/model_training/qwen_training/output-7b-mtg-unsloth \
+  2>&1 | tee ~/.log/model_training_unsloth.log
