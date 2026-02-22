@@ -19,6 +19,6 @@
   --gradient-accumulation 8 \
   --epochs 3 \
   --max-seq-length 2048 \
-  --resume-from-checkpoint ./output/checkpoint-20800 \
+  --resume-from-checkpoint ./output/checkpoint-34600 \
   --output-dir ~/code/model_training/qwen_training/output-7b-mtg-unsloth \
   2>&1 | tee ~/.log/model_training_unsloth.log

@@ -403,6 +403,7 @@ def load_model(model_name, use_4bit=False, device='cpu', hf_token=None):
         dtype=None,           # Auto-detect best dtype (bfloat16 on modern GPUs)
         token=hf_token,
         load_in_4bit=use_4bit,
+        device_map="balanced"
     )
 
     # Apply Qwen's chatml chat template to the tokenizer
