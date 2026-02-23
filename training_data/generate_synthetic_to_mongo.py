@@ -369,6 +369,41 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return prompt
 
 
+def build_qa_validation_prompt(question: str, answer: str, context: str = "", category: str = "") -> str:
+    """Build the generic Q&A validation prompt used by validate_qa()."""
+    context_block = f"\nSource material the answer should be grounded in:\n{context}\n" if context else ""
+    return f"""You are a Magic: The Gathering expert reviewing a generated Q&A pair for training data quality.
+
+Category: {category or 'general'}{context_block}
+Question: {question}
+
+Answer to validate:
+{answer}
+
+Score this answer on:
+1. Factual accuracy — Is everything correct? Wrong mana costs, wrong card names, wrong mechanics = instant reject.
+2. Completeness — Does it fully answer the question without important gaps?
+3. Usefulness — Is this a good training example? Clear and specific, not vague or generic?
+4. Grounding — Is it grounded in the provided context, or hallucinating details?
+
+Scoring guide:
+- 9-10: Excellent, publish as-is
+- 7-8: Good, acceptable for training
+- 5-6: Too vague, incomplete, or minor errors — reject
+- 1-4: Factual errors or hallucinations — reject
+
+Respond ONLY with JSON:
+{{
+  "score": <1-10>,
+  "is_acceptable": <true/false>,
+  "errors": "<factual errors if any, or 'none'>",
+  "missing_info": "<what is missing or vague, if anything>",
+  "reason": "<one sentence summary>"
+}}
+
+Output ONLY valid JSON, no other text."""
+
+
 def build_card_validation_prompt(card1: dict, card2: dict, question: str, answer: str) -> str:
     """Build validation prompt for card comparison answers."""
     
@@ -1326,37 +1361,7 @@ def validate_qa(question: str, answer: str, context: str = "", category: str = "
 
     Returns: (is_valid: bool, reason: str, score: int)
     """
-    context_block = f"\nSource material the answer should be grounded in:\n{context}\n" if context else ""
-    prompt = f"""You are a Magic: The Gathering expert reviewing a generated Q&A pair for training data quality.
-
-Category: {category or 'general'}{context_block}
-Question: {question}
-
-Answer to validate:
-{answer}
-
-Score this answer on:
-1. Factual accuracy — Is everything correct? Wrong mana costs, wrong card names, wrong mechanics = instant reject.
-2. Completeness — Does it fully answer the question without important gaps?
-3. Usefulness — Is this a good training example? Clear and specific, not vague or generic?
-4. Grounding — Is it grounded in the provided context, or hallucinating details?
-
-Scoring guide:
-- 9-10: Excellent, publish as-is
-- 7-8: Good, acceptable for training
-- 5-6: Too vague, incomplete, or minor errors — reject
-- 1-4: Factual errors or hallucinations — reject
-
-Respond ONLY with JSON:
-{{
-  "score": <1-10>,
-  "is_acceptable": <true/false>,
-  "errors": "<factual errors if any, or 'none'>",
-  "missing_info": "<what is missing or vague, if anything>",
-  "reason": "<one sentence summary>"
-}}
-
-Output ONLY valid JSON, no other text."""
+    prompt = build_qa_validation_prompt(question, answer, context, category)
 
     try:
         response = query_ollama(MODEL_NAME, prompt)
