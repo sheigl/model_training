@@ -100,7 +100,7 @@ class Custom_EDHRec:
 
     @staticmethod
     def _get_nextjs_data(response: dict, data_name: str) -> dict:
-        if "pageProps" in response:
+        if response and "pageProps" in response:
             return response.get("pageProps", {}).get(data_name)
 
     def get_articles(self, page_number: int, tag: str = None) -> tuple[dict, int]:
