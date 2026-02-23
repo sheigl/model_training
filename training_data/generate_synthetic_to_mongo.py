@@ -28,10 +28,29 @@ MongoDB Schema:
 from pymongo import MongoClient
 import json
 import random
+import re
 from datetime import datetime
 import argparse
 import time
 import ollama
+
+
+def clean_html(raw: str) -> str:
+    """Strip HTML tags and normalise whitespace from article/guide content."""
+    # Remove script and style blocks entirely
+    raw = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', raw, flags=re.DOTALL | re.IGNORECASE)
+    # Remove all remaining tags
+    raw = re.sub(r'<[^>]+>', ' ', raw)
+    # Decode common HTML entities
+    raw = (raw
+           .replace('&amp;', '&')
+           .replace('&lt;', '<')
+           .replace('&gt;', '>')
+           .replace('&quot;', '"')
+           .replace('&#39;', "'")
+           .replace('&nbsp;', ' '))
+    # Collapse whitespace
+    return re.sub(r'\s+', ' ', raw).strip()
 
 global MODEL_NAME
 MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
