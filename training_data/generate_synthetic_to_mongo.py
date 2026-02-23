@@ -1315,6 +1315,79 @@ def validate_with_model(model_name: str, card1: dict, card2: dict, qa: dict):
         # Be conservative - REJECT if validation fails
         return False, f"Validation error: {str(e)}", 0
 
+
+def validate_qa(question: str, answer: str, context: str = "", category: str = "") -> tuple:
+    """
+    Generic Q&A validator — calls the model to score any question/answer pair.
+
+    Used by all generation functions that lack card-specific validation.
+    `context` should contain the source material the answer is grounded in
+    (rule text, article content, archetype description, etc.).
+
+    Returns: (is_valid: bool, reason: str, score: int)
+    """
+    context_block = f"\nSource material the answer should be grounded in:\n{context}\n" if context else ""
+    prompt = f"""You are a Magic: The Gathering expert reviewing a generated Q&A pair for training data quality.
+
+Category: {category or 'general'}{context_block}
+Question: {question}
+
+Answer to validate:
+{answer}
+
+Score this answer on:
+1. Factual accuracy — Is everything correct? Wrong mana costs, wrong card names, wrong mechanics = instant reject.
+2. Completeness — Does it fully answer the question without important gaps?
+3. Usefulness — Is this a good training example? Clear and specific, not vague or generic?
+4. Grounding — Is it grounded in the provided context, or hallucinating details?
+
+Scoring guide:
+- 9-10: Excellent, publish as-is
+- 7-8: Good, acceptable for training
+- 5-6: Too vague, incomplete, or minor errors — reject
+- 1-4: Factual errors or hallucinations — reject
+
+Respond ONLY with JSON:
+{{
+  "score": <1-10>,
+  "is_acceptable": <true/false>,
+  "errors": "<factual errors if any, or 'none'>",
+  "missing_info": "<what is missing or vague, if anything>",
+  "reason": "<one sentence summary>"
+}}
+
+Output ONLY valid JSON, no other text."""
+
+    try:
+        response = query_ollama(MODEL_NAME, prompt)
+        response = response.replace("```json", "").replace("```", "").strip()
+        if not response.startswith('{'):
+            start = response.find('{')
+            end = response.rfind('}')
+            if start != -1 and end != -1:
+                response = response[start:end+1]
+
+        result = json.loads(response)
+        score = result.get('score', 0)
+        is_acceptable = result.get('is_acceptable', False)
+        errors = result.get('errors', '')
+        reason = result.get('reason', f"Score {score}/10")
+
+        # Force reject if errors mentioned
+        if errors and errors.lower() not in ['none', 'n/a', '']:
+            is_acceptable = False
+            score = min(score, 4)
+
+        return is_acceptable and score >= 7, reason, score
+
+    except json.JSONDecodeError as e:
+        print(f"    ⚠️  Validation JSON parse failed: {e}")
+        return False, f"Validation parse failed: {str(e)}", 0
+    except Exception as e:
+        print(f"    ⚠️  Validation error: {e}")
+        return False, f"Validation error: {str(e)}", 0
+
+
 # =============================================================================
 # GENERATION FUNCTIONS (adapted to save MongoDB format)
 # =============================================================================
@@ -1482,15 +1555,24 @@ def generate_commander_knowledge(target_count=200) -> list[dict]:
         
         for qa in qa_pairs:
             if 'question' in qa and 'answer' in qa:
-                mongo_documents.append({
-                    "question": qa['question'],
-                    "answer": qa['answer'],
-                    "category": "commander_rules",
-                    "source_data": ["commander_format_rules"],
-                    "validated": False,
-                    "needs_review": True  # Manual verification needed!
-                })
-                print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
+                is_valid, reason, score = validate_qa(
+                    qa['question'], qa['answer'],
+                    context="Commander format rules: 100-card singleton, commander in command zone, commander tax, commander damage, color identity restrictions.",
+                    category="commander_rules"
+                )
+                if is_valid:
+                    mongo_documents.append({
+                        "question": qa['question'],
+                        "answer": qa['answer'],
+                        "category": "commander_rules",
+                        "source_data": ["commander_format_rules"],
+                        "validated": True,
+                        "validation_score": score,
+                        "needs_review": False
+                    })
+                    print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                else:
+                    print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
             else:
                 print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
 
@@ -1531,18 +1613,26 @@ def generate_multi_card_usage(combos_collection: Collection, target_count=2000) 
             
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "multi_card_usage",
-                        "source_data": card_names,
-                        "validated": True,
-                        "needs_review": False
-                    })
-                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
-
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Cards: {', '.join(card_names)}\nCombo/interaction: {description}",
+                        category="multi_card_usage"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "multi_card_usage",
+                            "source_data": card_names,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
                 else:
                     print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
         except Exception as e:
@@ -2078,16 +2168,23 @@ def generate_quick_guidelines(target_count=2000) -> list[dict]:
             
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "guideline",
-                        "source_data": ["deckbuilding_guidelines"],
-                        "guideline_type": "deckbuilding",
-                        "validated": False,
-                        "needs_review": True  # Guidelines should be reviewed
-                    })
-                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Deckbuilding guideline: {base_question}\nExpected answer direction: {base_answer}",
+                        category="guideline"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "guideline",
+                            "source_data": ["deckbuilding_guidelines"],
+                            "guideline_type": "deckbuilding",
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
 
                     if len(mongo_documents) >= target_count:
                         break
@@ -2236,18 +2333,27 @@ def generate_article_qa(articles_collection, target_count=2000) -> list[dict]:
             accepted = 0
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "article_qa",
-                        "source_data": [title],
-                        "article_title": title,
-                        "validated": True,
-                        "needs_review": False
-                    })
-                    accepted += 1
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Article: {title}\n{content[:500]}",
+                        category="article_qa"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "article_qa",
+                            "source_data": [title],
+                            "article_title": title,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        accepted += 1
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:60]}")
 
             print(f"    ✓ ACCEPTED {accepted}/4 from: {title[:60]}")
         except Exception as e:
@@ -2308,18 +2414,27 @@ def generate_guide_qa(guides_collection, target_count=2000) -> list[dict]:
             accepted = 0
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "guide_qa",
-                        "source_data": [title],
-                        "guide_title": title,
-                        "validated": True,
-                        "needs_review": False
-                    })
-                    accepted += 1
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Guide: {title}\n{content[:500]}",
+                        category="guide_qa"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "guide_qa",
+                            "source_data": [title],
+                            "guide_title": title,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        accepted += 1
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:60]}")
 
             print(f"    ✓ ACCEPTED {accepted}/4 from: {title[:60]}")
         except Exception as e:
@@ -2870,20 +2985,28 @@ def generate_glossary_with_examples(glossary_collection, target_count=1500) -> l
 
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "glossary_with_examples",
-                        "source_data": [f"glossary_{term}"],
-                        "term": term,
-                        "definition": definition,
-                        "validated": True,
-                        "needs_review": False
-                    })
-                    print(f"    ✓ ACCEPTED ({term}): {qa['question'][:70]}")
-
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Term: {term}\nDefinition: {definition}",
+                        category="glossary_with_examples"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "glossary_with_examples",
+                            "source_data": [f"glossary_{term}"],
+                            "term": term,
+                            "definition": definition,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10, {term}): {qa['question'][:70]}")
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:60]}")
                 else:
                     print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:60]}")
         except Exception as e:
@@ -3155,19 +3278,27 @@ def generate_deckbuilding_theory(target_count=2000) -> list[dict]:
 
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "deckbuilding_theory",
-                        "source_data": ["deckbuilding_theory"],
-                        "topic": topic,
-                        "validated": False,
-                        "needs_review": True
-                    })
-                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
-
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Topic: {topic}\nContext: {context}",
+                        category="deckbuilding_theory"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "deckbuilding_theory",
+                            "source_data": ["deckbuilding_theory"],
+                            "topic": topic,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
                 else:
                     print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:80]}")
         except Exception as e:
@@ -3255,19 +3386,27 @@ def generate_commander_building(target_count=3000) -> list[dict]:
 
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 100:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "commander_building",
-                        "source_data": ["commander_format"],
-                        "archetype": archetype,
-                        "validated": False,
-                        "needs_review": True
-                    })
-                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
-
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Archetype: {archetype}\nContext: {context}",
+                        category="commander_building"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "commander_building",
+                            "source_data": ["commander_format"],
+                            "archetype": archetype,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
                 else:
                     print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:80]}")
         except Exception as e:
@@ -3367,19 +3506,27 @@ def generate_rules_scenarios(target_count=3000) -> list[dict]:
 
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 100:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "rules_scenario",
-                        "source_data": ["comprehensive_rules"],
-                        "rules_topic": scenario,
-                        "validated": False,
-                        "needs_review": True
-                    })
-                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
-
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Rules topic: {scenario}\nRelevant rules: {rules}",
+                        category="rules_scenario"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "rules_scenario",
+                            "source_data": ["comprehensive_rules"],
+                            "rules_topic": scenario,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
                 else:
                     print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:80]}")
         except Exception as e:
@@ -3467,19 +3614,27 @@ def generate_archetypes(target_count=1500) -> list[dict]:
 
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "archetype",
-                        "source_data": ["strategy"],
-                        "archetype": archetype,
-                        "validated": False,
-                        "needs_review": True
-                    })
-                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
-
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Archetype: {archetype}\nContext: {context}",
+                        category="archetype"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "archetype",
+                            "source_data": ["strategy"],
+                            "archetype": archetype,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
                 else:
                     print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:80]}")
         except Exception as e:
@@ -3559,19 +3714,27 @@ def generate_game_theory(target_count=1500) -> list[dict]:
 
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "game_theory",
-                        "source_data": ["strategy"],
-                        "situation_type": situation,
-                        "validated": False,
-                        "needs_review": True
-                    })
-                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
-
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Situation: {situation}\nContext: {context}",
+                        category="game_theory"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "game_theory",
+                            "source_data": ["strategy"],
+                            "situation_type": situation,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
                 else:
                     print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:80]}")
         except Exception as e:
@@ -3647,19 +3810,27 @@ def generate_meta_knowledge(target_count=1000) -> list[dict]:
 
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    mongo_documents.append({
-                        "question": qa['question'],
-                        "answer": qa['answer'],
-                        "category": "meta_knowledge",
-                        "source_data": ["meta_strategy"],
-                        "topic": topic,
-                        "validated": False,
-                        "needs_review": True
-                    })
-                    print(f"    ✓ ACCEPTED: {qa['question'][:80]}")
-
-                    if len(mongo_documents) >= target_count:
-                        break
+                    is_valid, reason, score = validate_qa(
+                        qa['question'], qa['answer'],
+                        context=f"Topic: {topic}\nContext: {context}",
+                        category="meta_knowledge"
+                    )
+                    if is_valid:
+                        mongo_documents.append({
+                            "question": qa['question'],
+                            "answer": qa['answer'],
+                            "category": "meta_knowledge",
+                            "source_data": ["meta_strategy"],
+                            "topic": topic,
+                            "validated": True,
+                            "validation_score": score,
+                            "needs_review": False
+                        })
+                        print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                        if len(mongo_documents) >= target_count:
+                            break
+                    else:
+                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
                 else:
                     print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:80]}")
         except Exception as e:
