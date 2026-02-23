@@ -11,3 +11,4 @@ output*/
 .aider*
 nohup.out
 unsloth_compiled_cache/
+*.gguf
