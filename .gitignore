@@ -12,3 +12,4 @@ output*/
 nohup.out
 unsloth_compiled_cache/
 *.gguf
+**/llama.cpp/*
