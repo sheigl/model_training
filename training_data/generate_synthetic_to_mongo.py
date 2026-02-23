@@ -327,7 +327,7 @@ def save_to_mongo(synthetic_collection, examples, batch_size=500):
 # MODEL QUERYING
 # =============================================================================
 
-def query_ollama(model_name: str, prompt: str, max_tokens=1000):
+def query_ollama(model_name: str, prompt: str, max_tokens=9999):
     """Query Ollama API"""
     start = time.time()
     print(f"\n{'─'*60}")
@@ -1573,7 +1573,7 @@ def generate_commander_knowledge(target_count=200) -> list[dict]:
     prompt = build_commander_prompt()
 
     try:
-        response =  query_ollama(MODEL_NAME, prompt, max_tokens=2000)
+        response =  query_ollama(MODEL_NAME, prompt, max_tokens=9999)
         response = response.replace("```json", "").replace("```", "").strip()
         qa_pairs = json.loads(response)
         
@@ -2345,7 +2345,7 @@ def generate_article_qa(articles_collection, target_count=2000) -> list[dict]:
         prompt = build_article_qa_prompt(title, content)
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=1200)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=9999)
             response = response.replace("```json", "").replace("```", "").strip()
             if not response.startswith('['):
                 start = response.find('[')
@@ -2426,7 +2426,7 @@ def generate_guide_qa(guides_collection, target_count=2000) -> list[dict]:
         prompt = build_guide_qa_prompt(title, content)
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=1200)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=9999)
             response = response.replace("```json", "").replace("```", "").strip()
             if not response.startswith('['):
                 start = response.find('[')
