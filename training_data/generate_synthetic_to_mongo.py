@@ -246,25 +246,62 @@ def get_mongo_collections(uri, username, password):
     return cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards
 
 
-def save_to_mongo(synthetic_collection, examples, batch_size=1000):
-    """Save synthetic examples to MongoDB in batches"""
-    print(f"\nSaving {len(examples):,} examples to MongoDB...")
-    
-    # Clear existing (optional - remove to keep appending)
-    # synthetic_collection.delete_many({})
-    
+def save_to_mongo(synthetic_collection, examples, batch_size=500):
+    """
+    Save synthetic examples to MongoDB, skipping exact duplicates.
+
+    Uses a hash of (question, answer) as a unique key so re-running
+    the script never creates duplicate entries.
+    """
+    import hashlib
+
+    if not examples:
+        return
+
+    print(f"\nSaving {len(examples):,} examples to MongoDB (dedup-safe)...")
+
+    # Ensure unique index exists on content_hash (idempotent)
+    try:
+        synthetic_collection.create_index('content_hash', unique=True, background=True)
+    except Exception:
+        pass  # Index may already exist
+
+    inserted = 0
+    skipped = 0
+
     for i in range(0, len(examples), batch_size):
         batch = examples[i:i+batch_size]
-        
-        # Add metadata
+
+        # Add metadata and content hash
         for ex in batch:
+            q = ex.get('question', '')
+            a = ex.get('answer', '')
+            ex['content_hash'] = hashlib.sha256(f"{q}||{a}".encode()).hexdigest()
             ex['generated_at'] = datetime.utcnow()
             ex['version'] = 1
-        
-        synthetic_collection.insert_many(batch)
-        print(f"  → Saved {i+len(batch):,}/{len(examples):,}")
-    
-    print(f"  ✓ All examples saved to synthetic_queries.queries")
+
+        # Insert only documents whose hash doesn't already exist
+        from pymongo import UpdateOne
+        ops = [
+            UpdateOne(
+                {'content_hash': ex['content_hash']},
+                {'$setOnInsert': ex},
+                upsert=True
+            )
+            for ex in batch
+        ]
+
+        try:
+            result = synthetic_collection.bulk_write(ops, ordered=False)
+            batch_inserted = result.upserted_count
+            batch_skipped = len(batch) - batch_inserted
+            inserted += batch_inserted
+            skipped += batch_skipped
+            print(f"  → Batch {i//batch_size + 1}: {batch_inserted} inserted, {batch_skipped} skipped (already existed)")
+        except Exception as e:
+            print(f"  ⚠️  Batch error: {e}")
+
+    print(f"  ✓ Done: {inserted:,} inserted, {skipped:,} skipped as duplicates")
 
 
 # =============================================================================
@@ -302,7 +339,6 @@ def query_ollama(model_name: str, prompt: str, max_tokens=1000):
                 print(content_chunk, end='', flush=True)
                 response_content += content_chunk
         
-        print(response_content)
         print(f"{'─'*60}")
         end = time.time()
         print(f"  ✓ Response generated in {end - start:.2f} seconds")
