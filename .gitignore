@@ -13,3 +13,4 @@ nohup.out
 unsloth_compiled_cache/
 *.gguf
 **/llama.cpp/*
+qwen_training/llama.cpp
