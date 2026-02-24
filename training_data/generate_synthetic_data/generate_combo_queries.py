@@ -1,7 +1,32 @@
 import pymongo
 import query_ollama
 import json
-from common import MODEL_NAME, build_combo_prompt, validate_qa
+from common import MODEL_NAME, MTG_NOTATION_LEGEND, build_card_detail, build_combo_prompt, validate_qa
+
+def build_combo_prompt(card_name: str, combo_list: str) -> str:
+    """Generate combo question prompt with MTG notation guide."""
+    
+    prompt = f"""{MTG_NOTATION_LEGEND}
+
+Generate 3 natural Q&A pairs about combos with {card_name}.
+
+Cards:
+
+
+Combo:
+{combo_list}
+
+Output JSON:
+[
+{{"question": "...", "answer": "..."}},
+{{"question": "...", "answer": "..."}},
+{{"question": "...", "answer": "..."}}
+]
+
+Make questions varied and natural. Base answers on combo data above.
+Explain how the combos work and what they achieve.
+Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+    return prompt
 
 def generate_combo_queries(combos_collection: pymongo.collection.Collection, cards: pymongo.collection.Collection, target_count=5000) -> list:
     """Generate combo queries - returns MongoDB documents"""

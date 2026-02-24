@@ -323,30 +323,6 @@ Respond ONLY with JSON:
 Output ONLY valid JSON, no other text."""
     return prompt
 
-
-def build_combo_prompt(card_name: str, combo_list: str) -> str:
-    """Generate combo question prompt with MTG notation guide."""
-    
-    prompt = f"""{MTG_NOTATION_LEGEND}
-
-Generate 3 natural Q&A pairs about combos with {card_name}.
-
-Known combos:
-{combo_list}
-
-Output JSON:
-[
-{{"question": "...", "answer": "..."}},
-{{"question": "...", "answer": "..."}},
-{{"question": "...", "answer": "..."}}
-]
-
-Make questions varied and natural. Base answers on combo data above.
-Explain how the combos work and what they achieve.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
-    return prompt
-
-
 def build_commander_prompt() -> str:
     """Generate Commander rules questions with MTG notation guide."""
     
@@ -389,6 +365,15 @@ Explain the mechanics and why the combo is effective.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
+def build_card_detail(card_number: int | None, card: dict):
+    detail = f"""
+Card{"" if card_number is None else f" {card_number}"}: {card.get('name', 'Unknown')}
+Type: {card.get('type', 'N/A')}
+Cost: {card.get('manaCost', 'N/A')}
+Text: {card.get('text', '')}
+"""
+
+    return detail
 
 def build_card_comparision_prompt(card1: dict, card2: dict) -> str:
     """Generate card comparison prompt with full MTG notation and analysis requirements."""
@@ -400,15 +385,9 @@ def build_card_comparision_prompt(card1: dict, card2: dict) -> str:
 
 Compare these two Magic cards with similar effects:
 
-Card 1: {card1_name}
-Type: {card1.get('type', 'N/A')}
-Cost: {card1.get('manaCost', 'N/A')}
-Text: {card1.get('text', '')}
+{build_card_detail(1, card1)}
 
-Card 2: {card2_name}
-Type: {card2.get('type', 'N/A')}
-Cost: {card2.get('manaCost', 'N/A')}
-Text: {card2.get('text', '')}
+{build_card_detail(2, card2)}
 
 {CARD_COMPARISON_INSTRUCTIONS}
 
