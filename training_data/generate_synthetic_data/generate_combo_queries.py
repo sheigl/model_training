@@ -86,8 +86,10 @@ def generate_combo_queries(combos_collection: pymongo.collection.Collection, car
                     if "scryfallQuery" in template:
                         query = template.get('scryfallQuery')
                         results = scryfall_client.search_scryfall(query=query)
-                        random_card = random.choice(results.cards)
-                        cards_in_combo.append(card_collection.find_one({"name": random_card.get('name')}))
+                        
+                        if hasattr(results, 'cards') and  len(results.cards) > 0:
+                            random_card = random.choice(results.cards)
+                            cards_in_combo.append(card_collection.find_one({"name": random_card.get('name')}))
 
                 
             
@@ -98,7 +100,7 @@ def generate_combo_queries(combos_collection: pymongo.collection.Collection, car
             description = NEW_LINE.join(numbered_descriptions)
             
             if notes:
-                description = description + NEW_LINE + f"*{notes}" 
+                description = description + NEW_LINE + NEW_LINE + f"*{notes}" 
             
             prompts.append((build_combo_prompt(card_name, cards_in_combo, description), cards_in_combo, description))
         
