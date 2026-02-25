@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_commander_building_prompt, validate_qa
+from common import MODEL_NAME, build_commander_building_prompt
 
 def generate_commander_building(target_count=3000) -> list[dict]:
     """

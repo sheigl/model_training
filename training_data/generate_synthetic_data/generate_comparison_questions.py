@@ -1,7 +1,7 @@
 import pymongo
 import query_ollama
 import json
-from common import MODEL_NAME, build_card_comparision_prompt, validate_qa
+from common import MODEL_NAME, build_card_comparision_prompt
 
 def generate_comparison_questions(cards_collection: pymongo.collection.Collection, target_count=2000) -> list[dict]:
     """

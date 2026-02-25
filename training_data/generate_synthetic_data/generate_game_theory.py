@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_game_theory_prompt, validate_qa
+from common import MODEL_NAME, build_game_theory_prompt
 
 def generate_game_theory(target_count=1500) -> list[dict]:
     """

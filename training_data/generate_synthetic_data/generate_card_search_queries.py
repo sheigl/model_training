@@ -1,7 +1,7 @@
 import pymongo
 import query_ollama
 import json
-from common import MODEL_NAME, build_card_search_prompt, validate_qa
+from common import MODEL_NAME, build_card_search_prompt
 
 def generate_card_search_queries(cards_collection: pymongo.collection.Collection, target_count=3000) -> list:
     """Generate card search queries - returns MongoDB documents"""
@@ -45,7 +45,7 @@ def generate_card_search_queries(cards_collection: pymongo.collection.Collection
                     mentioned = sum(1 for name in card_names if name in qa['answer'])
 
                     if mentioned >= 2:
-                        is_valid, reason, score = validate_qa(
+                        is_valid, reason, score = query_ollama.validate_qa(
                             qa['question'], qa['answer'],
                             context=f"Search pattern: {pattern['name']}\nMatching cards: {card_info}",
                             category="card_search"

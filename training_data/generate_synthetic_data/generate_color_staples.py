@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_color_staples_prompt, validate_qa
+from common import MODEL_NAME, build_color_staples_prompt
 
 def generate_color_staples(top_cards_dict, target_count=2000) -> list[dict]:
     """

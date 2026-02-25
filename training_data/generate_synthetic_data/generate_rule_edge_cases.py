@@ -1,9 +1,9 @@
 import random
 
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import COMPLEX_RULE_SECTIONS, MODEL_NAME, build_rule_edge_case_prompt, validate_qa
+from common import COMPLEX_RULE_SECTIONS, MODEL_NAME, build_rule_edge_case_prompt
 
 def generate_rule_edge_cases(rules_collection, target_count=1500) -> list[dict]:
     """

@@ -3,6 +3,8 @@ import re
 global MODEL_NAME
 MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
 
+NEW_LINE = "\n"
+
 # Rule sections that are most relevant for gameplay scenarios
 RELEVANT_RULE_SECTIONS = [
     '1',   # Game Concepts
@@ -367,7 +369,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_card_detail(card_number: int | None, card: dict):
     detail = f"""
-Card{"" if card_number is None else f" {card_number}"}: {card.get('name', 'Unknown')}
+{"" if card_number is None else f"Card {card_number}: "}{card.get('name', 'Unknown')}
 Type: {card.get('type', 'N/A')}
 Cost: {card.get('manaCost', 'N/A')}
 Text: {card.get('text', '')}

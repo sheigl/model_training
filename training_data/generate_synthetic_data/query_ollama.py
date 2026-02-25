@@ -1,5 +1,5 @@
 
-from time import time
+import time
 import ollama
 import json
 from common import *

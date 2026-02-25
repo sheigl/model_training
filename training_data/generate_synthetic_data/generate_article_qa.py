@@ -3,7 +3,7 @@ import random
 import pymongo
 import query_ollama
 import json
-from common import MODEL_NAME, build_article_qa_prompt, clean_html, validate_qa
+from common import MODEL_NAME, build_article_qa_prompt, clean_html
 
 def generate_article_qa(articles_collection, target_count=2000) -> list[dict]:
     """
@@ -57,7 +57,7 @@ def generate_article_qa(articles_collection, target_count=2000) -> list[dict]:
             accepted = 0
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    is_valid, reason, score = validate_qa(
+                    is_valid, reason, score = query_ollama.validate_qa(
                         qa['question'], qa['answer'],
                         context=f"Article: {title}\n{content[:500]}",
                         category="article_qa"

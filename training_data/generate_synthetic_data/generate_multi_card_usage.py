@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_multi_card_usage_prompt, validate_qa
+from common import MODEL_NAME, build_multi_card_usage_prompt
 
 def generate_multi_card_usage(combos_collection: pymongo.collection.Collection, target_count=2000) -> list[dict]:
     """Generate multi-card usage - returns MongoDB documents"""

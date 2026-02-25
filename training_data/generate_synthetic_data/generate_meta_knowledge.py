@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_meta_knowledge_prompt, validate_qa
+from common import MODEL_NAME, build_meta_knowledge_prompt
 
 def generate_meta_knowledge(target_count=1000) -> list[dict]:
     """

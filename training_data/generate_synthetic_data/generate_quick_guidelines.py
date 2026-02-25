@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_quick_guidelines_prompt, validate_qa
+from common import MODEL_NAME, build_quick_guidelines_prompt
 
 def generate_quick_guidelines(target_count=2000) -> list[dict]:
     """

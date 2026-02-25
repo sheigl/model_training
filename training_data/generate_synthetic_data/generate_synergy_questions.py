@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_synergy_prompt, validate_qa
+from common import MODEL_NAME, build_synergy_prompt
 
 def generate_synergy_questions(cards_collection: pymongo.collection.Collection, combos_collection: pymongo.collection.Collection, target_count=3000):
     """

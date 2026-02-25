@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_deckbuilding_theory_prompt, validate_qa
+from common import MODEL_NAME, build_deckbuilding_theory_prompt
 
 def generate_deckbuilding_theory(target_count=2000) -> list[dict]:
     """

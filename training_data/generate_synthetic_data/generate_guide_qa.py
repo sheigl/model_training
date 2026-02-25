@@ -1,9 +1,9 @@
 import random
 
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_guide_qa_prompt, clean_html, validate_qa
+from common import MODEL_NAME, build_guide_qa_prompt, clean_html
 
 def generate_guide_qa(guides_collection, target_count=2000) -> list[dict]:
     """

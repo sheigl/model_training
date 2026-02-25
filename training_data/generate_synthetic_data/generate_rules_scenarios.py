@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_rules_scenario_prompt, validate_qa
+from common import MODEL_NAME, build_rules_scenario_prompt
 
 def generate_rules_scenarios(target_count=3000) -> list[dict]:
     """

@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_salt_prompt, validate_qa
+from common import MODEL_NAME, build_salt_prompt
 
 def generate_salt_questions(game_changers_collection, target_count=1000) -> list[dict]:
     """

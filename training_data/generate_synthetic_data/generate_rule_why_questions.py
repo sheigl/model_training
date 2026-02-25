@@ -1,8 +1,8 @@
 import random
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_rule_why_prompt, validate_qa
+from common import MODEL_NAME, build_rule_why_prompt
 
 def generate_rule_why_questions(rules_collection, target_count=1000) -> list[dict]:
     """

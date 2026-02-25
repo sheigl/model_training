@@ -1,9 +1,9 @@
 import random
 
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_color_identity_prompt, validate_qa
+from common import MODEL_NAME, build_color_identity_prompt
 
 def generate_color_identity_questions(cards_collection: pymongo.collection.Collection, commanders_collection: pymongo.collection.Collection, target_count=2000) -> list[dict]:
     """

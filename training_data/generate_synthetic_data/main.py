@@ -2,7 +2,34 @@
 import sys
 from typing import Collection
 
-from training_data.generate_synthetic_data import generate_archetypes, generate_article_qa, generate_budget_alternatives, generate_card_search_queries, generate_color_identity_questions, generate_color_staples, generate_combo_queries, generate_commander_building, generate_commander_knowledge, generate_comparison_questions, generate_deckbuilding_theory, generate_game_theory, generate_glossary_with_examples, generate_guide_qa, generate_meta_knowledge, generate_multi_card_usage, generate_quick_guidelines, generate_reverse_lookup_questions, generate_rule_edge_cases, generate_rule_explanations, generate_rule_interactions, generate_rule_why_questions, generate_rules_scenarios, generate_salt_questions, generate_staple_analysis, generate_synergy_questions, generate_terminology_questions; sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_buffering=True)
+from generate_archetypes import * 
+from generate_article_qa import * 
+from generate_budget_alternatives import * 
+from generate_card_search_queries import * 
+from generate_color_identity_questions import * 
+from generate_color_staples import * 
+from generate_combo_queries import * 
+from generate_commander_building import * 
+from generate_commander_knowledge import * 
+from generate_comparison_questions import * 
+from generate_deckbuilding_theory import * 
+from generate_game_theory import * 
+from generate_glossary_with_examples import * 
+from generate_guide_qa import * 
+from generate_meta_knowledge import * 
+from generate_multi_card_usage import * 
+from generate_quick_guidelines import * 
+from generate_reverse_lookup_questions import * 
+from generate_rule_edge_cases import * 
+from generate_rule_explanations import * 
+from generate_rule_interactions import * 
+from generate_rule_why_questions import * 
+from generate_rules_scenarios import * 
+from generate_salt_questions import * 
+from generate_staple_analysis import * 
+from generate_synergy_questions import * 
+from generate_terminology_questions import *;
+sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_buffering=True)
 """
 Synthetic Query Generator - Saves to MongoDB
 
@@ -35,7 +62,7 @@ from datetime import datetime
 import argparse
 import time
 import ollama
-from training_data.generate_synthetic_data.common import *
+from common import *
 
 # =============================================================================
 # MONGODB SETUP

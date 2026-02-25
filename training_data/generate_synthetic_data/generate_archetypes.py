@@ -1,8 +1,8 @@
 
 import json
 
-from training_data.generate_synthetic_data import query_ollama
-from training_data.generate_synthetic_data.common import *
+from query_ollama import query_ollama
+from common import *
 
 def generate_archetypes(target_count=1500) -> list[dict]:
     """

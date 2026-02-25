@@ -1,5 +1,4 @@
-from training_data.generate_synthetic_data.query_ollama import validate_qa
-
+from query_ollama import *
 
 def generate_terminology_questions(target_count=1000):
     """

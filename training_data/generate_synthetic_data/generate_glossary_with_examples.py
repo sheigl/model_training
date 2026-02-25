@@ -1,9 +1,9 @@
 import random
 
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_glossary_with_examples_prompt, validate_qa
+from common import MODEL_NAME, build_glossary_with_examples_prompt
 
 def generate_glossary_with_examples(glossary_collection, target_count=1500) -> list[dict]:
     """

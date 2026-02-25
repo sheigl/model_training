@@ -1,7 +1,7 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, build_commander_prompt, validate_qa
+from common import MODEL_NAME, build_commander_prompt
 
 def generate_commander_knowledge(target_count=200) -> list[dict]:
     """Generate Commander knowledge - returns MongoDB documents"""

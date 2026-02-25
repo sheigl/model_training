@@ -1,9 +1,9 @@
 import pymongo
-import query_ollama
+from query_ollama import *
 import json
-from common import MODEL_NAME, MTG_NOTATION_LEGEND, build_card_detail, build_combo_prompt, validate_qa
+from common import MODEL_NAME, MTG_NOTATION_LEGEND, build_card_detail
 
-def build_combo_prompt(card_name: str, combo_list: str) -> str:
+def build_combo_prompt(card_name: str, cards: list[dict], combo: str) -> str:
     """Generate combo question prompt with MTG notation guide."""
     
     prompt = f"""{MTG_NOTATION_LEGEND}
@@ -11,10 +11,10 @@ def build_combo_prompt(card_name: str, combo_list: str) -> str:
 Generate 3 natural Q&A pairs about combos with {card_name}.
 
 Cards:
-
+{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards))}
 
 Combo:
-{combo_list}
+{combo}
 
 Output JSON:
 [
@@ -28,7 +28,7 @@ Explain how the combos work and what they achieve.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
-def generate_combo_queries(combos_collection: pymongo.collection.Collection, cards: pymongo.collection.Collection, target_count=5000) -> list:
+def generate_combo_queries(combos_collection: pymongo.collection.Collection, card_collection: pymongo.collection.Collection, target_count=5000) -> list:
     """Generate combo queries - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} COMBO QUERIES ===")
     mongo_documents = []
@@ -59,7 +59,7 @@ def generate_combo_queries(combos_collection: pymongo.collection.Collection, car
             print(f"    Generated {len(mongo_documents):,}/{target_count:,}...")
         
         # Prepare combo data
-        combo_descriptions = []
+        combo_descriptions: list[dict] = []
         for combo in card_combos[:5]:
             combo_cards = [c.get('card', {}).get('name', '') for c in combo.get('uses', []) if c.get('card')]
             description = combo.get('description', '')
@@ -70,50 +70,57 @@ def generate_combo_queries(combos_collection: pymongo.collection.Collection, car
             continue
         
         # Build prompt
-        combo_list = "\n".join([f"  - {' + '.join(c['cards'])}: {c['description']}" for c in combo_descriptions])
+        prompts: list[str] = []
         
-        prompt = build_combo_prompt(card_name, combo_list)
-
-        try:
-            response =  query_ollama(MODEL_NAME, prompt)
-            response = response.replace("```json", "").replace("```", "").strip()
-            qa_pairs = json.loads(response)
+        for combo in combo_descriptions:
+            cards_in_combo: list[dict] = []
             
-            for qa in qa_pairs:
-                if 'question' in qa and 'answer' in qa:
-                    # Validate
-                    valid = any(combo_card in qa['answer'] for combo in combo_descriptions for combo_card in combo['cards'] if combo_card != card_name)
-
-                    if valid:
-                        # Create MongoDB document
-                        is_valid, reason, score = validate_qa(
-                            qa['question'], qa['answer'],
-                            context=f"Card: {card_name}\nCombos:\n{combo_list}",
-                            category="combo_query"
-                        )
-                        if is_valid:
-                            mongo_documents.append({
-                                "question": qa['question'],
-                                "answer": qa['answer'],
-                                "category": "combo_query",
-                                "source_data": [card_name],
-                                "validated": True,
-                                "validation_score": score,
-                                "needs_review": False
-                            })
-                            print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
-                            if len(mongo_documents) >= target_count:
-                                break
-                        else:
-                            print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
-                    else:
-                        print(f"    ✗ REJECTED (no combo cards in answer): {qa['question'][:80]}")
-                else:
-                    print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+            for combo_card_name in combo.get('cards'):
+                cards_in_combo.append(card_collection.find_one({"name": combo_card_name}))
+            
+            prompts.append(build_combo_prompt(card_name, cards_in_combo, combo.get('description')))
         
-        except Exception as e:
-            print(f"  ✗ Error generating for {card_name}: {type(e).__name__}: {e}")
-            continue
+        for prompt in prompts:         
+            try:
+                response =  query_ollama(MODEL_NAME, prompt)
+                response = response.replace("```json", "").replace("```", "").strip()
+                qa_pairs = json.loads(response)
+                
+                for qa in qa_pairs:
+                    if 'question' in qa and 'answer' in qa:
+                        # Validate
+                        valid = any(combo_card in qa['answer'] for combo in combo_descriptions for combo_card in combo['cards'] if combo_card != card_name)
+
+                        if valid:
+                            # Create MongoDB document
+                            is_valid, reason, score = validate_qa(
+                                qa['question'], qa['answer'],
+                                context=f"Card: {card_name}\nCombos:\n{combo_list}",
+                                category="combo_query"
+                            )
+                            if is_valid:
+                                mongo_documents.append({
+                                    "question": qa['question'],
+                                    "answer": qa['answer'],
+                                    "category": "combo_query",
+                                    "source_data": [card_name],
+                                    "validated": True,
+                                    "validation_score": score,
+                                    "needs_review": False
+                                })
+                                print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                                if len(mongo_documents) >= target_count:
+                                    break
+                            else:
+                                print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
+                        else:
+                            print(f"    ✗ REJECTED (no combo cards in answer): {qa['question'][:80]}")
+                    else:
+                        print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+            
+            except Exception as e:
+                print(f"  ✗ Error generating for {card_name}: {type(e).__name__}: {e}")
+                continue
 
     print(f"  ✓ Generated {len(mongo_documents):,} combo queries")
     return mongo_documents
