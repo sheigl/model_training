@@ -63,6 +63,7 @@ import argparse
 import time
 import ollama
 from common import *
+from scryfall_mongodb import ScryfallMongo
 
 # =============================================================================
 # MONGODB SETUP
@@ -98,7 +99,7 @@ def get_mongo_collections(uri, username, password):
     rules = client['mtg_rules']['rules']
     glossary = client['mtg_rules']['glossary']
 
-    return cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards
+    return cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, ScryfallMongo(client=client)
 
 
 def save_to_mongo(synthetic_collection, examples, batch_size=500):
@@ -295,7 +296,7 @@ def main():
     
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
-    cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
+    cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, scryfall_client = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
     print("  ✓ Connected")
     
     # Generate all synthetic data
@@ -303,7 +304,7 @@ def main():
     
     # Original formats
     if args.combo_queries > 0:
-        docs = generate_combo_queries(combos, cards, args.combo_queries)
+        docs = generate_combo_queries(combos, cards, scryfall_client, args.combo_queries)
         all_documents.extend(docs)
         print(f"  ✓ Generated {len(docs):,} combo query documents")
         save_to_mongo(synthetic, docs)  # Save incrementally after each format

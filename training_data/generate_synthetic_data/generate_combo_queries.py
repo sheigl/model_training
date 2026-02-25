@@ -2,6 +2,8 @@ import pymongo
 from query_ollama import *
 import json
 from common import MODEL_NAME, MTG_NOTATION_LEGEND, build_card_detail
+from scryfall_mongodb import ScryfallMongo
+import random
 
 def build_combo_prompt(card_name: str, cards: list[dict], combo: str) -> str:
     """Generate combo question prompt with MTG notation guide."""
@@ -28,7 +30,7 @@ Explain how the combos work and what they achieve.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
-def generate_combo_queries(combos_collection: pymongo.collection.Collection, card_collection: pymongo.collection.Collection, target_count=5000) -> list:
+def generate_combo_queries(combos_collection: pymongo.collection.Collection, card_collection: pymongo.collection.Collection, scryfall_client: ScryfallMongo, target_count=5000) -> list:
     """Generate combo queries - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} COMBO QUERIES ===")
     mongo_documents = []
@@ -64,23 +66,43 @@ def generate_combo_queries(combos_collection: pymongo.collection.Collection, car
             combo_cards = [c.get('card', {}).get('name', '') for c in combo.get('uses', []) if c.get('card')]
             description = combo.get('description', '')
             if len(combo_cards) >= 2 and description:
-                combo_descriptions.append({'cards': combo_cards, 'description': description})
+                combo_descriptions.append({'cards': combo_cards, 'description': description, 'combo': combo })
         
         if not combo_descriptions:
             continue
         
         # Build prompt
-        prompts: list[str] = []
+        prompts: list[tuple[str, list[dict], str]] = []
         
         for combo in combo_descriptions:
             cards_in_combo: list[dict] = []
             
             for combo_card_name in combo.get('cards'):
                 cards_in_combo.append(card_collection.find_one({"name": combo_card_name}))
+                
+            if combo.get('combo').get('requires'):
+                for requirement in combo.get('combo').get('requires'):
+                    template: dict = requirement.get('template')
+                    if "scryfallQuery" in template:
+                        query = template.get('scryfallQuery')
+                        results = scryfall_client.search_scryfall(query=query)
+                        random_card = random.choice(results.cards)
+                        cards_in_combo.append(card_collection.find_one({"name": random_card.get('name')}))
+
+                
             
-            prompts.append(build_combo_prompt(card_name, cards_in_combo, combo.get('description')))
+            description: str = combo.get('description')
+            notes: str = combo.get('combo').get('notes')
+            
+            numbered_descriptions = (f"Step {i + 1}. {desc}" for i, desc in enumerate(description.split('\n')))
+            description = NEW_LINE.join(numbered_descriptions)
+            
+            if notes:
+                description = description + NEW_LINE + f"*{notes}" 
+            
+            prompts.append((build_combo_prompt(card_name, cards_in_combo, description), cards_in_combo, description))
         
-        for prompt in prompts:         
+        for prompt, cards_in_combo, description in prompts:         
             try:
                 response =  query_ollama(MODEL_NAME, prompt)
                 response = response.replace("```json", "").replace("```", "").strip()
@@ -89,32 +111,27 @@ def generate_combo_queries(combos_collection: pymongo.collection.Collection, car
                 for qa in qa_pairs:
                     if 'question' in qa and 'answer' in qa:
                         # Validate
-                        valid = any(combo_card in qa['answer'] for combo in combo_descriptions for combo_card in combo['cards'] if combo_card != card_name)
-
-                        if valid:
-                            # Create MongoDB document
-                            is_valid, reason, score = validate_qa(
-                                qa['question'], qa['answer'],
-                                context=f"Card: {card_name}\nCombos:\n{combo_list}",
-                                category="combo_query"
-                            )
-                            if is_valid:
-                                mongo_documents.append({
-                                    "question": qa['question'],
-                                    "answer": qa['answer'],
-                                    "category": "combo_query",
-                                    "source_data": [card_name],
-                                    "validated": True,
-                                    "validation_score": score,
-                                    "needs_review": False
-                                })
-                                print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
-                                if len(mongo_documents) >= target_count:
-                                    break
-                            else:
-                                print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
+                        # Create MongoDB document
+                        is_valid, reason, score = validate_qa(
+                            qa['question'], qa['answer'],
+                            context=f"\nCards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}",
+                            category="combo_query"
+                        )
+                        if is_valid:
+                            mongo_documents.append({
+                                "question": qa['question'],
+                                "answer": qa['answer'],
+                                "category": "combo_query",
+                                "source_data": [card_name],
+                                "validated": True,
+                                "validation_score": score,
+                                "needs_review": False
+                            })
+                            print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
+                            if len(mongo_documents) >= target_count:
+                                break
                         else:
-                            print(f"    ✗ REJECTED (no combo cards in answer): {qa['question'][:80]}")
+                            print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
                     else:
                         print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
             
