@@ -1,4 +1,6 @@
 import pymongo
+from rich.console import Console
+from rich.status import Status
 from query_ollama import *
 import json
 from common import MODEL_NAME, MTG_NOTATION_LEGEND, build_card_detail
@@ -6,12 +8,14 @@ from scryfall_mongodb import ScryfallMongo
 import random
 from typing import Callable
 
-def build_combo_prompt(cards: list[dict], combo: str) -> str:
+console = Console()
+
+def build_combo_prompt(cards: list[dict], combo: str, random_combo_feature: str) -> str:
     """Generate combo question prompt with MTG notation guide."""
     
     prompt = f"""{MTG_NOTATION_LEGEND}
 
-Generate 3 natural Q&A pairs about combos with the cards below. Make sure at least one of the questions is from the perspective of a player that doesn't know the extact combo or the cards, but may have an idea of a combo or looking for a combo. For example: "What combo can I make with {", ".join(map(lambda card: card.get('name'), cards))}?" or "How can I can I make an infinite mana combo?".
+Generate 3 natural Q&A pairs about combos with the cards below. Make sure at least one of the questions is from the perspective of a player that doesn't know the extact combo or the cards, but may have an idea of a combo or looking for a combo. For example: "What combo can I make with {", ".join(map(lambda card: card.get('name'), cards))}?" or "How can I make a {random_combo_feature} combo?".
 
 Cards:
 {NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards))}
@@ -53,12 +57,15 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 def extract_combo_data(
     combos_collection: pymongo.collection.Collection, 
     card_collection: pymongo.collection.Collection, 
-    scryfall_client: ScryfallMongo) -> list[dict]:
+    scryfall_client: ScryfallMongo,
+    target_count: int,
+    rich_status: Status) -> list[dict]:
     """Extract combo data from commander spellbook documents and prepare for prompt generation."""
-    all_combos = list(combos_collection.find({'status': 'OK'}))
+    all_combos = list(combos_collection.find({'status': 'OK'}).limit(target_count + 100))
     combos: list[dict] = []
     
-    for combo in all_combos:
+    for i, combo in enumerate(all_combos):
+        rich_status.update(f"[bold green]Extracting combo data... {i+1}/{len(all_combos)}")
         cards: list[dict] = combo.get('uses', [])
         combo_name = "|".join(map(lambda card: card.get('card', {}).get('name', 'Unknown'), cards))
         
@@ -80,10 +87,13 @@ def extract_combo_data(
                 results = scryfall_client.search_scryfall(query=query)
                 if hasattr(results, 'cards') and  len(results.cards) > 0:
                     random_card = random.choice(results.cards)
-                    projected_combo.get('cards_in_combo').append(map_using_card({"card": {"name": random_card.get('name')}, "zoneLocations": []}, card_collection))
+                    random_card_mapped = map_using_card({"card": {"name": random_card.get('name')}, "zoneLocations": []}, card_collection)
+                    if random_card_mapped:
+                        projected_combo.get('cards_in_combo').append(random_card_mapped)
                 
         combos.append(projected_combo)
     
+    random.shuffle(combos)
     return combos
 
 def map_requirements(combo: dict) -> list[dict]:
@@ -110,6 +120,9 @@ def map_features(combo: dict) -> list[str]:
 def map_using_card(card: dict, card_collection: pymongo.collection.Collection) -> dict:
     mtg_card: dict = card_collection.find_one({"name": card.get('card', {}).get('name')})
     
+    if not mtg_card:
+        return None
+    
     projected_card = {
         "name": mtg_card.get('name', None),
         "type": mtg_card.get('type', None),
@@ -123,11 +136,18 @@ def map_using_card(card: dict, card_collection: pymongo.collection.Collection) -
     
     return projected_card
 
-def generate_combo_queries(combos_collection: pymongo.collection.Collection, card_collection: pymongo.collection.Collection, scryfall_client: ScryfallMongo, save_item: Callable[[dict], None], target_count=5000) -> None:
+def generate_combo_queries(
+    combos_collection: pymongo.collection.Collection, 
+    card_collection: pymongo.collection.Collection, 
+    scryfall_client: ScryfallMongo, 
+    save_item: Callable[[dict], None], target_count=5000) -> None:
     """Generate combo queries - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} COMBO QUERIES ===")
     
-    combos = extract_combo_data(combos_collection, card_collection, scryfall_client)
+    combos = []
+    
+    with console.status("[bold green]Extracting combo data...") as status:    
+        combos = extract_combo_data(combos_collection, card_collection, scryfall_client, target_count, status)
     
     print(f"  → Processing {len(combos):,} cards...")
     
@@ -155,7 +175,7 @@ def generate_combo_queries(combos_collection: pymongo.collection.Collection, car
             
         cards_in_combo: list[dict] = combo.get('cards_in_combo', [])
         
-        prompts.append((build_combo_prompt(cards_in_combo, description), cards_in_combo, description))
+        prompts.append((build_combo_prompt(cards_in_combo, description, random.choice(combo.get('features', []))), cards_in_combo, description))
         
         for prompt, cards_in_combo, description in prompts:         
             try:
