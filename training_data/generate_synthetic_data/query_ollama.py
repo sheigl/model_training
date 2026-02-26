@@ -163,13 +163,14 @@ def validate_qa(question: str, answer: str, context: str = "", category: str = "
         is_acceptable = result.get('is_acceptable', False)
         errors = result.get('errors', '')
         reason = result.get('reason', f"Score {score}/10")
+        suggested_fix = result.get('suggested_fix', '')
 
         # Force reject if errors mentioned
         if errors and errors.lower() not in ['none', 'n/a', '']:
             is_acceptable = False
             score = min(score, 4)
 
-        return is_acceptable and score >= 7, reason, score
+        return is_acceptable and score >= 7, reason, score, suggested_fix
 
     except json.JSONDecodeError as e:
         print(f"    ⚠️  Validation JSON parse failed: {e}")

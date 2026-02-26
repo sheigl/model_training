@@ -1,4 +1,5 @@
 import re
+from models import Card
 
 global MODEL_NAME
 MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
@@ -274,7 +275,8 @@ Respond ONLY with JSON:
   "is_acceptable": <true/false>,
   "errors": "<factual errors if any, or 'none'>",
   "missing_info": "<what is missing or vague, if anything>",
-  "reason": "<one sentence summary>"
+  "reason": "<one sentence summary>",
+  "suggested_fix": "<if rejected, provide a response that would fix the answer as if you're answering the question yourself. If acceptable, leave blank or 'N/A'>"
 }}
 
 Output ONLY valid JSON, no other text."""
@@ -368,21 +370,21 @@ Explain the mechanics and why the combo is effective.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
-def build_card_detail(card_number: int | None, card: dict):
+def build_card_detail(card_number: int | None, card: Card):
     detail = f"""
-{"" if card_number is None else f"Card {card_number}: "}{card.get('name', 'Unknown')}
-Type: {card.get('type', 'N/A')}
-Cost: {card.get('manaCost', 'N/A')}
-Text: {card.get('text', '')}
+{"" if card_number is None else f"Card {card_number}: "}{card.name}
+Type: {card.type}
+Cost: {card.mana_cost}
+Text: {card.text}
 """
 
     return detail
 
-def build_card_comparision_prompt(card1: dict, card2: dict) -> str:
+def build_card_comparision_prompt(card1: Card, card2: Card) -> str:
     """Generate card comparison prompt with full MTG notation and analysis requirements."""
     
-    card1_name = card1.get('name', '')
-    card2_name = card2.get('name', '')
+    card1_name = card1.name
+    card2_name = card2.name
     
     prompt = f"""{MTG_NOTATION_LEGEND}
 
