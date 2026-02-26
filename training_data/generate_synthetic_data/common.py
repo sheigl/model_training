@@ -247,7 +247,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 def build_qa_validation_prompt(question: str, answer: str, context: str = "", category: str = "") -> str:
     """Build the generic Q&A validation prompt used by validate_qa()."""
     context_block = f"\nSource material the answer should be grounded in:\n{context}\n" if context else ""
-    return f"""You are a Magic: The Gathering expert reviewing a generated Q&A pair for training data quality.
+    return f"""{MTG_NOTATION_LEGEND}
+    You are a Magic: The Gathering expert reviewing a generated Q&A pair for training data quality.
 
 Category: {category or 'general'}{context_block}
 Question: {question}
