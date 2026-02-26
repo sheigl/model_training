@@ -53,6 +53,16 @@ class ScryfallMongo:
                 i += 1
                 continue
 
+            # Exact name prefix: !"Lightning Bolt" or !bolt
+            if query[i] == "!" and (i + 1 >= len(query) or query[i + 1] != "="):
+                i += 1
+                value, i = self._read_value(query, i)
+                if value:
+                    tokens.append(
+                        {"type": "FILTER", "key": "name", "op": "!", "value": value, "negated": False}
+                    )
+                continue
+
             # Optional leading negation dash
             negated = query[i] == "-"
             if negated:
@@ -174,7 +184,14 @@ class ScryfallMongo:
         """
         Build a numeric comparison query. string_field=True is used for power/toughness
         which are stored as strings in Scryfall data (e.g. "2", "*", "1+*").
+        Supports 'even' and 'odd' as special values for integer fields.
         """
+        v = value.lower()
+        if v in ("even", "odd"):
+            remainder = 0 if v == "even" else 1
+            q = {"$expr": {"$eq": [{"$mod": [f"${field}", 2]}, remainder]}}
+            return self._maybe_negate(q, negated)
+
         try:
             num = float(value)
         except ValueError:
@@ -225,9 +242,99 @@ class ScryfallMongo:
     def _exact_query(self, field: str, value: str, negated: bool) -> dict:
         return self._maybe_negate({field: value}, negated)
 
+    def _mana_query(self, field: str, op: str, value: str, negated: bool) -> dict:
+        """
+        Filter on mana cost symbols (e.g. mana={W}, mana:{U}{U}, mana={0}).
+        Values are Scryfall symbol notation like {W}, {2}, {C}, {X}, etc.
+
+        '='        → exact mana cost (anchored match)
+        ':' / '>=' → mana cost contains the given symbol(s)
+        other ops  → fallback to contains
+        """
+        escaped = re.escape(value)
+        if op == "=":
+            q = {field: {"$regex": f"^{escaped}$", "$options": "i"}}
+        else:
+            q = {field: {"$regex": escaped, "$options": "i"}}
+        return self._maybe_negate(q, negated)
+
+    def _price_query(self, price_field: str, op: str, value: str, negated: bool) -> dict:
+        """
+        Numeric comparison on a prices sub-field (e.g. prices.usd).
+        Prices are stored as strings ("1.23") or null in Scryfall data.
+        """
+        try:
+            num = float(value)
+        except ValueError:
+            return {}
+        op_map = {
+            ":": "$eq", "=": "$eq",
+            "<": "$lt", "<=": "$lte",
+            ">": "$gt", ">=": "$gte",
+            "!=": "$ne",
+        }
+        mongo_op = op_map.get(op, "$eq")
+        q = {
+            "$expr": {
+                mongo_op: [
+                    {
+                        "$convert": {
+                            "input": f"${price_field}",
+                            "to": "double",
+                            "onError": -1,
+                            "onNull": -1,
+                        }
+                    },
+                    num,
+                ]
+            }
+        }
+        return self._maybe_negate(q, negated)
+
+    def _year_query(self, op: str, value: str, negated: bool) -> dict:
+        """
+        Filter by release year. Extracts the 4-digit year prefix from
+        the 'released_at' field which is stored as 'YYYY-MM-DD'.
+        """
+        try:
+            year = int(value)
+        except ValueError:
+            return {}
+        op_map = {
+            ":": "$eq", "=": "$eq",
+            "<": "$lt", "<=": "$lte",
+            ">": "$gt", ">=": "$gte",
+            "!=": "$ne",
+        }
+        mongo_op = op_map.get(op, "$eq")
+        q = {
+            "$expr": {
+                mongo_op: [
+                    {"$toInt": {"$substr": ["$released_at", 0, 4]}},
+                    year,
+                ]
+            }
+        }
+        return self._maybe_negate(q, negated)
+
+    def _date_query(self, op: str, value: str, negated: bool) -> dict:
+        """
+        Filter by release date. 'released_at' is stored as 'YYYY-MM-DD' strings,
+        so lexicographic comparison is equivalent to chronological comparison.
+        """
+        op_map = {
+            ":": "$eq", "=": "$eq",
+            "<": "$lt", "<=": "$lte",
+            ">": "$gt", ">=": "$gte",
+            "!=": "$ne",
+        }
+        mongo_op = op_map.get(op, "$eq")
+        return self._maybe_negate({"released_at": {mongo_op: value}}, negated)
+
     def _is_query(self, value: str, negated: bool) -> dict:
         v = value.lower()
         mapping = {
+            # ── Card types ────────────────────────────────────────────────────
             "legendary":    {"type_line": {"$regex": r"\bLegendary\b",    "$options": "i"}},
             "creature":     {"type_line": {"$regex": r"\bCreature\b",     "$options": "i"}},
             "artifact":     {"type_line": {"$regex": r"\bArtifact\b",     "$options": "i"}},
@@ -240,26 +347,118 @@ class ScryfallMongo:
             "saga":         {"type_line": {"$regex": r"\bSaga\b",         "$options": "i"}},
             "battle":       {"type_line": {"$regex": r"\bBattle\b",       "$options": "i"}},
             "token":        {"layout": "token"},
+
+            # ── Spell / permanent ─────────────────────────────────────────────
             "spell": {
                 "$nor": [{"type_line": {"$regex": r"\bLand\b", "$options": "i"}}]
             },
+            "permanent": {
+                "type_line": {
+                    "$regex": r"\b(Artifact|Creature|Enchantment|Land|Planeswalker|Battle)\b",
+                    "$options": "i",
+                }
+            },
+            "nonpermanent": {
+                "type_line": {"$regex": r"\b(Instant|Sorcery)\b", "$options": "i"}
+            },
+
+            # ── Gameplay categories ───────────────────────────────────────────
+            "historic": {
+                "type_line": {
+                    "$regex": r"\b(Legendary|Artifact|Saga)\b",
+                    "$options": "i",
+                }
+            },
+            "party": {
+                "type_line": {
+                    "$regex": r"\b(Cleric|Rogue|Warrior|Wizard)\b",
+                    "$options": "i",
+                }
+            },
+            "outlaw": {
+                "type_line": {
+                    "$regex": r"\b(Assassin|Mercenary|Pirate|Rogue|Warlock)\b",
+                    "$options": "i",
+                }
+            },
+            "commander": {
+                "$or": [
+                    {
+                        "$and": [
+                            {"type_line": {"$regex": r"\bLegendary\b", "$options": "i"}},
+                            {"type_line": {"$regex": r"\bCreature\b",  "$options": "i"}},
+                        ]
+                    },
+                    {"type_line": {"$regex": r"\bPlaneswalker\b", "$options": "i"}},
+                ]
+            },
+
+            # ── Creature complexity ───────────────────────────────────────────
+            "vanilla": {
+                "$and": [
+                    {"type_line": {"$regex": r"\bCreature\b", "$options": "i"}},
+                    {"$or": [{"oracle_text": ""}, {"oracle_text": {"$exists": False}}]},
+                ]
+            },
+            # Approximation: creature with no activated abilities ({...}:),
+            # no triggered/static ability dashes (—), and no colons
+            "frenchvanilla": {
+                "$and": [
+                    {"type_line": {"$regex": r"\bCreature\b", "$options": "i"}},
+                    {"$nor": [{"oracle_text": {"$regex": r"[:{]|\u2014"}}]},
+                ]
+            },
+
+            # ── Mana symbol types ─────────────────────────────────────────────
+            "hybrid": {
+                "mana_cost": {"$regex": r"\{[WUBRG2]/[WUBRG]\}", "$options": "i"}
+            },
+            "phyrexian": {
+                "mana_cost": {"$regex": r"\{[WUBRG2]/P\}", "$options": "i"}
+            },
+
+            # ── Layouts ───────────────────────────────────────────────────────
+            "split":     {"layout": "split"},
+            "flip":      {"layout": "flip"},
+            "transform": {"layout": "transform"},
+            "mdfc":      {"layout": "modal_dfc"},
+            "meld":      {"layout": "meld"},
+            "meldpart":  {"layout": "meld"},
+            "meldresult": {"layout": "meld"},
+            "leveler":   {"layout": "leveler"},
+            "adventure": {"layout": "adventure"},
+            "dfc": {
+                "layout": {"$in": ["transform", "modal_dfc", "double_faced_token"]}
+            },
+
+            # ── Keywords / mechanics ──────────────────────────────────────────
+            "companion": {"keywords": {"$regex": r"^Companion$",  "$options": "i"}},
+            "partner":   {"keywords": {"$regex": r"^Partner",     "$options": "i"}},
+
+            # ── Color ─────────────────────────────────────────────────────────
             "multicolor":   {"$expr": {"$gt": [{"$size": "$colors"}, 1]}},
             "multicolored": {"$expr": {"$gt": [{"$size": "$colors"}, 1]}},
             "colorless":    {"colors": []},
             "monocolored":  {"$expr": {"$eq": [{"$size": "$colors"}, 1]}},
-            "fullart":      {"full_art": True},
-            "full_art":     {"full_art": True},
-            "foil":         {"foil": True},
-            "nonfoil":      {"nonfoil": True},
-            "reserved":     {"reserved": True},
-            "reprint":      {"reprint": True},
-            "promo":        {"promo": True},
-            "digital":      {"digital": True},
-            "dfc":          {"layout": {"$in": ["transform", "modal_dfc", "double_faced_token"]}},
-            "transform":    {"layout": "transform"},
-            "split":        {"layout": "split"},
-            "flip":         {"layout": "flip"},
-            "adventure":    {"layout": "adventure"},
+
+            # ── Printing / physical properties ────────────────────────────────
+            "fullart":    {"full_art": True},
+            "full_art":   {"full_art": True},
+            "foil":       {"foil": True},
+            "nonfoil":    {"nonfoil": True},
+            "etched":     {"finishes": "etched"},
+            "textless":   {"textless": True},
+            "oversized":  {"oversized": True},
+            "spotlight":  {"story_spotlight": True},
+            "reserved":   {"reserved": True},
+            "reprint":    {"reprint": True},
+            "promo":      {"promo": True},
+            "digital":    {"digital": True},
+            "booster":    {"booster": True},
+
+            # ── has: targets ──────────────────────────────────────────────────
+            "watermark": {"watermark": {"$exists": True, "$nin": [None, ""]}},
+            "indicator":  {"color_indicator": {"$exists": True, "$ne": None}},
         }
         q = mapping.get(v, {})
         if not q:
@@ -267,17 +466,21 @@ class ScryfallMongo:
         return self._maybe_negate(q, negated)
 
     def _filter_to_mongo(self, key: str, op: str, value: str, negated: bool) -> dict:
-        # Color / identity
+        # ── Color / identity ──────────────────────────────────────────────────
         if key in ("c", "color", "colour"):
             return self._color_query("colors", op, value, negated)
         if key in ("id", "identity", "ci"):
             return self._color_query("color_identity", op, value, negated)
 
-        # Numeric: mana value / CMC
+        # ── Mana cost symbols ─────────────────────────────────────────────────
+        if key in ("m", "mana", "manacost"):
+            return self._mana_query("mana_cost", op, value, negated)
+
+        # ── Numeric: mana value / CMC (supports even/odd) ─────────────────────
         if key in ("cmc", "mv", "manavalue"):
             return self._numeric_query("cmc", op, value, negated)
 
-        # Numeric: power / toughness / loyalty (stored as strings in Scryfall data)
+        # ── Numeric: power / toughness / loyalty ──────────────────────────────
         if key in ("pow", "power"):
             return self._numeric_query("power", op, value, negated, string_field=True)
         if key in ("tou", "toughness"):
@@ -285,10 +488,44 @@ class ScryfallMongo:
         if key in ("loy", "loyalty"):
             return self._numeric_query("loyalty", op, value, negated, string_field=True)
 
-        # Text fields
+        # ── Combined power + toughness ────────────────────────────────────────
+        if key in ("pt", "powtou"):
+            try:
+                num = float(value)
+            except ValueError:
+                return {}
+            op_map = {
+                ":": "$eq", "=": "$eq",
+                "<": "$lt", "<=": "$lte",
+                ">": "$gt", ">=": "$gte",
+                "!=": "$ne",
+            }
+            mongo_op = op_map.get(op, "$eq")
+            q = {
+                "$expr": {
+                    mongo_op: [
+                        {
+                            "$add": [
+                                {"$convert": {"input": "$power",     "to": "double", "onError": 0, "onNull": 0}},
+                                {"$convert": {"input": "$toughness", "to": "double", "onError": 0, "onNull": 0}},
+                            ]
+                        },
+                        num,
+                    ]
+                }
+            }
+            return self._maybe_negate(q, negated)
+
+        # ── Text fields ───────────────────────────────────────────────────────
         if key in ("n", "name"):
+            if op == "!":
+                # Exact name match (from !"Name" syntax — already emitted by tokenizer)
+                q = {"name": {"$regex": f"^{re.escape(value)}$", "$options": "i"}}
+                return self._maybe_negate(q, negated)
             return self._text_query("name", value, negated)
         if key in ("o", "oracle", "text"):
+            return self._text_query("oracle_text", value, negated)
+        if key in ("fo", "fulloracle"):
             return self._text_query("oracle_text", value, negated)
         if key in ("t", "type"):
             return self._text_query("type_line", value, negated)
@@ -296,32 +533,66 @@ class ScryfallMongo:
             return self._text_query("artist", value, negated)
         if key in ("ft", "flavor"):
             return self._text_query("flavor_text", value, negated)
+        if key in ("wm", "watermark"):
+            return self._text_query("watermark", value, negated)
 
-        # Exact match fields
-        if key in ("e", "s", "set"):
+        # ── Exact / enum fields ───────────────────────────────────────────────
+        if key in ("e", "s", "set", "edition"):
             return self._exact_query("set", value.lower(), negated)
+        if key in ("cn", "number"):
+            return self._text_query("collector_number", value, negated)
+        if key in ("b", "block"):
+            return self._text_query("block_code", value.lower(), negated)
         if key in ("r", "rarity"):
             rmap = {
                 "c": "common", "u": "uncommon", "r": "rare",
                 "m": "mythic", "mythicrare": "mythic",
+                "s": "special", "b": "bonus",
             }
             return self._exact_query("rarity", rmap.get(value.lower(), value.lower()), negated)
         if key in ("l", "lang", "language"):
             return self._exact_query("lang", value.lower(), negated)
         if key == "layout":
             return self._exact_query("layout", value.lower(), negated)
+        if key == "border":
+            return self._exact_query("border_color", value.lower(), negated)
+        if key == "frame":
+            # Checks both frame year (e.g. "2015") and frame_effects array
+            # (e.g. "showcase", "extendedart", "legendary")
+            q = {
+                "$or": [
+                    {"frame": value.lower()},
+                    {"frame_effects": {"$regex": f"^{re.escape(value.lower())}$", "$options": "i"}},
+                ]
+            }
+            return self._maybe_negate(q, negated)
+        if key == "stamp":
+            return self._exact_query("security_stamp", value.lower(), negated)
+        if key in ("st", "set_type"):
+            return self._exact_query("set_type", value.lower(), negated)
 
-        # Format legality
+        # ── Game availability ─────────────────────────────────────────────────
+        if key == "game":
+            q = {"games": value.lower()}
+            return self._maybe_negate(q, negated)
+
+        # ── Format legality ───────────────────────────────────────────────────
         if key in ("f", "format"):
             q = {f"legalities.{value.lower()}": "legal"}
             return self._maybe_negate(q, negated)
+        if key == "banned":
+            q = {f"legalities.{value.lower()}": "banned"}
+            return self._maybe_negate(q, negated)
+        if key == "restricted":
+            q = {f"legalities.{value.lower()}": "restricted"}
+            return self._maybe_negate(q, negated)
 
-        # Keywords (array field — MongoDB regex matches against each element)
+        # ── Keywords ──────────────────────────────────────────────────────────
         if key in ("kw", "keyword"):
             return self._text_query("keywords", value, negated)
 
-        # Produced mana
-        if key == "produced":
+        # ── Produced mana ─────────────────────────────────────────────────────
+        if key in ("produced", "produces"):
             colors = [
                 self._COLOR_MAP.get(c, c.upper())
                 for c in value.lower()
@@ -330,7 +601,23 @@ class ScryfallMongo:
             q = {"produced_mana": {"$all": colors}}
             return self._maybe_negate(q, negated)
 
-        # is: / has: / not:
+        # ── Prices ────────────────────────────────────────────────────────────
+        if key in ("usd", "eur", "tix"):
+            return self._price_query(f"prices.{key}", op, value, negated)
+        if key in ("usdfoil", "usd_foil"):
+            return self._price_query("prices.usd_foil", op, value, negated)
+        if key in ("usdetch", "usd_etched"):
+            return self._price_query("prices.usd_etched", op, value, negated)
+        if key in ("eurfoil", "eur_foil"):
+            return self._price_query("prices.eur_foil", op, value, negated)
+
+        # ── Release date / year ───────────────────────────────────────────────
+        if key == "year":
+            return self._year_query(op, value, negated)
+        if key == "date":
+            return self._date_query(op, value, negated)
+
+        # ── is: / has: / not: ─────────────────────────────────────────────────
         if key == "is":
             return self._is_query(value, negated)
         if key == "has":
@@ -426,25 +713,58 @@ class ScryfallMongo:
         Searches the local Scryfall card database using Scryfall-like search syntax.
 
         Supported filters:
-          name / n          — name contains text        (e.g. name:bolt, "lightning bolt")
-          o / oracle / text — oracle text contains      (e.g. o:flying)
-          t / type          — type line contains        (e.g. t:creature, t:"legendary creature")
-          c / color         — color                     (e.g. c:r, c:wub, c>=ub, c=wu)
-          id / identity     — color identity            (e.g. id<=wub)
-          cmc / mv          — mana value                (e.g. cmc<=3, mv=2)
-          pow / power       — power                     (e.g. pow>=4)
-          tou / toughness   — toughness                 (e.g. tou<=2)
-          loy / loyalty     — loyalty                   (e.g. loy>=3)
-          e / set           — set code                  (e.g. e:blb, e:m21)
-          r / rarity        — rarity: c u r m           (e.g. r:rare, r:m)
-          f / format        — format legality           (e.g. f:standard)
-          a / artist        — artist name               (e.g. a:avon)
-          ft / flavor       — flavor text               (e.g. ft:goblin)
-          is                — boolean property          (e.g. is:legendary, is:multicolored)
-          kw / keyword      — rules keyword             (e.g. kw:flying)
-          lang              — language code             (e.g. lang:en)
-          layout            — card layout               (e.g. layout:transform)
-          produced          — produced mana colors      (e.g. produced:g)
+          name / n          — name contains text           (e.g. name:bolt, n:"Serra Angel")
+          !"name"           — exact name match             (e.g. !"Lightning Bolt")
+          o / oracle        — oracle text contains         (e.g. o:flying)
+          fo / fulloracle   — oracle text (incl. reminder) (e.g. fo:"first strike")
+          t / type          — type line contains           (e.g. t:creature, t:"legendary creature")
+          c / color         — color                        (e.g. c:r, c:wub, c>=ub, c=wu)
+          id / identity     — color identity               (e.g. id<=wub)
+          m / mana          — mana cost symbols            (e.g. mana={W}{U}, mana:{X}, mana={0})
+          cmc / mv          — mana value                   (e.g. cmc<=3, mv=2, mv:even, mv:odd)
+          pow / power       — power                        (e.g. pow>=4)
+          tou / toughness   — toughness                    (e.g. tou<=2)
+          pt / powtou       — power + toughness combined   (e.g. pt>=6)
+          loy / loyalty     — loyalty                      (e.g. loy>=3)
+          e / set           — set code                     (e.g. e:blb, e:m21)
+          cn / number       — collector number             (e.g. cn:42)
+          b / block         — block code                   (e.g. b:rav)
+          r / rarity        — rarity: c u r m s b          (e.g. r:rare, r:m)
+          f / format        — format legality              (e.g. f:standard, f:modern)
+          banned            — banned in format             (e.g. banned:vintage)
+          restricted        — restricted in format         (e.g. restricted:vintage)
+          a / artist        — artist name                  (e.g. a:avon)
+          ft / flavor       — flavor text                  (e.g. ft:goblin)
+          wm / watermark    — watermark text               (e.g. wm:phyrexian)
+          is / has          — boolean property             (see list below)
+          not               — negated boolean property     (e.g. not:reprint)
+          kw / keyword      — rules keyword                (e.g. kw:flying)
+          lang              — language code                (e.g. lang:en)
+          layout            — card layout                  (e.g. layout:transform)
+          border            — border color                 (e.g. border:borderless, border:black)
+          frame             — frame year or effect         (e.g. frame:2015, frame:showcase)
+          stamp             — security stamp               (e.g. stamp:oval, stamp:acorn)
+          st / set_type     — set type                     (e.g. st:expansion, st:commander)
+          game              — game availability            (e.g. game:paper, game:arena)
+          produced          — produced mana colors         (e.g. produced:g)
+          usd / eur / tix   — price comparison             (e.g. usd<=1.00, tix<5)
+          usdfoil / eurfoil — foil price comparison        (e.g. usdfoil<=2.00)
+          year              — release year                 (e.g. year:2020, year>=2015)
+          date              — release date (YYYY-MM-DD)    (e.g. date>=2020-09-25)
+
+        is: / has: / not: properties:
+          Card types:   permanent, nonpermanent, spell, historic, party, outlaw, commander
+                        legendary, creature, artifact, enchantment, instant, sorcery,
+                        planeswalker, land, basic, saga, battle, token
+          Creatures:    vanilla, frenchvanilla
+          Mana:         hybrid, phyrexian
+          Layouts:      split, flip, transform, mdfc, meld, meldpart, meldresult,
+                        leveler, dfc, adventure
+          Mechanics:    companion, partner
+          Color:        multicolored, colorless, monocolored
+          Printing:     fullart, foil, nonfoil, etched, textless, oversized, spotlight,
+                        reserved, reprint, promo, digital, booster
+          has: only:    watermark, indicator
 
         Color operators:  : / >= (contains), = (exactly), <= (at most), < (proper subset), > (superset)
         Numeric operators: = : < <= > >= !=
@@ -453,7 +773,6 @@ class ScryfallMongo:
         Bare words search across name, oracle text, and type line.
 
         :param query: The search query string.
-        :param __event_emitter__: Optional event emitter for streaming updates.
         """
         if not query or not query.strip():
             return "Please provide a search query."

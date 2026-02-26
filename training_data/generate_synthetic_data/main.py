@@ -304,10 +304,10 @@ def main():
     
     # Original formats
     if args.combo_queries > 0:
-        docs = generate_combo_queries(combos, cards, scryfall_client, args.combo_queries)
+        docs = generate_combo_queries(combos, cards, scryfall_client, lambda doc: save_to_mongo(synthetic, [doc]), target_count=args.combo_queries)
         all_documents.extend(docs)
         print(f"  ✓ Generated {len(docs):,} combo query documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        #save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.card_search > 0:
         docs = generate_card_search_queries(cards, args.card_search)

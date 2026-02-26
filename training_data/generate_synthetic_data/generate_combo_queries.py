@@ -4,13 +4,14 @@ import json
 from common import MODEL_NAME, MTG_NOTATION_LEGEND, build_card_detail
 from scryfall_mongodb import ScryfallMongo
 import random
+from typing import Callable
 
-def build_combo_prompt(card_name: str, cards: list[dict], combo: str) -> str:
+def build_combo_prompt(cards: list[dict], combo: str) -> str:
     """Generate combo question prompt with MTG notation guide."""
     
     prompt = f"""{MTG_NOTATION_LEGEND}
 
-Generate 3 natural Q&A pairs about combos with {card_name}.
+Generate 3 natural Q&A pairs about combos with the cards below. Make sure at least one of the questions is from the perspective of a player that doesn't know the extact combo or the cards, but may have an idea of a combo or looking for a combo. For example: "What combo can I make with {", ".join(map(lambda card: card.get('name'), cards))}?" or "How can I can I make an infinite mana combo?".
 
 Cards:
 {NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards))}
@@ -30,79 +31,131 @@ Explain how the combos work and what they achieve.
 Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
     return prompt
 
-def generate_combo_queries(combos_collection: pymongo.collection.Collection, card_collection: pymongo.collection.Collection, scryfall_client: ScryfallMongo, target_count=5000) -> list:
+# TODO build combo text just like commander spellbook
+
+# Initial Card State
+#  Sol Ring in hand.
+#  Teferi and Displacer Kitten on the battlefield.
+# Mana Needed
+# ({1} magic symbol)  Magic Symbol (1) available.
+# Steps
+# Cast Sol Ring by paying ({1} magic symbol)  Magic Symbol (1).
+# Displacer Kitten triggers, blinking Teferi.
+# Activate Sol Ring by tapping it, adding ({C} magic symbol)  Magic Symbol (C)({C} magic symbol)  Magic Symbol (C).
+# Activate Teferi's second loyalty ability by removing three loyalty counters from it, returning Sol Ring from the battlefield to your hand and drawing a card.
+# Repeat.
+# Results
+# Infinite card draw.
+# Infinite draw triggers.
+# Near-infinite colorless mana.
+# Near-infinite storm count.
+
+def extract_combo_data(
+    combos_collection: pymongo.collection.Collection, 
+    card_collection: pymongo.collection.Collection, 
+    scryfall_client: ScryfallMongo) -> list[dict]:
+    """Extract combo data from commander spellbook documents and prepare for prompt generation."""
+    all_combos = list(combos_collection.find({'status': 'OK'}))
+    combos: list[dict] = []
+    
+    for combo in all_combos:
+        cards: list[dict] = combo.get('uses', [])
+        combo_name = "|".join(map(lambda card: card.get('card', {}).get('name', 'Unknown'), cards))
+        
+        if len(list(filter(lambda combo: combo.get('name', None) == combo_name, combos))) > 0:
+            continue
+        
+        projected_combo = {
+            "name": combo_name,
+            "description": combo.get('description', None),
+            "cards_in_combo": list(map(lambda card: map_using_card(card, card_collection), cards)),
+            "features": map_features(combo),
+            "requirements": map_requirements(combo),
+            "notes": combo.get('notes', None)
+        }
+        
+        if len(projected_combo.get('requirements', [])) > 0:
+            for req in projected_combo.get('requirements'):
+                query = req.get('scryfallQuery')
+                results = scryfall_client.search_scryfall(query=query)
+                if hasattr(results, 'cards') and  len(results.cards) > 0:
+                    random_card = random.choice(results.cards)
+                    projected_combo.get('cards_in_combo').append(map_using_card({"card": {"name": random_card.get('name')}, "zoneLocations": []}, card_collection))
+                
+        combos.append(projected_combo)
+    
+    return combos
+
+def map_requirements(combo: dict) -> list[dict]:
+    reqs = []
+    
+    if "requires" in combo:
+        for req in combo.get('requires'):
+            reqs.append({
+                "zoneLocations": req.get('zoneLocations', []),
+                "name": req.get('template', {}).get('name', None),
+                "scryfallQuery": req.get('template', {}).get('scryfallQuery')
+            })
+    
+    return reqs
+        
+def map_features(combo: dict) -> list[str]:
+    features = []
+    if "produces" in combo:
+        for feature in combo.get('produces'):
+            features.append(feature.get('feature', {}).get('name', None))
+            
+    return features
+        
+def map_using_card(card: dict, card_collection: pymongo.collection.Collection) -> dict:
+    mtg_card: dict = card_collection.find_one({"name": card.get('card', {}).get('name')})
+    
+    projected_card = {
+        "name": mtg_card.get('name', None),
+        "type": mtg_card.get('type', None),
+        "manaCost": mtg_card.get('manaCost', None),
+        "text": mtg_card.get('text', None),
+        "subtypes": json.loads(mtg_card.get('subtypes', '[]')),
+        "supertypes": json.loads(mtg_card.get('supertypes', '[]')),
+        "colorIdentity": json.loads(mtg_card.get('colorIdentity', '[]')),
+        "zoneLocations": card.get('zoneLocations', [])
+    }
+    
+    return projected_card
+
+def generate_combo_queries(combos_collection: pymongo.collection.Collection, card_collection: pymongo.collection.Collection, scryfall_client: ScryfallMongo, save_item: Callable[[dict], None], target_count=5000) -> None:
     """Generate combo queries - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} COMBO QUERIES ===")
-    mongo_documents = []
     
-    # Get combos grouped by card
-    all_combos = list(combos_collection.find({'status': 'OK'}))
+    combos = extract_combo_data(combos_collection, card_collection, scryfall_client)
     
-    combos_by_card = {}
-    for combo in all_combos:
-        cards = combo.get('uses', [])
-        for card_info in cards:
-            card_name = card_info.get('card', {}).get('name', '')
-            if card_name:
-                if card_name not in combos_by_card:
-                    combos_by_card[card_name] = []
-                combos_by_card[card_name].append(combo)
+    print(f"  → Processing {len(combos):,} cards...")
     
-    cards_with_combos = [(card, combos) for card, combos in combos_by_card.items() if len(combos) >= 2]
-    cards_with_combos.sort(key=lambda x: len(x[1]), reverse=True)
-    
-    print(f"  → Processing {len(cards_with_combos):,} cards...")
-    
-    for card_name, card_combos in cards_with_combos:
-        if len(mongo_documents) >= target_count:
+    i: int = 0
+    for combo in combos:
+        if i >= target_count:
             break
         
-        if (len(mongo_documents) + 1) % 100 == 0:
-            print(f"    Generated {len(mongo_documents):,}/{target_count:,}...")
+        if (i + 1) % 100 == 0:
+            print(f"    Generated {i:,}/{target_count:,}...")
         
-        # Prepare combo data
-        combo_descriptions: list[dict] = []
-        for combo in card_combos[:5]:
-            combo_cards = [c.get('card', {}).get('name', '') for c in combo.get('uses', []) if c.get('card')]
-            description = combo.get('description', '')
-            if len(combo_cards) >= 2 and description:
-                combo_descriptions.append({'cards': combo_cards, 'description': description, 'combo': combo })
-        
-        if not combo_descriptions:
-            continue
+        combo_name = combo.get('name', '')
         
         # Build prompt
         prompts: list[tuple[str, list[dict], str]] = []
         
-        for combo in combo_descriptions:
-            cards_in_combo: list[dict] = []
+        description: str = combo.get('description')
+        notes: str = combo.get('notes')
+        
+        numbered_descriptions = (f"Step {i + 1}. {desc}" for i, desc in enumerate(description.split('\n')))
+        description = NEW_LINE.join(numbered_descriptions)
+        
+        if notes:
+            description = description + NEW_LINE + NEW_LINE + f"*{notes}" 
             
-            for combo_card_name in combo.get('cards'):
-                cards_in_combo.append(card_collection.find_one({"name": combo_card_name}))
-                
-            if combo.get('combo').get('requires'):
-                for requirement in combo.get('combo').get('requires'):
-                    template: dict = requirement.get('template')
-                    if "scryfallQuery" in template:
-                        query = template.get('scryfallQuery')
-                        results = scryfall_client.search_scryfall(query=query)
-                        
-                        if hasattr(results, 'cards') and  len(results.cards) > 0:
-                            random_card = random.choice(results.cards)
-                            cards_in_combo.append(card_collection.find_one({"name": random_card.get('name')}))
-
-                
-            
-            description: str = combo.get('description')
-            notes: str = combo.get('combo').get('notes')
-            
-            numbered_descriptions = (f"Step {i + 1}. {desc}" for i, desc in enumerate(description.split('\n')))
-            description = NEW_LINE.join(numbered_descriptions)
-            
-            if notes:
-                description = description + NEW_LINE + NEW_LINE + f"*{notes}" 
-            
-            prompts.append((build_combo_prompt(card_name, cards_in_combo, description), cards_in_combo, description))
+        cards_in_combo: list[dict] = combo.get('cards_in_combo', [])
+        
+        prompts.append((build_combo_prompt(cards_in_combo, description), cards_in_combo, description))
         
         for prompt, cards_in_combo, description in prompts:         
             try:
@@ -120,26 +173,27 @@ def generate_combo_queries(combos_collection: pymongo.collection.Collection, car
                             category="combo_query"
                         )
                         if is_valid:
-                            mongo_documents.append({
+                            doc = {
                                 "question": qa['question'],
                                 "answer": qa['answer'],
                                 "category": "combo_query",
-                                "source_data": [card_name],
+                                "source_data": [combo_name],
                                 "validated": True,
                                 "validation_score": score,
                                 "needs_review": False
-                            })
+                            }
+                            
+                            save_item(doc)
+                            
                             print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
-                            if len(mongo_documents) >= target_count:
-                                break
+                            
                         else:
                             print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
                     else:
                         print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
             
             except Exception as e:
-                print(f"  ✗ Error generating for {card_name}: {type(e).__name__}: {e}")
+                print(f"  ✗ Error generating for {combo_name}: {type(e).__name__}: {e}")
                 continue
-
-    print(f"  ✓ Generated {len(mongo_documents):,} combo queries")
-    return mongo_documents
+        
+        i = i + 1
