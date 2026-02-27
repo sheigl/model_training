@@ -29,7 +29,8 @@ from generate_salt_questions import *
 from generate_staple_analysis import * 
 from generate_synergy_questions import * 
 from generate_terminology_questions import *
-from dotenv import load_dotenv
+from dotenv import load_dotenv;
+sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_buffering=True) # type: ignore
 # Load environment variables from .env file
 load_dotenv()
 

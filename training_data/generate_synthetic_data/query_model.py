@@ -5,7 +5,7 @@ from typing import Iterator
 import ollama
 import json
 from common import *
-from models import Model
+from models import Model, ModelProvider
 from anthropic import Anthropic, Stream
 
 # =============================================================================
@@ -26,25 +26,25 @@ class QueryModel():
         print(f"{'─'*60}")
         
         try:
-            if not self.anthropic_client and model.name.startswith("anthropic"):
+            if model.provider == ModelProvider.ANTHROPIC:
                 print(f"  → Using Anthropic API for model {model.name}")
                 anthropic_key = os.getenv("ANTHROPIC_KEY")
-                self.anthropic_client = Anthropic(api_key=anthropic_key)
+                self.anthropic_client = Anthropic(api_key=anthropic_key) if not self.anthropic_client else self.anthropic_client
             
             print(f"  → RESPONSE:")
             print(f"{'─'*60}")
             
             response_content = ""
                         
-            if self.anthropic_client and model.name.startswith("anthropic"):
-                with self.anthropic_client.messages.stream(max_tokens=max_tokens,
+            if model.provider == ModelProvider.ANTHROPIC:
+                with self.anthropic_client.messages.stream(max_tokens=max_tokens, # type: ignore
                     messages=[
                         {
                             "role": "user",
                             "content": prompt,
                         }
                     ],
-                    model=model.name.split(":")[1] if ":" in model.name else model.name,
+                    model=model.name,
                     temperature=0.7) as stream:
                         for event in stream:
                             if event.type == "content_block_delta":
@@ -57,7 +57,8 @@ class QueryModel():
                                 # Print ONLY the new text (not the event object)
                                 print(new_text, end="", flush=True)
             else:
-                stream = ollama.chat(
+                client = ollama.Client(host=model.provider_url) 
+                stream = client.chat(
                     model=model.name, 
                     messages=[{"role": "user", "content": prompt}], 
                     stream=True,
