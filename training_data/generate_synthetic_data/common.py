@@ -274,9 +274,9 @@ Respond ONLY with JSON:
   "score": <1-10>,
   "is_acceptable": <true/false>,
   "errors": "<factual errors if any, or 'none'>",
-  "missing_info": "<what is missing or vague, if anything>",
-  "reason": "<one sentence summary>",
-  "suggested_fix": "<if rejected, provide a response that would fix the answer as if you're answering the question yourself. If acceptable, leave blank or 'N/A'>"
+  "missing_info": "<what is missing or vague, if anything, If the score is 7 or above, with no errors, leave this blank.>",
+  "reason": "<one sentence summary, If the score is 7 or above, with no errors, leave this blank.>",
+  "suggested_fix": "<if rejected, provide a response that would fix the answer as if you're answering the question. If the score is 7 or above, with no errors, leave this blank.>"
 }}
 
 Output ONLY valid JSON, no other text."""
