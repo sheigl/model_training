@@ -1,7 +1,7 @@
 import random
 
 import pymongo
-from query_ollama import *
+from query_model import QueryModel
 import json
 from common import COMPLEX_RULE_SECTIONS, MODEL_NAME, build_rule_edge_case_prompt
 

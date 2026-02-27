@@ -1,7 +1,7 @@
 import re
 from models import Card
 
-global MODEL_NAME
+#global MODEL_NAME
 MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
 
 NEW_LINE = "\n"
@@ -245,88 +245,9 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return prompt
 
 
-def build_qa_validation_prompt(question: str, answer: str, context: str = "", category: str = "") -> str:
-    """Build the generic Q&A validation prompt used by validate_qa()."""
-    context_block = f"\nSource material the answer should be grounded in:\n{context}\n" if context else ""
-    return f"""{MTG_NOTATION_LEGEND}
-    You are a Magic: The Gathering expert reviewing a generated Q&A pair for training data quality.
-
-Category: {category or 'general'}{context_block}
-Question: {question}
-
-Answer to validate:
-{answer}
-
-Score this answer on:
-1. Factual accuracy — Is everything correct? Wrong mana costs, wrong card names, wrong mechanics = instant reject.
-2. Completeness — Does it fully answer the question without important gaps?
-3. Usefulness — Is this a good training example? Clear and specific, not vague or generic?
-4. Grounding — Is it grounded in the provided context, or hallucinating details?
-
-Scoring guide:
-- 9-10: Excellent, publish as-is
-- 7-8: Good, acceptable for training
-- 5-6: Too vague, incomplete, or minor errors — reject
-- 1-4: Factual errors or hallucinations — reject
-
-Respond ONLY with JSON:
-{{
-  "score": <1-10>,
-  "is_acceptable": <true/false>,
-  "errors": "<factual errors if any, or 'none'>",
-  "missing_info": "<what is missing or vague, if anything, If the score is 7 or above, with no errors, leave this blank.>",
-  "reason": "<one sentence summary, If the score is 7 or above, with no errors, leave this blank.>",
-  "suggested_fix": "<if rejected, provide a response that would fix the answer as if you're answering the question. If the score is 7 or above, with no errors, leave this blank.>"
-}}
-
-Output ONLY valid JSON, no other text."""
 
 
-def build_card_validation_prompt(card1: dict, card2: dict, question: str, answer: str) -> str:
-    """Build validation prompt for card comparison answers."""
-    
-    prompt = f"""{MTG_NOTATION_LEGEND}
 
-You are a Magic: The Gathering expert reviewing a comparison answer for accuracy.
-
-Card 1: {card1.get('name', '')}
-Type: {card1.get('type', 'N/A')}
-Text: {card1.get('text', '')}
-Cost: {card1.get('manaCost', 'N/A')}
-
-Card 2: {card2.get('name', '')}
-Type: {card2.get('type', 'N/A')}
-Text: {card2.get('text', '')}
-Cost: {card2.get('manaCost', 'N/A')}
-
-Question: {question}
-
-Answer to validate:
-{answer}
-
-{VALIDATION_CHECKLIST}
-
-Review this answer for:
-1. Accuracy - Does it correctly describe both cards' mechanics AND types?
-2. Completeness - Does it mention ALL important abilities AND type-specific concerns?
-3. Usefulness - Does it give clear, context-dependent guidance?
-4. Factual correctness - Are there any outright errors or misconceptions?
-
-Respond ONLY with JSON:
-{{
-"score": <1-10>,
-"is_acceptable": <true/false>,
-"missing_info": "<what critical info is missing, if any>",
-"errors": "<factual errors, if any>",
-"mechanical_accuracy": "<are the card mechanics described correctly?>",
-"cost_comparison_correct": "<are costs compared accurately?>",
-"card_types_addressed": "<are card types mentioned and their implications explained?>"
-}}
-
-{VALIDATION_SCORING_GUIDE}
-
-Output ONLY valid JSON, no other text."""
-    return prompt
 
 def build_commander_prompt() -> str:
     """Generate Commander rules questions with MTG notation guide."""

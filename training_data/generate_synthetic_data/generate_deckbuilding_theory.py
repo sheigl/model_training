@@ -1,5 +1,5 @@
 import pymongo
-from query_ollama import *
+from query_model import QueryModel
 import json
 from common import MODEL_NAME, build_deckbuilding_theory_prompt
 

@@ -1,13 +1,13 @@
 import pymongo
 from rich.console import Console
 from rich.status import Status
-from query_ollama import *
+from query_model import QueryModel
 import json
-from common import MODEL_NAME, MTG_NOTATION_LEGEND, build_card_detail
+from common import MTG_NOTATION_LEGEND, NEW_LINE, build_card_detail
 from scryfall_mongodb import ScryfallMongo
 import random
 from typing import Any, Callable
-from models import Card, ProjectedCombo, Requirement
+from models import Card, Model, ModelType, ProjectedCombo, Requirement
 
 console = Console()
 
@@ -173,7 +173,9 @@ def generate_combo_queries(
     combos_collection: pymongo.collection.Collection,  # type: ignore
     card_collection: pymongo.collection.Collection,  # type: ignore
     scryfall_client: ScryfallMongo, 
-    save_item: Callable[[dict], None], target_count=5000) -> None:
+    save_item: Callable[[dict], None], 
+    models: dict[ModelType, Model],
+    target_count=5000) -> None:
     """Generate combo queries - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} COMBO QUERIES ===")
     
@@ -209,9 +211,12 @@ def generate_combo_queries(
         
         prompts.append((build_combo_prompt(cards_in_combo, description, random.choice(combo.features or [])), cards_in_combo, description))
         
+        query_model = QueryModel()
+        
         for prompt, cards_in_combo, description in prompts:         
             try:
-                response =  query_ollama(MODEL_NAME, prompt)
+                
+                response =  query_model.query(models[ModelType.GENERATION], prompt)
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
@@ -223,9 +228,17 @@ def generate_combo_queries(
                         while True:
                             # Validate
                             # Create MongoDB document
-                            is_valid, reason, score, suggested_fix = validate_qa(
-                                qa['question'], qa['answer'],
-                                context=f"\nCards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}",
+                            qa_context =f"""
+- For combo_query category: also verify that the sequence of triggers described matches the order in the provided combo steps. A correct description of individual triggers in the wrong order is still a factual error.
+
+Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}
+                                """
+                            
+                            is_valid, reason, score, suggested_fix = query_model.validate_qa(
+                                validation_model=models[ModelType.VALIDATION],
+                                question=qa['question'], 
+                                answer=qa['answer'],
+                                context=qa_context,
                                 category="combo_query"
                             )
                             

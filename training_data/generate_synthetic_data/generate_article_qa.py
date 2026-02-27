@@ -1,7 +1,6 @@
 import random
 
 import pymongo
-import query_ollama
 import json
 from common import MODEL_NAME, build_article_qa_prompt, clean_html
 
@@ -45,7 +44,7 @@ def generate_article_qa(articles_collection, target_count=2000) -> list[dict]:
         prompt = build_article_qa_prompt(title, content)
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=9999)
+            response = query_model(MODEL_NAME, prompt, max_tokens=9999)
             response = response.replace("```json", "").replace("```", "").strip()
             if not response.startswith('['):
                 start = response.find('[')
@@ -57,7 +56,7 @@ def generate_article_qa(articles_collection, target_count=2000) -> list[dict]:
             accepted = 0
             for qa in qa_pairs:
                 if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    is_valid, reason, score = query_ollama.validate_qa(
+                    is_valid, reason, score = query_model.validate_qa(
                         qa['question'], qa['answer'],
                         context=f"Article: {title}\n{content[:500]}",
                         category="article_qa"

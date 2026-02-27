@@ -1,5 +1,5 @@
 import pymongo
-import query_ollama
+from query_model import QueryModel
 import json
 from common import MODEL_NAME, build_card_comparision_prompt
 
@@ -60,7 +60,7 @@ def generate_comparison_questions(cards_collection: pymongo.collection.Collectio
             prompt = build_card_comparision_prompt(card1, card2)
             
             try:
-                response = query_ollama(MODEL_NAME, prompt)
+                response = query_model(MODEL_NAME, prompt)
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
@@ -82,7 +82,7 @@ def generate_comparison_questions(cards_collection: pymongo.collection.Collectio
                     
                     # Model-based validation (the smart filter!)
                     try:
-                        is_valid, reason, score = query_ollama.validate_with_model(MODEL_NAME, card1, card2, qa)
+                        is_valid, reason, score = query_model.validate_with_model(MODEL_NAME, card1, card2, qa)
                     except Exception as e:
                         print(f"    ⚠️  Validation failed ({e}), accepting by default")
                         is_valid = True

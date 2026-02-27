@@ -1,7 +1,7 @@
 
 import json
 
-from query_ollama import query_ollama
+from query_model import QueryModel
 from common import *
 
 def generate_archetypes(target_count=1500) -> list[dict]:

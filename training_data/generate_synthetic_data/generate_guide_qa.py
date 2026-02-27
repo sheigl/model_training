@@ -1,7 +1,7 @@
 import random
 
 import pymongo
-from query_ollama import *
+from query_model import QueryModel
 import json
 from common import MODEL_NAME, build_guide_qa_prompt, clean_html
 

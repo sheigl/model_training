@@ -28,8 +28,11 @@ from generate_rules_scenarios import *
 from generate_salt_questions import * 
 from generate_staple_analysis import * 
 from generate_synergy_questions import * 
-from generate_terminology_questions import *;
-sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_buffering=True)
+from generate_terminology_questions import *
+from dotenv import load_dotenv
+# Load environment variables from .env file
+load_dotenv()
+
 """
 Synthetic Query Generator - Saves to MongoDB
 
@@ -177,7 +180,8 @@ def main():
     parser.add_argument('--card-search', type=int, default=0)
     parser.add_argument('--commander', type=int, default=0)
     parser.add_argument('--multi-card', type=int, default=0)
-    parser.add_argument('--model', type=str, default='qwen2.5:14b', help='Ollama model name for generation and validation')
+    parser.add_argument('--model', type=str, default='qwen2.5:14b', help='Ollama model name for generation')
+    parser.add_argument('--validation-model', type=str, default='qwen2.5:14b', help='Ollama model name for validation')
     
     # Phase 1 formats
     parser.add_argument('--comparison', type=int, default=0, help='Card comparison questions')
@@ -219,10 +223,12 @@ def main():
     
     args = parser.parse_args()
     
-    if args.model:
-        global MODEL_NAME
-        MODEL_NAME = args.model
-        print(f"\n⚡ Using {MODEL_NAME} for text generation and validation")
+    models: dict[ModelType, Model] = {
+        ModelType.GENERATION: Model(name=args.model, type=ModelType.GENERATION),
+        ModelType.VALIDATION: Model(name=args.validation_model, type=ModelType.VALIDATION)
+    }
+    
+    print(f"\n⚡ Using {models[ModelType.GENERATION].name} for text generation and {models[ModelType.VALIDATION].name} for validation")
     
     # Apply presets
     if args.phase1: #args.phase1:
@@ -304,9 +310,13 @@ def main():
     
     # Original formats
     if args.combo_queries > 0:
-        docs = generate_combo_queries(combos, cards, scryfall_client, lambda doc: save_to_mongo(synthetic, [doc]), target_count=args.combo_queries)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} combo query documents")
+        generate_combo_queries(
+            combos, 
+            cards, 
+            scryfall_client, 
+            lambda doc: save_to_mongo(synthetic, [doc]), 
+            models, 
+            target_count=args.combo_queries)
         #save_to_mongo(synthetic, docs)  # Save incrementally after each format
     
     if args.card_search > 0:

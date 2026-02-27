@@ -1,3 +1,13 @@
+from enum import Enum
+class ModelType(Enum):
+    GENERATION = "generation"
+    VALIDATION = "validation"
+
+class Model:
+    def __init__(self, name: str, type: ModelType):
+        self.name = name
+        self.type = type
+
 class Requirement:
     def __init__(self, name: str, scryfall_query: str, zone_locations: list[str]):
         self.name = name

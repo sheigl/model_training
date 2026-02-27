@@ -1,4 +1,4 @@
-from query_ollama import *
+from query_model import QueryModel
 
 def generate_terminology_questions(target_count=1000):
     """

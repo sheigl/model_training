@@ -1,5 +1,5 @@
 import pymongo
-import query_ollama
+from query_model import QueryModel
 import json
 from common import MODEL_NAME, build_budget_alternative_prompt
 
@@ -63,7 +63,7 @@ def generate_budget_alternatives(cards_collection: pymongo.collection.Collection
             prompt = build_budget_alternative_prompt(exp_card, budget_details)
 
             try:
-                response = query_ollama(MODEL_NAME, prompt)
+                response = query_model(MODEL_NAME, prompt)
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
@@ -73,7 +73,7 @@ def generate_budget_alternatives(cards_collection: pymongo.collection.Collection
                         matched_budget = [name for name in budget_names if name in qa['answer']]
                         if matched_budget:
                             print(f"    ✓ ACCEPTED (budget cards: {', '.join(matched_budget[:3])}): {qa['question'][:80]}")
-                            is_valid, reason, score = query_ollama.validate_qa(
+                            is_valid, reason, score = query_model.validate_qa(
                                 qa['question'], qa['answer'],
                                 context=f"Expensive card: {exp_name}\nBudget alternatives:\n{budget_details}",
                                 category="budget_alternative"
