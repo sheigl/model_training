@@ -228,6 +228,7 @@ def generate_combo_queries(
                         while True:
                             # Validate
                             # Create MongoDB document
+
                             qa_context =f"""
 - For combo_query category: also verify that the sequence of triggers described matches the order in the provided combo steps. A correct description of individual triggers in the wrong order is still a factual error.
 
@@ -246,6 +247,9 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
                                 print(f"    ✗ REJECTED but suggested fix provided: {suggested_fix}. Applying fix and re-validating...")
                                 qa['answer'] = suggested_fix
                                 iteration += 1
+                                if iteration >= 3:
+                                    print(f"    ✗ REJECTED after 3 iterations, moving on.")
+                                    break
                                 continue
                             
                             if is_valid:
@@ -266,9 +270,6 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
                                 
                             else:
                                 print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
-                                
-                            if is_valid or iteration >= 3:
-                                break
                     else:
                         print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
             
