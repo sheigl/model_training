@@ -221,6 +221,7 @@ def main():
     parser.add_argument('--phase3', action='store_true', help='Generate all Phase 3 formats (8K total) - rules-grounded')
     parser.add_argument('--phase4', action='store_true', help='Generate all Phase 4 formats (9K total) - EDHREC grounded')
     parser.add_argument('--all', action='store_true', help='Generate all formats (Phase 1 + Phase 2 + Phase 3 + Phase 4)')
+    parser.add_argument('--validation-pct', type=float, default=1, help='Set the percentage of QA pairs to validate')
     
     args = parser.parse_args()
     
@@ -317,6 +318,7 @@ def main():
             scryfall_client, 
             lambda doc: save_to_mongo(synthetic, [doc]), 
             models, 
+            args.validation_pct,
             target_count=args.combo_queries)
         #save_to_mongo(synthetic, docs)  # Save incrementally after each format
     

@@ -6,6 +6,7 @@ class ModelType(Enum):
 class ModelProvider(Enum):
     OLLAMA = "ollama"
     ANTHROPIC = "anthropic"
+    OPENAI = "openai"
 
 class Model:
     def __init__(self, name: str, type: ModelType):
@@ -17,11 +18,15 @@ class Model:
     def _parse_provider(self, model_name: str) -> ModelProvider:
         if "anthropic" in model_name:
             return ModelProvider.ANTHROPIC
+        elif "koboldcpp" in model_name:
+            return ModelProvider.OPENAI
         else:
             return ModelProvider.OLLAMA
     
     def _parse_model_name(self, model_name: str):
         if "anthropic" in model_name:
+            return model_name[model_name.rfind(':')]
+        elif "openai" in model_name:
             return model_name[model_name.rfind(':')]
         else:
             if "," in model_name:

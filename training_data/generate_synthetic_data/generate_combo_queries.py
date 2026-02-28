@@ -175,6 +175,7 @@ def generate_combo_queries(
     scryfall_client: ScryfallMongo, 
     save_item: Callable[[dict], None], 
     models: dict[ModelType, Model],
+    validation_pct: int,
     target_count=5000) -> None:
     """Generate combo queries - returns MongoDB documents"""
     print(f"\n=== GENERATING {target_count:,} COMBO QUERIES ===")
@@ -220,7 +221,10 @@ def generate_combo_queries(
                 response = response.replace("```json", "").replace("```", "").strip()
                 qa_pairs = json.loads(response)
                 
-                for qa in qa_pairs:
+                for enumerated_i, qa in enumerate(qa_pairs):
+                    if random.random() > validation_pct:
+                        continue
+                    
                     if 'question' in qa and 'answer' in qa:            
                         
                         iteration = 0
@@ -240,7 +244,8 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
                                 question=qa['question'], 
                                 answer=qa['answer'],
                                 context=qa_context,
-                                category="combo_query"
+                                category="combo_query",
+                                enable_extra_validation=False
                             )
                             
                             if not is_valid and suggested_fix:

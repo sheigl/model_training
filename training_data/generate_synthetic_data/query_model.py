@@ -7,6 +7,7 @@ import json
 from common import *
 from models import Model, ModelProvider
 from anthropic import Anthropic, Stream
+from openai import OpenAI
 
 # =============================================================================
 # MODEL QUERYING
@@ -56,6 +57,25 @@ class QueryModel():
                                 
                                 # Print ONLY the new text (not the event object)
                                 print(new_text, end="", flush=True)
+            elif model.provider == ModelProvider.OPENAI:
+                client = OpenAI(base_url=model.provider_url, api_key="none")
+                stream = client.chat.completions.create(
+                    model=model.name,
+                    messages=[
+                        {"role": "user", "content": prompt}],
+                    stream=True,
+                    max_tokens=max_tokens,
+                    extra_body={
+                        "max_context_length": 9999
+                    }
+                )
+                
+                for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content is not None:
+                        content_chunk = chunk.choices[0].delta.content
+                        print(content_chunk, end='', flush=True)
+                        response_content += content_chunk
+                
             else:
                 client = ollama.Client(host=model.provider_url) 
                 stream = client.chat(
@@ -64,7 +84,7 @@ class QueryModel():
                     stream=True,
                     options= {
                         "num_predict": max_tokens,
-                        'num_ctx': 8192, # Set the total context window size
+                        'num_ctx': 9999, # Set the total context window size
                         "temperature": 0.7
                     })
             
@@ -77,7 +97,8 @@ class QueryModel():
             print(f"{'─'*60}")
             end = time.time()
             print(f"  ✓ Response generated in {end - start:.2f} seconds")
-            return response_content.strip()
+            response_content = re.sub(r'<think>.*?</think>', '', response_content, flags=re.DOTALL).strip()
+            return response_content
         except Exception as e:
             end = time.time()
             print(f"  ✗ Error querying model: {type(e).__name__}: {e} (after {end - start:.2f} seconds)")
@@ -172,7 +193,7 @@ class QueryModel():
             return False, f"Validation error: {str(e)}", 0
 
 
-    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "") -> tuple:
+    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> tuple:
         """
         Generic Q&A validator — calls the model to score any question/answer pair.
 
@@ -182,7 +203,7 @@ class QueryModel():
 
         Returns: (is_valid: bool, reason: str, score: int)
         """
-        prompt = self._build_qa_validation_prompt(question, answer, context, category)
+        prompt = self._build_qa_validation_prompt(question, answer, context, category, enable_extra_validation)
 
         try:
             response = self.query(validation_model, prompt)
@@ -214,7 +235,7 @@ class QueryModel():
             print(f"    ⚠️  Validation error: {e}")
             return False, f"Validation error: {str(e)}", 0
         
-    def _build_qa_validation_prompt(self, question: str, answer: str, context: str = "", category: str = "") -> str:
+    def _build_qa_validation_prompt(self, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> str:
         """Build the generic Q&A validation prompt used by validate_qa()."""
         
         context_block = (
@@ -238,7 +259,7 @@ class QueryModel():
     - For combo_query category: verify that the sequence of events described in the answer matches the order of the numbered steps in the provided combo. Compare each step explicitly. A correct description of individual triggers in the wrong order is a factual error and must be marked CONTRADICTED.
 
     """
-            if context else ""
+            if enable_extra_validation and context else ""
         )
 
         verification_json = (
@@ -250,7 +271,7 @@ class QueryModel():
         }
     ],
     """
-            if context else ""
+            if enable_extra_validation and context else ""
         )
 
         return f"""{MTG_NOTATION_LEGEND}
