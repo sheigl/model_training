@@ -1055,3 +1055,22 @@ def clean_html(raw: str) -> str:
            .replace('&nbsp;', ' '))
     # Collapse whitespace
     return re.sub(r'\s+', ' ', raw).strip()
+
+def map_card(card: dict) -> Card | None: # type: ignore
+    import json
+    
+    if not card or 'name' not in card or 'type' not in card or 'manaCost' not in card or 'text' not in card:
+        return None
+    
+    projected_card: Card = Card(
+        name=card.get('name', 'Unknown'),
+        type=card.get('type', 'Unknown'),
+        mana_cost=card.get('manaCost', 'Unknown'),
+        text=card.get('text', ''),
+        subtypes=json.loads(card.get('subtypes', '[]')) if card.get('subtypes') else [],
+        supertypes=json.loads(card.get('supertypes', '[]')) if card.get('supertypes') else [],
+        color_identity=json.loads(card.get('colorIdentity', '[]')) if card.get('colorIdentity') else [],
+        zone_locations=[]
+    )
+    
+    return projected_card

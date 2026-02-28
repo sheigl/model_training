@@ -98,6 +98,7 @@ class QueryModel():
             end = time.time()
             print(f"  ✓ Response generated in {end - start:.2f} seconds")
             response_content = re.sub(r'<think>.*?</think>', '', response_content, flags=re.DOTALL).strip()
+            response_content.replace("```json", "").replace("```", "").strip()
             return response_content
         except Exception as e:
             end = time.time()
@@ -117,7 +118,7 @@ class QueryModel():
         question = qa.get('question', '')
         answer = qa.get('answer', '')
         
-        validation_prompt = self._build_card_validation_prompt(card1, card2, question, answer)
+        validation_prompt = self.__build_card_validation_prompt(card1, card2, question, answer)
 
         try:
             response = self.query(model, validation_prompt)
@@ -203,7 +204,7 @@ class QueryModel():
 
         Returns: (is_valid: bool, reason: str, score: int)
         """
-        prompt = self._build_qa_validation_prompt(question, answer, context, category, enable_extra_validation)
+        prompt = self.__build_qa_validation_prompt(question, answer, context, category, enable_extra_validation)
 
         try:
             response = self.query(validation_model, prompt)
@@ -235,7 +236,7 @@ class QueryModel():
             print(f"    ⚠️  Validation error: {e}")
             return False, f"Validation error: {str(e)}", 0
         
-    def _build_qa_validation_prompt(self, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> str:
+    def __build_qa_validation_prompt(self, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> str:
         """Build the generic Q&A validation prompt used by validate_qa()."""
         
         context_block = (
@@ -307,7 +308,7 @@ class QueryModel():
 
     Output ONLY valid JSON, no other text."""
     
-    def _build_card_validation_prompt(self, card1: dict, card2: dict, question: str, answer: str) -> str:
+    def __build_card_validation_prompt(self, card1: dict, card2: dict, question: str, answer: str) -> str:
         """Build validation prompt for card comparison answers."""
         
         prompt = f"""{MTG_NOTATION_LEGEND}
