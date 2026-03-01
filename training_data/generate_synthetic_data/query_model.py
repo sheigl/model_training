@@ -8,6 +8,7 @@ from common import *
 from models import Model, ModelProvider
 from anthropic import Anthropic, Stream
 from openai import OpenAI
+import time
 
 # =============================================================================
 # MODEL QUERYING
@@ -38,6 +39,7 @@ class QueryModel():
             response_content = ""
                         
             if model.provider == ModelProvider.ANTHROPIC:
+                time.sleep(1) # because of anthropic rater limits
                 with self.anthropic_client.messages.stream(max_tokens=max_tokens, # type: ignore
                     messages=[
                         {
@@ -98,7 +100,7 @@ class QueryModel():
             end = time.time()
             print(f"  ✓ Response generated in {end - start:.2f} seconds")
             response_content = re.sub(r'<think>.*?</think>', '', response_content, flags=re.DOTALL).strip()
-            response_content.replace("```json", "").replace("```", "").strip()
+            response_content = response_content.replace("```json", "").replace("```", "").strip()
             return response_content
         except Exception as e:
             end = time.time()
@@ -194,7 +196,7 @@ class QueryModel():
             return False, f"Validation error: {str(e)}", 0
 
 
-    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> tuple:
+    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> tuple[bool, str | None, float | None, str | None]:
         """
         Generic Q&A validator — calls the model to score any question/answer pair.
 
@@ -231,10 +233,10 @@ class QueryModel():
 
         except json.JSONDecodeError as e:
             print(f"    ⚠️  Validation JSON parse failed: {e}")
-            return False, f"Validation parse failed: {str(e)}", 0
+            return False, f"Validation parse failed: {str(e)}", 0, None
         except Exception as e:
             print(f"    ⚠️  Validation error: {e}")
-            return False, f"Validation error: {str(e)}", 0
+            return False, f"Validation error: {str(e)}", 0, None
         
     def __build_qa_validation_prompt(self, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> str:
         """Build the generic Q&A validation prompt used by validate_qa()."""

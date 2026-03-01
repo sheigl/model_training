@@ -83,18 +83,24 @@ class GenerateComboQueries:
                 try:
                     
                     response =  query_model.query(models[ModelType.GENERATION], prompt)
-                    response = response.replace("```json", "").replace("```", "").strip()
                     qa_pairs = json.loads(response)
                     
                     for enumerated_i, qa in enumerate(qa_pairs):
-                        if random.random() > validation_pct:
-                            continue
                         
-                        if 'question' in qa and 'answer' in qa:            
+                        should_validate = True
+                        
+                        if random.random() > validation_pct:
+                            should_validate = False
+                        
+                        if 'question' in qa and 'answer' in qa:
                             
                             iteration = 0
+                            is_valid: bool = True
+                            reason: str | None = None
+                            score: float | None = None
+                            suggested_fix: str | None = None
                             
-                            while True:
+                            while should_validate:
                                 # Validate
                                 # Create MongoDB document
 
@@ -121,25 +127,26 @@ class GenerateComboQueries:
                                         print(f"    ✗ REJECTED after 3 iterations, moving on.")
                                         break
                                     continue
-                                
-                                if is_valid:
-                                    doc = {
-                                        "question": qa['question'],
-                                        "answer": qa['answer'],
-                                        "category": "combo_query",
-                                        "source_data": [combo_name],
-                                        "validated": True,
-                                        "validation_score": score,
-                                        "needs_review": False,
-                                        "suggested_fix": suggested_fix if not is_valid else None
-                                    }
-                                    
-                                    save_item(doc)
                                     
                                     print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
-                                    
+                                elif is_valid:
+                                    break     
                                 else:
                                     print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
+                                    
+                            if is_valid:
+                                doc = {
+                                    "question": qa['question'],
+                                    "answer": qa['answer'],
+                                    "category": "combo_query",
+                                    "source_data": [combo_name],
+                                    "validated": should_validate,
+                                    "validation_score": score,
+                                    "needs_review": (not should_validate),
+                                    "suggested_fix": suggested_fix if not is_valid else None
+                                }
+                                
+                                save_item(doc)
                         else:
                             print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
                 
@@ -227,6 +234,7 @@ class GenerateComboQueries:
         combos: list[ProjectedCombo] = []
         
         for i, combo in enumerate(all_combos):
+            
             rich_status.update(f"[bold green]Extracting combo data... {i+1}/{len(all_combos)}")
             cards: list[dict] = combo.get('uses', [])
             combo_name = "|".join(map(lambda card: card.get('card', {}).get('name', 'Unknown'), cards))
