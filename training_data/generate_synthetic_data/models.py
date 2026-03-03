@@ -41,7 +41,7 @@ class Model:
     def _parse_provider(self, model_name: str) -> ModelProvider:
         if "anthropic" in model_name:
             return ModelProvider.ANTHROPIC
-        elif "koboldcpp" in model_name:
+        elif "openai" in model_name:
             return ModelProvider.OPENAI
         else:
             return ModelProvider.OLLAMA

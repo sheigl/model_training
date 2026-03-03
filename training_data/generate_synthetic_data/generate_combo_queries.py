@@ -3,11 +3,11 @@ from rich.console import Console
 from rich.status import Status
 from query_model import QueryModel
 import json
-from common import MTG_NOTATION_LEGEND, NEW_LINE, build_card_detail, validate_with_suggested_fix
+from common import MTG_NOTATION_LEGEND, NEW_LINE, build_card_detail, validate_and_loop_with_suggested_fix
 from scryfall_mongodb import ScryfallMongo
 import random
 from typing import Any, Callable
-from models import Card, Model, ModelType, ProjectedCombo, QuestionAnswerEnhanced, Requirement
+from models import Card, Model, ModelType, ProjectedCombo, QuestionAnswer, QuestionAnswerEnhanced, Requirement
 from logger import print
 
 console = Console()
@@ -83,7 +83,7 @@ class GenerateComboQueries:
                 try:
                     
                     response =  query_model.query(models[ModelType.GENERATION], prompt)
-                    qa_pairs = json.loads(response)
+                    qa_pairs = list(map(lambda qa: QuestionAnswer(qa["question"], qa["answer"]), json.loads(response)))
                     
                     qa_context =f"""
 - For combo_query category: also verify that the sequence of triggers described matches the order in the provided combo steps. A correct description of individual triggers in the wrong order is still a factual error.
@@ -91,7 +91,7 @@ class GenerateComboQueries:
 Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}
                     """
                     
-                    is_valid, doc = validate_with_suggested_fix(
+                    is_valid, doc = validate_and_loop_with_suggested_fix(
                         query_model=query_model,
                         models=models,
                         qa_pairs=qa_pairs,
