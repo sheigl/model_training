@@ -44,7 +44,7 @@ def generate_article_qa(articles_collection, target_count=2000) -> list[dict]:
         prompt = build_article_qa_prompt(title, content)
 
         try:
-            response = query_model(MODEL_NAME, prompt, max_tokens=9999)
+            response = query_model(MODEL_NAME, prompt, max_tokens=8192)
             response = response.replace("```json", "").replace("```", "").strip()
             if not response.startswith('['):
                 start = response.find('[')

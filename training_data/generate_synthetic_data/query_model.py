@@ -18,7 +18,7 @@ class QueryModel():
     def __init__(self):
         self.anthropic_client: Anthropic | None = None
 
-    def query(self, model: Model, prompt: str, max_tokens=9999):
+    def query(self, model: Model, prompt: str, max_tokens=8192):
         """Query Ollama API"""
         start = time.time()
         print(f"\n{'─'*60}")
@@ -68,7 +68,7 @@ class QueryModel():
                     stream=True,
                     max_tokens=max_tokens,
                     extra_body={
-                        "max_context_length": 9999
+                        "max_context_length": max_tokens * 2
                     }
                 )
                 
@@ -86,7 +86,7 @@ class QueryModel():
                     stream=True,
                     options= {
                         "num_predict": max_tokens,
-                        'num_ctx': 9999, # Set the total context window size
+                        'num_ctx': max_tokens * 2, # Set the total context window size
                         "temperature": 0.7
                     })
             

@@ -3,11 +3,11 @@ from rich.console import Console
 from rich.status import Status
 from query_model import QueryModel
 import json
-from common import MTG_NOTATION_LEGEND, NEW_LINE, build_card_detail
+from common import MTG_NOTATION_LEGEND, NEW_LINE, build_card_detail, validate_with_suggested_fix
 from scryfall_mongodb import ScryfallMongo
 import random
 from typing import Any, Callable
-from models import Card, Model, ModelType, ProjectedCombo, Requirement
+from models import Card, Model, ModelType, ProjectedCombo, QuestionAnswerEnhanced, Requirement
 from logger import print
 
 console = Console()
@@ -18,7 +18,7 @@ class GenerateComboQueries:
         combos_collection: pymongo.collection.Collection,  # type: ignore
         card_collection: pymongo.collection.Collection,  # type: ignore
         scryfall_client: ScryfallMongo, 
-        save_item: Callable[[dict], None], 
+        save_item: Callable[[QuestionAnswerEnhanced], None], 
         models: dict[ModelType, Model],
         validation_pct: int,
         target_count=5000) -> None:
@@ -85,70 +85,25 @@ class GenerateComboQueries:
                     response =  query_model.query(models[ModelType.GENERATION], prompt)
                     qa_pairs = json.loads(response)
                     
-                    for enumerated_i, qa in enumerate(qa_pairs):
-                        
-                        should_validate = True
-                        
-                        if random.random() > validation_pct:
-                            should_validate = False
-                        
-                        if 'question' in qa and 'answer' in qa:
-                            
-                            iteration = 0
-                            is_valid: bool = True
-                            reason: str | None = None
-                            score: float | None = None
-                            suggested_fix: str | None = None
-                            
-                            while should_validate:
-                                # Validate
-                                # Create MongoDB document
+                    qa_context =f"""
+- For combo_query category: also verify that the sequence of triggers described matches the order in the provided combo steps. A correct description of individual triggers in the wrong order is still a factual error.
 
-                                qa_context =f"""
-    - For combo_query category: also verify that the sequence of triggers described matches the order in the provided combo steps. A correct description of individual triggers in the wrong order is still a factual error.
-
-    Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}
-                                    """
-                                
-                                is_valid, reason, score, suggested_fix = query_model.validate_qa(
-                                    validation_model=models[ModelType.VALIDATION],
-                                    question=qa['question'], 
-                                    answer=qa['answer'],
-                                    context=qa_context,
-                                    category="combo_query",
-                                    enable_extra_validation=False
-                                )
-                                
-                                if not is_valid and suggested_fix:
-                                    print(f"    ✗ REJECTED but suggested fix provided: {suggested_fix}. Applying fix and re-validating...")
-                                    qa['answer'] = suggested_fix
-                                    iteration += 1
-                                    if iteration >= 3:
-                                        print(f"    ✗ REJECTED after 3 iterations, moving on.")
-                                        break
-                                    continue
-                                    
-                                    print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
-                                elif is_valid:
-                                    break     
-                                else:
-                                    print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
-                                    
-                            if is_valid:
-                                doc = {
-                                    "question": qa['question'],
-                                    "answer": qa['answer'],
-                                    "category": "combo_query",
-                                    "source_data": [combo_name],
-                                    "validated": should_validate,
-                                    "validation_score": score,
-                                    "needs_review": (not should_validate),
-                                    "suggested_fix": suggested_fix if not is_valid else None
-                                }
-                                
-                                save_item(doc)
-                        else:
-                            print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}
+                    """
+                    
+                    is_valid, doc = validate_with_suggested_fix(
+                        query_model=query_model,
+                        models=models,
+                        qa_pairs=qa_pairs,
+                        validation_pct=validation_pct,
+                        enable_extra_validation=False,
+                        build_context=lambda: qa_context,
+                        source_category="combo_query",
+                        source_data=[combo_name]
+                    )
+                    
+                    if is_valid and doc:
+                        save_item(doc)
                 
                 except Exception as e:
                     print(f"  ✗ Error generating for {combo_name}: {type(e).__name__}: {e}")

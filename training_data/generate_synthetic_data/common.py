@@ -1,5 +1,8 @@
+import random
 import re
-from models import Card
+from typing import Any, Callable
+from query_model import QueryModel
+from models import Card, Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced
 
 #global MODEL_NAME
 MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
@@ -229,20 +232,7 @@ CRITICAL:
 # PROMPT BUILDING
 # =============================================================================
 
-def build_card_search_prompt(pattern: dict, card_info: str) -> str:
-    """Generate card search prompt with MTG notation guide."""
-    
-    prompt = f"""{MTG_NOTATION_LEGEND}
 
-Generate 5 Q&A pairs for: {pattern['name']}
-
-Example cards:
-{card_info}
-
-Output JSON with natural questions and helpful answers listing 3-5 best cards.
-Answers should explain what the cards do and why they're good for this purpose.
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
-    return prompt
 
 
 
@@ -1073,4 +1063,71 @@ def map_card(card: dict) -> Card | None: # type: ignore
         zone_locations=[]
     )
     
-    return projected_card
+    return 
+
+
+def validate_with_suggested_fix(
+    query_model: QueryModel,
+    models: dict[ModelType, Model],
+    qa_pairs: list[QuestionAnswer], 
+    validation_pct: float,
+    enable_extra_validation: bool, 
+    build_context: Callable[[], str],
+    source_category: str,
+    source_data: list[str]) -> tuple[bool, QuestionAnswerEnhanced | None]:
+    for enumerated_i, qa in enumerate(qa_pairs):
+        
+        should_validate = True
+        
+        if random.random() > validation_pct:
+            should_validate = False
+        
+        iteration = 0
+        is_valid: bool = True
+        reason: str | None = None
+        score: float | None = None
+        suggested_fix: str | None = None
+        
+        while should_validate:
+            qa_context = build_context()
+            
+            is_valid, reason, score, suggested_fix = query_model.validate_qa(
+                validation_model=models[ModelType.VALIDATION],
+                question=qa.question, 
+                answer=qa.answer,
+                context=qa_context,
+                category=source_category,
+                enable_extra_validation=enable_extra_validation
+            )
+            
+            if not is_valid and suggested_fix:
+                print(f"    ✗ REJECTED but suggested fix provided: {suggested_fix}. Applying fix and re-validating...")
+                qa.answer = suggested_fix
+                iteration += 1
+                if iteration >= 3:
+                    print(f"    ✗ REJECTED after 3 iterations, moving on.")
+                    break
+                continue                    
+            elif is_valid:
+                break     
+            else:
+                print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa.question[:80]}")
+        
+        print(f"    ✓ ACCEPTED (score: {score}/10): {qa.question[:80]}")
+        
+        if is_valid:
+            doc = QuestionAnswerEnhanced(qa.question, qa.answer)
+            doc.category = source_category
+            doc.source_data = source_data
+            doc.validated = should_validate
+            doc.validation_score = score
+            doc.needs_review = (not should_validate)
+            doc.suggested_fix = suggested_fix if not is_valid else None
+            
+            
+            return is_valid, doc
+                
+        else:
+            print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+            
+    return False, None

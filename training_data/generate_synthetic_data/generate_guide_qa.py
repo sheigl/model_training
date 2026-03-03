@@ -43,7 +43,7 @@ def generate_guide_qa(guides_collection, target_count=2000) -> list[dict]:
         prompt = build_guide_qa_prompt(title, content)
 
         try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=9999)
+            response = query_ollama(MODEL_NAME, prompt, max_tokens=8192)
             response = response.replace("```json", "").replace("```", "").strip()
             if not response.startswith('['):
                 start = response.find('[')

@@ -106,7 +106,7 @@ def get_mongo_collections(uri, username, password):
     return cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, ScryfallMongo(client=client)
 
 
-def save_to_mongo(synthetic_collection, examples, batch_size=500):
+def save_to_mongo(synthetic_collection, examples: list[QuestionAnswerEnhanced], batch_size=500):
     """
     Save synthetic examples to MongoDB, skipping exact duplicates.
 
@@ -134,18 +134,18 @@ def save_to_mongo(synthetic_collection, examples, batch_size=500):
 
         # Add metadata and content hash
         for ex in batch:
-            q = ex.get('question', '')
-            a = ex.get('answer', '')
-            ex['content_hash'] = hashlib.sha256(f"{q}||{a}".encode()).hexdigest()
-            ex['generated_at'] = datetime.utcnow()
-            ex['version'] = 1
+            q = ex.question
+            a = ex.answer
+            ex.content_hash = hashlib.sha256(f"{q}||{a}".encode()).hexdigest()
+            ex.generated_at = datetime.utcnow()
+            ex.version = 1
 
         # Insert only documents whose hash doesn't already exist
         from pymongo import UpdateOne
         ops = [
             UpdateOne(
-                {'content_hash': ex['content_hash']},
-                {'$setOnInsert': ex},
+                {'content_hash': ex.content_hash},
+                {'$setOnInsert': ex.__dict__},
                 upsert=True
             )
             for ex in batch
@@ -321,6 +321,7 @@ def main():
         target_count=args.combo_queries).generate_combo_queries()
     
     if args.card_search > 0:
+        GenerateCardSearchQueries()
         docs = generate_card_search_queries(cards, args.card_search)
         all_documents.extend(docs)
         print(f"  ✓ Generated {len(docs):,} card search documents")

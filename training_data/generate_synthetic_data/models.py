@@ -1,4 +1,27 @@
 from enum import Enum
+from datetime import datetime
+import json
+
+class QuestionAnswer:
+    def __init__(self, question: str, answer: str):
+        self.question = question
+        self.answer = answer
+        
+class QuestionAnswerEnhanced(QuestionAnswer):
+    def __init__(self, question: str, answer: str):
+        super().__init__(question, answer)
+        
+        self.category: str | None = None
+        self.source_data: list[str] | None = None
+        self.validated: bool = False
+        self.validation_score: float | None = None
+        self.needs_review: bool = True
+        self.suggested_fix: str | None = None
+        self.content_hash: str | None = None
+        self.generated_at: datetime | None = None
+        self.version: int = 0
+        
+
 class ModelType(Enum):
     GENERATION = "generation"
     VALIDATION = "validation"

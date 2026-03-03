@@ -11,7 +11,7 @@ def generate_commander_knowledge(target_count=200) -> list[dict]:
     prompt = build_commander_prompt()
 
     try:
-        response =  query_ollama(MODEL_NAME, prompt, max_tokens=9999)
+        response =  query_ollama(MODEL_NAME, prompt, max_tokens=8192)
         response = response.replace("```json", "").replace("```", "").strip()
         qa_pairs = json.loads(response)
         

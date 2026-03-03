@@ -1,9 +1,10 @@
+import random
 from typing import Callable
-from models import ModelType, Model
+from models import Card, ModelType, Model
 import pymongo
 from query_model import QueryModel
 import json
-from common import MODEL_NAME, build_card_search_prompt
+from common import MTG_NOTATION_LEGEND, NEW_LINE, map_card, build_card_detail
 
 class GenerateCardSearchQueries:
     def __init__(
@@ -50,15 +51,17 @@ class GenerateCardSearchQueries:
             
             print(f"  → {pattern['name']}")
             
-            matching_cards = list(cards_collection.find(pattern['query'], {'name': 1, 'text': 1, 'manaCost': 1}).limit(15))
+            def map_matching_cards(card: dict) -> Card:
+                return map_card(card) # pyright: ignore[reportReturnType]
+            
+            matching_cards = list(map(map_matching_cards, cards_collection.find(pattern['query'], {'name': 1, 'text': 1, 'manaCost': 1}).limit(15)))
             
             if not matching_cards:
                 continue
             
-            card_info = "\n".join([f"  - {c.get('name', '')} ({c.get('manaCost', '')}): {c.get('text', '')[:100]}..." for c in matching_cards[:10]])
-            card_names = [c.get('name', '') for c in matching_cards]
+            card_names = [c.name for c in matching_cards]
             
-            prompt = build_card_search_prompt(pattern, card_info)
+            prompt = self.__build_card_search_prompt(pattern, matching_cards[:10])
 
             try:
                 response = self.query_model.query(self.models[ModelType.GENERATION], prompt)
@@ -66,11 +69,18 @@ class GenerateCardSearchQueries:
                 qa_pairs = json.loads(response)
                 
                 for qa in qa_pairs:
+                    
+                    should_validate = True
+
+                    if random.random() > validation_pct:
+                        should_validate = False
+                    
                     if 'question' in qa and 'answer' in qa:
                         mentioned = sum(1 for name in card_names if name in qa['answer'])
 
                         if mentioned >= 2:
-                            is_valid, reason, score = query_model.validate_qa(
+                            is_valid, reason, score, suggested_fix = self.query_model.validate_qa(
+                                self.models[ModelType.VALIDATION],
                                 qa['question'], qa['answer'],
                                 context=f"Search pattern: {pattern['name']}\nMatching cards: {card_info}",
                                 category="card_search"
@@ -102,3 +112,18 @@ class GenerateCardSearchQueries:
             num_docs = num_docs + 1
 
         print(f"  ✓ Generated {num_docs:,} card search queries")
+    
+    def __build_card_search_prompt(self, pattern: dict, cards: list[Card]) -> str:
+        """Generate card search prompt with MTG notation guide."""
+        
+        prompt = f"""{MTG_NOTATION_LEGEND}
+
+    Generate 5 Q&A pairs for: {pattern['name']}
+
+    Example cards:
+    {NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards))}
+
+    Output JSON with natural questions and helpful answers listing 3-5 best cards.
+    Answers should explain what the cards do and why they're good for this purpose.
+    Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+        return prompt
