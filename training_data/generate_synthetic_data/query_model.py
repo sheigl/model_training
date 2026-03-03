@@ -75,7 +75,7 @@ class QueryModel():
                         "top_k": 20,
                         "min_p": 0.0,
                         "repetition_penalty": 1.0,
-                        #"chat_template_kwargs": {"enable_thinking": True},
+                        "chat_template_kwargs": {"enable_thinking": False},
                         "max_context_length": max_tokens * 2
                     }
                 )

@@ -4,7 +4,7 @@ from models import Card, ModelType, Model
 import pymongo
 from query_model import QueryModel
 import json
-from common import MTG_NOTATION_LEGEND, NEW_LINE, map_card, build_card_detail
+from common import MTG_NOTATION_LEGEND, NEW_LINE, map_card, build_card_detail, validate_and_loop_with_suggested_fix
 
 class GenerateCardSearchQueries:
     def __init__(
@@ -79,6 +79,11 @@ class GenerateCardSearchQueries:
                         mentioned = sum(1 for name in card_names if name in qa['answer'])
 
                         if mentioned >= 2:
+                            
+                            #validate_and_loop_with_suggested_fix(
+                            #    query_model=
+                            #)
+                            
                             is_valid, reason, score, suggested_fix = self.query_model.validate_qa(
                                 self.models[ModelType.VALIDATION],
                                 qa['question'], qa['answer'],
