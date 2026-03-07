@@ -3,7 +3,7 @@ from rich.console import Console
 from rich.status import Status
 from query_model import QueryModel
 import json
-from common import MTG_NOTATION_LEGEND, NEW_LINE, build_card_detail, validate_and_loop_with_suggested_fix
+from common import MTG_NOTATION_LEGEND, OUTPUT_FORMAT, REQUIREMENTS_BASE, SYSTEM_MESSAGE, NEW_LINE, build_card_detail, validate_and_loop_with_suggested_fix
 from scryfall_mongodb import ScryfallMongo
 import random
 from typing import Any, Callable
@@ -71,7 +71,7 @@ class GenerateComboQueries:
             description = NEW_LINE.join(numbered_descriptions)
             
             if notes:
-                description = description + NEW_LINE + NEW_LINE + f"*{notes}" 
+                description = description + NEW_LINE + NEW_LINE + f"⚠️ WARNING: {notes}" 
                 
             cards_in_combo: list[Card] = combo.cards_in_combo
             
@@ -86,7 +86,11 @@ class GenerateComboQueries:
                     qa_pairs = list(map(lambda qa: QuestionAnswer(qa["question"], qa["answer"]), json.loads(response)))
                     
                     qa_context =f"""
-- For combo_query category: also verify that the sequence of triggers described matches the order in the provided combo steps. A correct description of individual triggers in the wrong order is still a factual error.
+For combo_query category: also verify that the sequence of triggers described matches the order in the provided combo steps. 
+A correct description of individual triggers in the wrong order is still a factual error.
+
+Don't get confused by the abilities on the cards below that have nothing to do with the combo. 
+The combo listed below should be considered more than anything else, and is 100% factually accurate and proven. 
 
 Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}
                     """
@@ -114,27 +118,33 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
 
     def __build_combo_prompt(self, cards: list[Card], combo: str, random_combo_feature: str) -> str:
         """Generate combo question prompt with MTG notation guide."""
+        requirementList = (f"{i + 1}. {desc}" for i, desc in enumerate(REQUIREMENTS_BASE))
+        requirements = NEW_LINE.join(requirementList)
         
-        prompt = f"""{MTG_NOTATION_LEGEND}
+        prompt = f"""
+{SYSTEM_MESSAGE}
 
-    Generate 3 natural Q&A pairs about combos with the cards below. Make sure at least one of the questions is from the perspective of a player that doesn't know the extact combo or the cards, but may have an idea of a combo or looking for a combo. For example: "What combo can I make with {", ".join(map(lambda card: card.name, cards))}?" or "How can I make a {random_combo_feature} combo?".
+{MTG_NOTATION_LEGEND}
 
-    Cards:
-    {NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards))}
+<cards>
+{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards))}
+</cards>
 
-    Combo:
-    {combo}
+<combo>
+AUTHORITATIVE COMBO — treat this as ground truth, overriding any inferences from card text alone:
 
-    Output JSON:
-    [
-    {{"question": "...", "answer": "..."}},
-    {{"question": "...", "answer": "..."}},
-    {{"question": "...", "answer": "..."}}
-    ]
+{combo}
+</combo>
 
-    Make questions varied and natural. Base answers on combo data above.
-    Explain how the combos work and what they achieve.
-    Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+<task>
+Generate exactly 3 Q&A pairs about the combo above.
+
+REQUIREMENTS:
+{requirements}
+
+{OUTPUT_FORMAT}
+</task>"""
+    
         return prompt
 
     # TODO build combo text just like commander spellbook
@@ -185,8 +195,11 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
         target_count: int,
         rich_status: Status) -> list[ProjectedCombo]:
         """Extract combo data from commander spellbook documents and prepare for prompt generation."""
-        all_combos = list(combos_collection.find({'status': 'OK'}).limit(target_count + 100))
+        all_combos = list(combos_collection.find({'status': 'OK'}))
         combos: list[ProjectedCombo] = []
+        
+        random.shuffle(all_combos)
+        all_combos = all_combos[:target_count + int(target_count * .25)]
         
         for i, combo in enumerate(all_combos):
             

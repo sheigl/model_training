@@ -5,7 +5,7 @@ from typing import Iterator
 import ollama
 import json
 import re
-from constants import MTG_NOTATION_LEGEND, VALIDATION_CHECKLIST, VALIDATION_SCORING_GUIDE
+from constants import MTG_NOTATION_LEGEND, SYSTEM_MESSAGE, VALIDATION_CHECKLIST, VALIDATION_SCORING_GUIDE
 from models import Model, ModelProvider
 from anthropic import Anthropic, Stream
 from openai import OpenAI
@@ -75,16 +75,21 @@ class QueryModel():
                         "top_k": 20,
                         "min_p": 0.0,
                         "repetition_penalty": 1.0,
-                        "chat_template_kwargs": {"enable_thinking": False},
+                        #"chat_template_kwargs": {"enable_thinking": False},
                         "max_context_length": max_tokens * 2
                     }
                 )
                 
                 for chunk in stream:
-                    if chunk.choices and chunk.choices[0].delta.content is not None:
-                        content_chunk = chunk.choices[0].delta.content
-                        print(content_chunk, end='', flush=True)
-                        response_content += content_chunk
+                    if chunk.choices:
+                        if (hasattr(chunk.choices[0].delta, "reasoning_content") and chunk.choices[0].delta.reasoning_content is not None): # type: ignore
+                            content_chunk = chunk.choices[0].delta.reasoning_content # type: ignore
+                            print(content_chunk, end='', flush=True)
+                            response_content += content_chunk
+                        if chunk.choices[0].delta.content is not None: # type: ignore
+                            content_chunk = chunk.choices[0].delta.content
+                            print(content_chunk, end='', flush=True)
+                            response_content += content_chunk
                 
             else:
                 client = ollama.Client(host=model.provider_url) 
@@ -262,10 +267,10 @@ class QueryModel():
         
         verification_block = (
             """
+    <rules>
     Before scoring, complete a verification checklist.
     Work through the answer sentence by sentence. For each mechanical claim, find the exact supporting text in the source material above.
 
-    Rules:
     - If a claim involves a single card, quote the exact relevant text from that card.
     - If a claim involves multiple cards working together, quote the relevant text from ALL cards involved before rendering a verdict. Do not mark a claim UNSUPPORTED simply because one card's text alone does not support it — check all relevant cards.
     - If a claim is supported by the combined source text of all relevant cards, mark it SUPPORTED.
@@ -274,7 +279,7 @@ class QueryModel():
     - Inferred conclusions that are mechanically sound and follow directly from the source (e.g. "a player at 1 life will die to any combat damage") may be marked SUPPORTED if the inference requires no additional cards or rules beyond basic game rules. Note the inference explicitly in source_text as "BASIC GAME RULE: <explanation>".
     - Any CONTRADICTED or UNSUPPORTED verdict is an automatic reject regardless of score.
     - For combo_query category: verify that the sequence of events described in the answer matches the order of the numbered steps in the provided combo. Compare each step explicitly. A correct description of individual triggers in the wrong order is a factual error and must be marked CONTRADICTED.
-
+    </rules>
     """
             if enable_extra_validation and context else ""
         )
@@ -291,9 +296,11 @@ class QueryModel():
             if enable_extra_validation and context else ""
         )
 
-        return f"""{MTG_NOTATION_LEGEND}
-    You are a Magic: The Gathering expert reviewing a generated Q&A pair for training data quality.
-
+        return f"""
+    {SYSTEM_MESSAGE}
+    
+    {MTG_NOTATION_LEGEND}
+    
     Category: {category or 'general'}{context_block}{verification_block}
     Question: {question}
 

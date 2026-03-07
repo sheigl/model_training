@@ -62,8 +62,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 def build_card_detail(card_number: int | None, card: Card):
     detail = f"""
 {"" if card_number is None else f"Card {card_number}: "}{card.name}
-Type: {card.type}
-Cost: {card.mana_cost}
+Type: {card.type} | Cost: {card.mana_cost}
 Text: {card.text}
 """
 

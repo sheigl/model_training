@@ -80,9 +80,10 @@ class GenerateCardSearchQueries:
 
                         if mentioned >= 2:
                             
-                            #validate_and_loop_with_suggested_fix(
-                            #    query_model=
-                            #)
+                            #alidate_and_loop_with_suggested_fix(
+                            #   query_model=self.query_model,
+                            #   
+                            #
                             
                             is_valid, reason, score, suggested_fix = self.query_model.validate_qa(
                                 self.models[ModelType.VALIDATION],

@@ -53,33 +53,50 @@ COMPLEX_RULE_SECTIONS = {
 # MTG NOTATION LEGEND
 # =============================================================================
 
+SYSTEM_MESSAGE = """
+<system>
+You are an expert Magic: The Gathering rules advisor. You generate accurate, natural Q&A training data about card combos. You output ONLY valid JSON — no preamble, no explanation, no markdown fences.
+</system>
+"""
+
+OUTPUT_FORMAT = """
+OUTPUT FORMAT — respond with this JSON structure and nothing else:
+    [
+        {"question": "...", "answer": "..."},
+        {"question": "...", "answer": "..."},
+        {"question": "...", "answer": "..."}
+    ]
+"""
+
+REQUIREMENTS_BASE = [
+   "At least one question MUST come from the perspective of a player who doesn't know the exact combo or card names — someone searching for a combo idea. Examples: \"What combo can I make with Card A and Card B?\" or \"Is there a way to deal massive damage to all players at once in red?",
+   "Questions must be varied and natural-sounding.",
+   "Answers must accurately explain how the combo works and what it achieves, based solely on the combo data above.",
+   "The answer field MUST be a single string (not an array)."
+]
+
 MTG_NOTATION_LEGEND = """
-MTG NOTATION GUIDE:
-- {T}: Tap symbol (rotate card 90°, can only use if untapped)
-- {C}: Colorless mana
-- {W}: White mana
-- {U}: Blue mana  
-- {B}: Black mana
-- {R}: Red mana
-- {G}: Green mana
-- {X}: Variable amount chosen when casting
-- {1}, {2}, {3}, etc.: Generic mana (can be paid with any color or colorless)
-- Example: {2}{U}{U} = 2 generic + 2 blue mana = 4 total mana
+<reference>
+MTG NOTATION:
+- {T}: Tap (rotate card 90°; only if untapped)
+- {C}: Colorless mana | {W}: White | {U}: Blue | {B}: Black | {R}: Red | {G}: Green
+- {X}: Variable amount | {1},{2},{3}...: Generic mana (any color/colorless)
+- Example: {2}{U}{U} = 4 total mana (2 generic + 2 blue)
 
 CARD TYPES:
-- Creature: Can attack/block, has summoning sickness (can't tap or attack first turn)
-- Artifact: Permanent that stays on battlefield, no summoning sickness
-- Enchantment: Permanent that stays on battlefield
-- Instant: Cast anytime, goes to graveyard after resolving
-- Sorcery: Cast only on your turn, goes to graveyard after resolving
-- Land: Played once per turn (not cast), produces mana
+- Creature: Can attack/block; has summoning sickness (can't tap or attack first turn it enters)
+- Artifact / Enchantment: Permanent; stays on battlefield
+- Instant: Cast anytime; goes to graveyard after resolving
+- Sorcery: Cast only on your turn; goes to graveyard after resolving
+- Land: Played once per turn (not cast); produces mana
 
-KEY MECHANICS:
-- ETB (Enters the Battlefield): Triggers when permanent comes into play
+KEY TERMS:
+- ETB: Triggers when permanent enters the battlefield
 - Summoning Sickness: Creatures can't tap or attack the turn they enter
-- Sacrifice: Put into graveyard as a cost (can't be prevented)
-- Destroy: Put into graveyard (can be prevented by indestructible)
+- Sacrifice: Put into graveyard as a cost (uncounterable)
+- Destroy: Put into graveyard (blocked by indestructible)
 - Exile: Remove from game (harder to recover than graveyard)
+</reference>
 """
 
 # =============================================================================

@@ -64,7 +64,6 @@ class Model:
         else:
             return "http://127.0.0.1:11434"
         
-
 class Requirement:
     def __init__(self, name: str, scryfall_query: str, zone_locations: list[str]):
         self.name = name
