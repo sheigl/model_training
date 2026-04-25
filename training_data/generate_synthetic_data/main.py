@@ -88,6 +88,7 @@ def get_mongo_collections(uri, username, password):
     articles = client['edhrec']['articles']
     guides = client['edhrec']['guides']
     game_changers = client['edhrec']['game-changers']
+    #architypes = 
 
     # Top cards by color
     top_cards = {
@@ -401,10 +402,14 @@ def main():
         save_to_mongo(synthetic, docs)
 
     if args.archetypes > 0:
-        docs = generate_archetypes(args.archetypes)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} archetype documents")
-        save_to_mongo(synthetic, docs)
+        GenerateArchetypes(
+            cards, 
+            scryfall_client, 
+            lambda doc: save_to_mongo(synthetic, [doc]), 
+            models, 
+            args.validation_pct,
+            target_count=args.combo_queries
+        )
 
     if args.game_theory > 0:
         docs = generate_game_theory(args.game_theory)

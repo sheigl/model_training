@@ -50,9 +50,9 @@ class Model:
     
     def _parse_model_name(self, model_name: str):
         if "anthropic" in model_name:
-            return model_name[model_name.rfind(':')+1:]
+            return model_name[model_name.rfind(',')+1:]
         elif "openai" in model_name:
-            return model_name[model_name.rfind(':')+1:]
+            return model_name[model_name.rfind(',')+1:]
         else:
             if "," in model_name:
                 return model_name.split(',')[1]

@@ -69,10 +69,14 @@ OUTPUT FORMAT — respond with this JSON structure and nothing else:
 """
 
 REQUIREMENTS_BASE = [
-   "At least one question MUST come from the perspective of a player who doesn't know the exact combo or card names — someone searching for a combo idea. Examples: \"What combo can I make with Card A and Card B?\" or \"Is there a way to deal massive damage to all players at once in red?",
-   "Questions must be varied and natural-sounding.",
-   "Answers must accurately explain how the combo works and what it achieves, based solely on the combo data above.",
-   "The answer field MUST be a single string (not an array)."
+    "At least one question MUST come from the perspective of a player who doesn't know the exact combo or card names — someone searching for a combo idea. Examples: \"What combo can I make with Card A and Card B?\" or \"Is there a way to deal massive damage to all players at once in red?\"",
+    "Questions must be varied and natural-sounding.",
+    "Answers must accurately explain how the combo works and what it achieves, based solely on the combo data above.",
+    "Classify each answer by question type and adjust depth accordingly: 'how does this work' questions → walk through the trigger chain step by step, citing relevant oracle text to explain WHY each trigger fires. 'why is this powerful / strategic' questions → summarize the outcome and its competitive implications without restating every step. 'can I build a combo with X' questions → confirm or deny, then explain the mechanism concisely.",
+    "Every answer MUST state the concrete outcome of the combo using the COMBO RESULT field. Do not use vague phrases like 'very powerful' or 'wins the game' — state exactly what is produced (e.g. 'infinite damage', 'infinite mana of any color', 'infinite creature tokens').",
+    "When explaining why a trigger fires, quote or closely paraphrase the relevant part of the card's oracle text from the <cards> block. Do not assume the reader knows what a card does from its name alone.",
+    "All required combo pieces must be named explicitly in every answer. If a question mentions only some pieces, the answer must introduce the remaining pieces and explain their role.",
+    "The answer field MUST be a single string (not an array)."
 ]
 
 MTG_NOTATION_LEGEND = """

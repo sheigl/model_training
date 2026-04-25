@@ -85,15 +85,18 @@ class GenerateComboQueries:
                     response =  query_model.query(models[ModelType.GENERATION], prompt)
                     qa_pairs = list(map(lambda qa: QuestionAnswer(qa["question"], qa["answer"]), json.loads(response)))
                     
-                    qa_context =f"""
-For combo_query category: also verify that the sequence of triggers described matches the order in the provided combo steps. 
-A correct description of individual triggers in the wrong order is still a factual error.
+                    qa_context = f"""
+For combo_query category: verify the following:
+1. The sequence of triggers described matches the order in the provided combo steps. A correct description of individual triggers in the wrong order is still a factual error.
+2. The answer explicitly names ALL required combo pieces and explains each one's role.
+3. The answer states the concrete outcome matching the COMBO RESULT field — vague phrases like "very powerful" or "wins the game" are validation failures.
+4. Oracle text is cited or closely paraphrased when explaining why a trigger fires.
 
 Don't get confused by the abilities on the cards below that have nothing to do with the combo. 
 The combo listed below should be considered more than anything else, and is 100% factually accurate and proven. 
 
 Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}
-                    """
+"""
                     
                     is_valid, doc = validate_and_loop_with_suggested_fix(
                         query_model=query_model,
@@ -121,6 +124,8 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
         requirementList = (f"{i + 1}. {desc}" for i, desc in enumerate(REQUIREMENTS_BASE))
         requirements = NEW_LINE.join(requirementList)
         
+        combo_result = f"\nCOMBO RESULT: {random_combo_feature}" if random_combo_feature else ""
+
         prompt = f"""
 {SYSTEM_MESSAGE}
 
@@ -133,7 +138,7 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
 <combo>
 AUTHORITATIVE COMBO — treat this as ground truth, overriding any inferences from card text alone:
 
-{combo}
+{combo}{combo_result}
 </combo>
 
 <task>
@@ -144,7 +149,7 @@ REQUIREMENTS:
 
 {OUTPUT_FORMAT}
 </task>"""
-    
+
         return prompt
 
     # TODO build combo text just like commander spellbook

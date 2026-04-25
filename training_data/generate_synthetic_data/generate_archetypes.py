@@ -21,7 +21,7 @@ class GenerateArchetypes:
         self.card_collection = card_collection
         self.archetype_collection = archetype_collection
         self.scryfall_client = scryfall_client
-    
+        
     #def __get_scryfall_cards() -> None:
     def __get_archetype_articles(self) -> list[ArchetypeDocument]:
         docs = [ArchetypeDocument.from_dict(d) for d in self.archetype_collection.find()]
@@ -36,9 +36,7 @@ class GenerateArchetypes:
         - "What are the weaknesses of voltron?"
         - "How do I recognize a storm deck?"
         """
-        print(f"\n=== GENERATING {target_count:,} ARCHETYPE QUESTIONS ===")
-        
-        
+        print(f"\n=== GENERATING {target_count:,} ARCHETYPE QUESTIONS ===")  
         
         for archetype, context in archetypes:
             if len(mongo_documents) >= target_count:
@@ -82,5 +80,3 @@ class GenerateArchetypes:
                 continue
 
         print(f"  ✓ Generated {len(mongo_documents):,} archetype questions")
-        return mongo_documents
-
