@@ -38,6 +38,7 @@ class QueryModel():
             print(f"{'─'*60}")
             
             response_content = ""
+            #thinking_content = ""
                         
             if model.provider == ModelProvider.ANTHROPIC:
                 time.sleep(1) # because of anthropic rater limits
@@ -85,7 +86,7 @@ class QueryModel():
                         if (hasattr(chunk.choices[0].delta, "reasoning_content") and chunk.choices[0].delta.reasoning_content is not None): # type: ignore
                             content_chunk = chunk.choices[0].delta.reasoning_content # type: ignore
                             print(content_chunk, end='', flush=True)
-                            response_content += content_chunk
+                            #thinking_content += content_chunk
                         if chunk.choices[0].delta.content is not None: # type: ignore
                             content_chunk = chunk.choices[0].delta.content
                             print(content_chunk, end='', flush=True)
