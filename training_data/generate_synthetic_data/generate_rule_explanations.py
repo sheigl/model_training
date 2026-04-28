@@ -1,94 +1,146 @@
-import random
-
 import pymongo
+from rich.console import Console
+from rich.status import Status
 from query_model import QueryModel
 import json
-from common import MODEL_NAME, build_rule_explanation_prompt
+from common import MTG_NOTATION_LEGEND, OUTPUT_FORMAT, REQUIREMENTS_BASE, SYSTEM_MESSAGE, NEW_LINE, build_rule_explanation_prompt, validate_and_loop_with_suggested_fix
+from typing import Any, Callable
+from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced
+from logger import print
+import random
 
-def generate_rule_explanations(rules_collection, target_count=2000) -> list[dict]:
-    """
-    Generate natural Q&A grounded in actual rule text.
-    Each Q&A is traceable back to a specific rule number.
+console = Console()
 
-    Examples:
-    - "What does rule 702.2 say about flying?"
-    - "Can a creature with flying block a ground creature?"
-    - "What happens when a creature with flying attacks?"
-    """
-    print(f"\n=== GENERATING {target_count:,} RULE EXPLANATION QUESTIONS ===")
-    mongo_documents = []
+class GenerateRuleExplanations:
+    def __init__(
+        self,
+        rules_collection: pymongo.collection.Collection,
+        save_item: Callable[[QuestionAnswerEnhanced], None],
+        models: dict[ModelType, Model],
+        validation_pct: int,
+        target_count=5000) -> None:
 
-    # Fetch rules from relevant sections — skip overly short or administrative rules
-    print("  → Fetching rules from MongoDB...")
-    all_rules = list(rules_collection.find(
-        {'text': {'$exists': True, '$ne': '', '$not': {'$regex': r'^See rule \d'}}},
-        {'rule_number': 1, 'text': 1}
-    ))
+        self.rules_collection = rules_collection
+        self.save_item = save_item
+        self.models = models
+        self.validation_pct = validation_pct
+        self.target_count = target_count
 
-    # Filter to rules with meaningful content (>50 chars) and shuffle for variety
-    meaningful_rules = [r for r in all_rules if len(r.get('text', '')) > 50]
-    random.shuffle(meaningful_rules)
-    print(f"  → Found {len(meaningful_rules):,} meaningful rules")
 
-    for rule in meaningful_rules:
-        if len(mongo_documents) >= target_count:
-            break
+    def generate_rule_explanations(self) -> None:
+        """Generate rule explanation queries - returns MongoDB documents"""
 
-        rule_num = rule.get('rule_number', '')
-        rule_text = rule.get('text', '')
+        rules_collection = self.rules_collection
+        save_item = self.save_item
+        models = self.models
+        validation_pct = self.validation_pct
+        target_count = self.target_count
 
-        if not rule_num or not rule_text:
-            continue
+        print(f"\n=== GENERATING {target_count:,} RULE EXPLANATION QUERIES ===")
 
-        if (len(mongo_documents) + 1) % 200 == 0:
-            print(f"    Generated {len(mongo_documents):,}/{target_count:,}...")
+        rules = []
 
-        prompt = build_rule_explanation_prompt(rule_num, rule_text)
+        with console.status("[bold green]Extracting rule data...") as status:
+            rules = self.__extract_rule_data(rules_collection, target_count, status)
 
-        try:
-            response = query_ollama(MODEL_NAME, prompt)
-            response = response.replace("```json", "").replace("```", "").strip()
-            # Handle array wrapped in extra brackets
-            if not response.startswith('['):
-                start = response.find('[')
-                end = response.rfind(']')
-                if start != -1 and end != -1:
-                    response = response[start:end+1]
-            qa_pairs = json.loads(response)
+        print(f"  → Processing {len(rules):,} rules...")
 
-            for qa in qa_pairs:
-                if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    # Validate: answer must reference the rule number
-                    if rule_num not in qa['answer']:
-                        print(f"    ✗ REJECTED (rule number not in answer): {qa['question'][:60]}")
-                        continue
-                    is_valid, reason, score = validate_qa(
-                        qa['question'], qa['answer'],
-                        context=f"Rule {rule_num}: {rule_text}",
-                        category="rule_explanation"
+        i: int = 0
+        for rule in rules:
+            if i >= target_count:
+                break
+
+            if (i + 1) % 100 == 0:
+                print(f"    Generated {i:,}/{target_count:,}...")
+
+            rule_num = rule['rule_number']
+            rule_text = rule['rule_text']
+
+            # Build prompt
+            prompts: list[tuple[str, str, str]] = []
+
+            prompts.append((build_rule_explanation_prompt(rule_num, rule_text), rule_num, rule_text))
+
+            query_model = QueryModel()
+
+            for prompt, rule_num, rule_text in prompts:
+                try:
+
+                    response = query_model.query(models[ModelType.GENERATION], prompt)
+                    qa_pairs = list(map(lambda qa: QuestionAnswer(qa["question"], qa["answer"]), json.loads(response)))
+
+                    qa_context = f"""
+For rule_explanation category: verify the following:
+1. The answer is directly grounded in the rule text provided — no extrapolation beyond what the rule states.
+2. The answer uses correct MTG terminology and accurately reflects the rule.
+3. The question is a natural question a player would ask — not phrased as "What does rule X say about..."
+4. The answer includes a concrete in-game example that illustrates the rule.
+5. The answer quotes or closely paraphrases the relevant rule text when explaining why something works.
+6. The answer does not reference a rule number — mechanics are explained conversationally.
+7. The answer contains no markdown formatting such as bold (**text**) or bullet points.
+8. The answer is at least 80 characters long and provides sufficient detail.
+
+Rule {rule_num}: {rule_text}
+"""
+
+                    is_valid, doc = validate_and_loop_with_suggested_fix(
+                        query_model=query_model,
+                        models=models,
+                        qa_pairs=qa_pairs,
+                        validation_pct=validation_pct,
+                        enable_extra_validation=True,
+                        build_context=lambda: qa_context,
+                        source_category="rule_explanation",
+                        source_data=[f"rule_{rule_num}"]
                     )
-                    if is_valid:
-                        mongo_documents.append({
-                            "question": qa['question'],
-                            "answer": qa['answer'],
-                            "category": "rule_explanation",
-                            "source_data": [f"rule_{rule_num}"],
-                            "rule_number": rule_num,
-                            "rule_text": rule_text,
-                            "validated": True,
-                            "validation_score": score,
-                            "needs_review": False
-                        })
-                        print(f"    ✓ ACCEPTED (score: {score}/10, rule {rule_num}): {qa['question'][:70]}")
-                        if len(mongo_documents) >= target_count:
-                            break
-                    else:
-                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:70]}")
-                else:
-                    print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:60]}")
-        except Exception as e:
-            print(f"  ✗ Error for rule {rule_num}: {type(e).__name__}: {e}")
-            continue
 
-    print(f"  ✓ Generated {len(mongo_documents):,} rule explanation questions")
-    return mongo_documents
+                    if is_valid and doc:
+                        save_item(doc)
+
+                except Exception as e:
+                    print(f"  ✗ Error generating for rule {rule_num}: {type(e).__name__}: {e}")
+                    continue
+
+            i = i + 1
+
+
+    def __extract_rule_data(
+        self,
+        rules_collection: pymongo.collection.Collection,
+        target_count: int,
+        rich_status: Status) -> list[dict]:
+        """Extract rule data from MongoDB and prepare for prompt generation."""
+        all_rules = list(rules_collection.find(
+            {'text': {'$exists': True, '$ne': '', '$not': {'$regex': r'^See rule \d'}}},
+            {'rule_number': 1, 'text': 1}
+        ))
+
+        # Filter to rules with meaningful content (>50 chars) and shuffle for variety
+        meaningful_rules = [r for r in all_rules if len(r.get('text', '')) > 50]
+        random.shuffle(meaningful_rules)
+
+        # Take more than needed to allow for some failures
+        rules_to_process = meaningful_rules[:target_count + int(target_count * .25)]
+
+        rules: list[dict] = []
+
+        for i, rule in enumerate(rules_to_process):
+            rich_status.update(f"[bold green]Extracting rule data... {i+1}/{len(rules_to_process)}")
+
+            rule_num = rule.get('rule_number', '')
+            rule_text = rule.get('text', '')
+
+            if not rule_num or not rule_text:
+                continue
+
+            # Skip if we already have this rule
+            if len(list(filter(lambda r: r['rule_number'] == rule_num, rules))) > 0:
+                continue
+
+            rules.append({
+                'rule_number': rule_num,
+                'rule_text': rule_text
+            })
+
+        random.shuffle(rules)
+        return rules

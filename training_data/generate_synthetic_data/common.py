@@ -440,36 +440,36 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_rule_explanation_prompt(rule_number: str, rule_text: str) -> str:
     """Generate natural Q&A from a specific rule, grounded in actual rule text."""
-    prompt = f"""{MTG_NOTATION_LEGEND}
+    prompt = f"""
+{SYSTEM_MESSAGE}
 
-You are a Magic: The Gathering rules expert. Generate 3 Q&A pairs based on this official rule.
+{MTG_NOTATION_LEGEND}
+
+<rule>
+AUTHORITATIVE RULE — treat this as ground truth:
 
 Rule {rule_number}: {rule_text}
+</rule>
 
-Generate questions a player would naturally ask that this rule answers.
-The answer MUST be grounded in the rule text above — do not invent or extrapolate beyond it.
-Include the rule number in the answer for traceability.
+<task>
+Generate exactly 3 Q&A pairs based on the rule above.
 
-Examples of good question styles:
-- "What happens when [situation described by rule]?"
-- "Can I [action related to rule]?"
-- "Does [mechanic] apply when [condition from rule]?"
-- "What does rule {rule_number} say about [topic]?"
+REQUIREMENTS:
+1. At least one question MUST come from the perspective of a player encountering this rule mid-game for the first time — someone who doesn't know the rule number or technical terminology. Examples: "What happens if..." or "Can I still..." or "Does it matter if..."
+2. At least one question MUST address a common misconception or edge case that this rule clarifies.
+3. Questions must be varied and natural-sounding. Do not ask "What does rule {rule_number} say about..." — players don't talk that way.
+4. Classify each answer by question type and adjust depth accordingly:
+   - "what happens when" questions → walk through the sequence of events concisely, citing relevant rule text to explain WHY.
+   - "can I" questions → confirm or deny, then explain the mechanic that determines the answer.
+   - "does X apply when" questions → state whether it applies and quote or paraphrase the rule condition that determines it.
+5. Every answer MUST include a concrete in-game example that illustrates the rule. Never explain a rule in purely abstract terms.
+6. When explaining why something works, quote or closely paraphrase the relevant part of the rule text from the <rule> block above.
+7. Do NOT reference the rule number in answers. Explain the mechanic naturally as a rules expert would in conversation.
+8. Answers must be plain text only. Do not use markdown formatting such as bold (**text**), italics, or bullet points.
+9. The answer field MUST be a single string (not an array).
 
-Output JSON:
-[
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}},
-  {{"question": "...", "answer": "..."}}
-]
-
-Answers MUST:
-- Be directly grounded in the rule text provided
-- Reference the rule number
-- Use correct MTG terminology
-- Be 2-4 sentences
-
-Output ONLY valid JSON. The answer MUST be a string and not an array of strings."""
+{OUTPUT_FORMAT}
+</task>"""
     return prompt
 
 
