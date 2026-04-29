@@ -116,7 +116,22 @@ Rule {rule_num}: {rule_text}
         ))
 
         # Filter to rules with meaningful content (>50 chars) and shuffle for variety
-        meaningful_rules = [r for r in all_rules if len(r.get('text', '')) > 50]
+        SKIP_SECTIONS = {
+            "000",  # Preface/introduction
+            "001",  # Players
+            "002",  # Decks  
+            "003",  # Sleeves/accessories
+            "004",  # Tourneys/admin
+            "005",  # Formats overview
+            "900",  # Sanctioned formats overview
+        }
+
+        meaningful_rules = [
+            r for r in all_rules 
+            if len(r.get('text', '')) > 50
+            and r.get('rule_number', '').split('.')[0] not in SKIP_SECTIONS
+        ]
+        
         random.shuffle(meaningful_rules)
 
         # Take more than needed to allow for some failures
