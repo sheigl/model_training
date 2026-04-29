@@ -100,12 +100,16 @@ class GenerateRuleInteractions:
 
                     qa_context = f"""
 For rule_interaction category: verify the following:
-1. The answer explicitly cites BOTH rule numbers ({rule1_num} and {rule2_num}).
-2. The answer explains which rule applies first or how they interact in order.
-3. The answer states a concrete outcome for the game scenario — vague phrases like "it depends" without further elaboration are validation failures.
-4. The answer is grounded in the provided rule text and does not hallucinate rules or mechanics not described by the two rules.
+1. The answer explains how BOTH rules interact to produce the outcome — not just one rule in isolation.
+2. The answer explains which rule applies first or takes precedence.
+3. The answer states a concrete final game outcome — vague phrases like "it depends" without full elaboration are validation failures.
+4. The answer is grounded in the provided rule texts and does not hallucinate mechanics not described by either rule.
+5. The answer quotes or closely paraphrases text from both rules when explaining why the outcome occurs.
+6. HARD REJECT if the answer references any rule number (e.g. "Rule 704.2", "Rule 603.1") — mechanics must be explained conversationally without citing rule numbers.
+7. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
 
-Rules:\nRule {rule1_num}: {rule1_text}\nRule {rule2_num}: {rule2_text}
+Rule {rule1_num}: {rule1_text}
+Rule {rule2_num}: {rule2_text}
 """
 
                     is_valid, doc = validate_and_loop_with_suggested_fix(

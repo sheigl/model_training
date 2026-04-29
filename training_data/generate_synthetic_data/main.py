@@ -425,16 +425,22 @@ def main():
 
     # Phase 3: Rules-grounded formats
     if args.rule_explanations > 0:
-        docs = generate_rule_explanations(rules, args.rule_explanations)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} rule explanation documents")
-        save_to_mongo(synthetic, docs)
+        GenerateRuleExplanations(
+            rules,
+            lambda doc: save_to_mongo(synthetic, [doc]),
+            models,
+            args.validation_pct,
+            target_count=args.rule_explanations
+        ).generate_rule_explanations()
 
     if args.rule_interactions > 0:
-        docs = generate_rule_interactions(rules, args.rule_interactions)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} rule interaction documents")
-        save_to_mongo(synthetic, docs)
+        GenerateRuleInteractions(
+            rules,
+            lambda doc: save_to_mongo(synthetic, [doc]),
+            models,
+            args.validation_pct,
+            target_count=args.rule_interactions
+        ).generate_rule_interactions()
 
     if args.glossary_examples > 0:
         docs = generate_glossary_with_examples(glossary, args.glossary_examples)
