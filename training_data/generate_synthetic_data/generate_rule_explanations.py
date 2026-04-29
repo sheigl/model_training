@@ -14,7 +14,7 @@ console = Console()
 class GenerateRuleExplanations:
     def __init__(
         self,
-        rules_collection: pymongo.collection.Collection,
+        rules_collection: pymongo.collection.Collection, # type: ignore
         save_item: Callable[[QuestionAnswerEnhanced], None],
         models: dict[ModelType, Model],
         validation_pct: int,
@@ -72,10 +72,13 @@ class GenerateRuleExplanations:
                     qa_context = f"""
 For rule_explanation category: verify the following:
 1. The answer is directly grounded in the rule text provided — no extrapolation beyond what the rule states.
-2. The answer references the rule number ({rule_num}) for traceability.
-3. The answer uses correct MTG terminology and accurately reflects the rule.
-4. The question is a natural question a player would ask about this rule.
-5. The answer is at least 80 characters long and provides sufficient detail.
+2. The answer uses correct MTG terminology and accurately reflects the rule.
+3. The question is a natural question a player would ask — not phrased as "What does rule X say about..."
+4. The answer includes a concrete in-game example that illustrates the rule.
+5. The answer quotes or closely paraphrases the relevant rule text when explaining why something works.
+6. HARD REJECT if the answer references any rule number (e.g. "Rule 704.2", "Rule 603.1") — mechanics must be explained conversationally without citing rule numbers.
+7. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
+8. The answer is at least 80 characters long and provides sufficient detail.
 
 Rule {rule_num}: {rule_text}
 """
@@ -85,7 +88,7 @@ Rule {rule_num}: {rule_text}
                         models=models,
                         qa_pairs=qa_pairs,
                         validation_pct=validation_pct,
-                        enable_extra_validation=False,
+                        enable_extra_validation=True,
                         build_context=lambda: qa_context,
                         source_category="rule_explanation",
                         source_data=[f"rule_{rule_num}"]
@@ -103,7 +106,7 @@ Rule {rule_num}: {rule_text}
 
     def __extract_rule_data(
         self,
-        rules_collection: pymongo.collection.Collection,
+        rules_collection: pymongo.collection.Collection, # type: ignore
         target_count: int,
         rich_status: Status) -> list[dict]:
         """Extract rule data from MongoDB and prepare for prompt generation."""

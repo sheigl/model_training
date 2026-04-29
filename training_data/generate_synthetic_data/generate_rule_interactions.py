@@ -200,21 +200,53 @@ Rule {rule2_num}: {rule2_text}
         )
 
         # Define section pairs that commonly interact in real games
+        # Expanded section pairs covering more of the rules space
         interaction_pairs: list[tuple[str, str]] = [
-            ("601", "116"),  # Casting spells + Priority
+            # Existing pairs
+            ("601", "116"),  # Casting + Priority
             ("603", "116"),  # Triggered abilities + Priority
-            ("603", "704"),  # Triggered abilities + State-based actions
+            ("603", "704"),  # Triggered abilities + SBAs
             ("608", "603"),  # Resolving spells + Triggered abilities
-            ("702", "120"),  # Keyword abilities + Damage
-            ("702", "704"),  # Keyword abilities + State-based actions
+            ("702", "120"),  # Keywords + Damage
+            ("702", "704"),  # Keywords + SBAs
             ("706", "603"),  # Copying + Triggered abilities
             ("601", "117"),  # Casting + Costs
             ("700", "116"),  # Additional rules + Priority
             ("800", "116"),  # Multiplayer + Priority
             ("903", "603"),  # Commander + Triggered abilities
-            ("120", "704"),  # Damage + State-based actions
+            ("120", "704"),  # Damage + SBAs
             ("118", "117"),  # Paying costs + Costs
             ("604", "603"),  # Static abilities + Triggered abilities
+            # Zone changes
+            ("400", "603"),  # Zone changes + Triggered abilities
+            ("404", "603"),  # Exile zone + Triggered abilities
+            ("406", "603"),  # Stack + Triggered abilities
+            ("400", "704"),  # Zone changes + SBAs
+            # Replacement effects
+            ("614", "603"),  # Replacement effects + Triggered abilities
+            ("614", "704"),  # Replacement effects + SBAs
+            ("614", "120"),  # Replacement effects + Damage
+            ("614", "116"),  # Replacement effects + Priority
+            # Layers
+            ("613", "604"),  # Layers + Static abilities
+            ("613", "702"),  # Layers + Keywords
+            # Combat
+            ("506", "116"),  # Combat + Priority
+            ("506", "603"),  # Combat + Triggered abilities
+            ("506", "704"),  # Combat + SBAs
+            ("510", "120"),  # Combat damage + Damage rules
+            ("510", "704"),  # Combat damage + SBAs
+            # Counters
+            ("121", "704"),  # Counters + SBAs
+            ("121", "603"),  # Counters + Triggered abilities
+            # Mana
+            ("106", "117"),  # Mana + Costs
+            ("106", "601"),  # Mana + Casting
+            # Commander specific
+            ("903", "116"),  # Commander + Priority
+            ("903", "704"),  # Commander + SBAs
+            ("903", "614"),  # Commander + Replacement effects
+            ("903", "400"),  # Commander + Zone changes
         ]
 
         pairs: list[ProjectedRulePair] = []
