@@ -734,6 +734,93 @@ def extract_synthetic_queries(synthetic_collection, target_count):
     return training_data
 
 
+def extract_synthetic_simple(synthetic_collection, categories=None, score_min=7, max_total=0, output_format='instruction'):
+    """
+    Simple synthetic export for LoRA training.
+    Filters by score, optionally by category, outputs in instruction-tuning format.
+    
+    Args:
+        synthetic_collection: MongoDB collection handle
+        categories: List of categories to include (e.g., ['combo_query', 'rule_explanation', 'rule_interaction']). None = all
+        score_min: Minimum validator score to include
+        max_total: Maximum total examples to return (0 = unlimited)
+        output_format: 'instruction' for {instruction, input, output} or 'messages' for chat format
+    
+    Returns:
+        List of training examples
+    """
+    print("\n" + "="*80)
+    print("SYNTHETIC Q&A SIMPLE EXPORT")
+    print("="*80)
+    print(f"  Categories:  {categories if categories else 'ALL'}")
+    print(f"  Min Score:   {score_min}")
+    print(f"  Max Total:   {max_total if max_total else 'Unlimited'}")
+    print(f"  Format:      {output_format}")
+    print("="*80)
+    
+    training_data = []
+    
+    # Build filter - supports both 'score' and 'validation_score' field names
+    filter_query = {}
+    # Try 'score' first, fall back to 'validation_score' if needed
+    test_doc = synthetic_collection.find_one()
+    if test_doc and 'validation_score' in test_doc:
+        filter_query['validation_score'] = {'$gte': score_min}
+    else:
+        filter_query['score'] = {'$gte': score_min}
+    
+    if categories and len(categories) > 0:
+        filter_query['category'] = {'$in': categories}
+    
+    print(f"\nQuerying MongoDB...")
+    queries = list(synthetic_collection.find(filter_query))
+    print(f"  → Found {len(queries):,} matching records")
+    
+    # Convert to training format
+    for query in queries:
+        if max_total > 0 and len(training_data) >= max_total:
+            break
+        
+        question = query.get('question', '')
+        answer = query.get('answer', '')
+        category = query.get('category', 'unknown')
+        
+        if not question or not answer:
+            continue
+        
+        if output_format == 'instruction':
+            # TRL/SFT format: {instruction, input, output}
+            example = {
+                "instruction": "You are an MTG expert. Answer this question.",
+                "input": question,
+                "output": answer
+            }
+        else:
+            # Chat format: {messages}
+            example = {
+                "messages": [
+                    {"role": "user", "content": question},
+                    {"role": "assistant", "content": answer}
+                ]
+            }
+        
+        example['_category'] = category  # Keep track for stats
+        training_data.append(example)
+    
+    print(f"\n  ✓ Extracted {len(training_data):,} examples")
+    
+    # Show category breakdown
+    if training_data:
+        from collections import Counter
+        cat_counts = Counter(ex.get('_category', 'unknown') for ex in training_data)
+        print(f"\n  Category breakdown:")
+        for cat, count in sorted(cat_counts.items()):
+            pct = count / len(training_data) * 100
+            print(f"    {cat:25s}: {count:6d} ({pct:5.1f}%)")
+    
+    return training_data
+
+
 # Continue to main function...
 # PART 4: MAIN ORCHESTRATION
 
@@ -857,10 +944,66 @@ EXAMPLES:
     parser.add_argument('--yes', '-y', action='store_true',
                         help='Skip confirmation prompt')
     
+    # Simple export mode (for LoRA training on synthetic Q&A only)
+    parser.add_argument('--simple-export', action='store_true',
+                        help='Export synthetic Q&A only in instruction format for LoRA training')
+    parser.add_argument('--simple-categories', type=str, default=None,
+                        help='Comma-separated categories for simple export (e.g. combo_query,rule_explanation)')
+    parser.add_argument('--simple-score-min', type=int, default=7,
+                        help='Minimum validator score for simple export (default: 7)')
+    parser.add_argument('--simple-max', type=int, default=0,
+                        help='Max total examples for simple export (0 = all matching)')
+    parser.add_argument('--simple-format', type=str, choices=['instruction', 'messages'], default='instruction',
+                        help='Output format for simple export (default: instruction)')
+    
     args = parser.parse_args()
     
     # =================================================================
-    # BUILD CONFIGURATION
+    # SIMPLE EXPORT MODE
+    # =================================================================
+    if args.simple_export:
+        print("\n" + "="*80)
+        print("SIMPLE EXPORT MODE - Synthetic Q&A for LoRA Training")
+        print("="*80)
+        
+        # Parse categories
+        categories = None
+        if args.simple_categories:
+            categories = [c.strip() for c in args.simple_categories.split(',')]
+        
+        # Connect to MongoDB
+        print("\nConnecting to MongoDB...")
+        client = get_mongo_client(args.mongo_uri, args.mongo_user, args.mongo_pass)
+        print("  ✓ Connected successfully")
+        
+        synthetic_collection = client['synthetic_queries']['queries']
+        
+        # Run simple export
+        training_data = extract_synthetic_simple(
+            synthetic_collection=synthetic_collection,
+            categories=categories,
+            score_min=args.simple_score_min,
+            max_total=args.simple_max,
+            output_format=args.simple_format
+        )
+        
+        # Save to file
+        output_file = args.output if args.output.endswith('.jsonl') else args.output + '.jsonl'
+        print(f"\nSaving to {output_file}...")
+        with open(output_file, 'w', encoding='utf-8') as f:
+            for example in training_data:
+                # Remove internal tracking fields
+                ex = {k: v for k, v in example.items() if not k.startswith('_')}
+                f.write(json.dumps(ex, ensure_ascii=False) + '\n')
+        
+        print(f"\n✓ Simple export complete!")
+        print(f"  Total examples: {len(training_data):,}")
+        print(f"  Output file: {output_file}")
+        print(f"  File size: ~{len(training_data) * 0.001:.1f} MB")
+        sys.exit(0)
+    
+    # =================================================================
+    # BUILD CONFIGURATION (Existing Pipeline)
     # =================================================================
     
     config = {}
