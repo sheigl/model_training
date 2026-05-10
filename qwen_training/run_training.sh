@@ -9,7 +9,7 @@
 ~/code/model_training/.venv/bin/python finetune_qwen.py \
   --model-name Qwen/Qwen3.6-27B \
   --dataset file \
-  --data-file ~/code/model_training/mtg_lora_training.jsonl \
+  --data-file ~/code/model_training/training_data/mtg_lora_training.jsonl \
   --use-4bit \
   --lora-r 64 \
   --lora-alpha 64 \
