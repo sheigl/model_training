@@ -147,12 +147,14 @@ def parse_args():
         default="sample",
         help="Dataset source: 'sample' (built-in), 'hf' (Hugging Face), or 'file' (custom JSONL)"
     )
+
     parser.add_argument(
         "--hf-dataset",
         type=str,
         default="yahma/alpaca-cleaned",
         help="Hugging Face dataset name (when --dataset=hf)"
     )
+
     parser.add_argument(
         "--data-file",
         type=str,
@@ -164,15 +166,17 @@ def parse_args():
     parser.add_argument(
         "--model-name",
         type=str,
-        default="Qwen/Qwen2.5-0.5B-Instruct",
-        help="Base model to fine-tune (0.5B to 8B supported)"
+        default="Qwen/Qwen3.6-27B",  # Changed from 0.5B
+        help="Base model to fine-tune (0.5B to 27B supported)"
     )
+
     parser.add_argument(
         "--hf-token",
         type=str,
         default=None,
         help="Hugging Face token for accessing gated models"
     )
+
     parser.add_argument(
         "--output-dir",
         type=str,
@@ -187,12 +191,14 @@ def parse_args():
         default=16,
         help="LoRA rank (8-64, higher = more capacity)"
     )
+
     parser.add_argument(
         "--lora-alpha",
         type=int,
         default=32,
         help="LoRA alpha (typically 2x the rank)"
     )
+
     parser.add_argument(
         "--lora-dropout",
         type=float,
@@ -206,18 +212,21 @@ def parse_args():
         action="store_true",
         help="Use GaLore optimizer for memory-efficient training (essential for 7B+ models)"
     )
+
     parser.add_argument(
         "--galore-rank",
         type=int,
         default=128,
         help="GaLore projection rank (64-256, higher = less compression)"
     )
+
     parser.add_argument(
         "--galore-update-proj-gap",
         type=int,
         default=200,
         help="Update GaLore projection every N steps (100-500 recommended)"
     )
+
     parser.add_argument(
         "--galore-scale",
         type=float,
@@ -232,24 +241,28 @@ def parse_args():
         default=3,
         help="Number of training epochs"
     )
+
     parser.add_argument(
         "--batch-size",
         type=int,
         default=4,
         help="Batch size per device"
     )
+
     parser.add_argument(
         "--gradient-accumulation",
         type=int,
         default=4,
         help="Gradient accumulation steps"
     )
+
     parser.add_argument(
         "--learning-rate",
         type=float,
         default=2e-4,
         help="Learning rate"
     )
+
     parser.add_argument(
         "--max-seq-length",
         type=int,
@@ -263,11 +276,13 @@ def parse_args():
         action="store_true",
         help="Use 4-bit quantization (essential for large models, ~75% memory reduction)"
     )
+
     parser.add_argument(
         "--no-test",
         action="store_true",
         help="Skip test generation after training"
     )
+    
     parser.add_argument(
         "--resume-from-checkpoint",
         type=str,
