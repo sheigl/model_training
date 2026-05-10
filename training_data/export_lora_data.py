@@ -3,7 +3,8 @@
 Export combined LoRA training data from MongoDB synthetic queries.
 
 Exports combo and rules Q&A at a 70/30 ratio, merged into a single JSONL file.
-Designed for Qwen3 + Unsloth/TRL instruction-tuning format.
+Each line contains a 'messages' array with user/assistant role pairs, as expected
+by Unsloth's SFTTrainer.
 
 Usage:
   python export_lora_data.py [--combo-pct 70] [--rules-pct 30] [--output mtg_lora.jsonl] [--dry-run]
@@ -48,7 +49,8 @@ def query_and_format(collection, categories=None, score_min=7, max_count=0, scor
     """
     Query synthetic queries and format for LoRA training.
     
-    Returns list of {instruction, input, output} dicts.
+    Returns list of {messages} dicts in the format expected by
+    Unsloth's SFTTrainer (list of {role, content} dicts).
     """
     # Build filter
     filter_query = {score_field: {'$gte': score_min}}
@@ -72,9 +74,10 @@ def query_and_format(collection, categories=None, score_min=7, max_count=0, scor
             continue
         
         examples.append({
-            "instruction": "You are an MTG expert. Answer this question.",
-            "input": question,
-            "output": answer,
+            "messages": [
+                {"role": "user", "content": question},
+                {"role": "assistant", "content": answer}
+            ],
             "_category": category  # Internal tracking, removed before write
         })
     

@@ -337,10 +337,31 @@ def create_sample_dataset():
 
 
 def load_custom_dataset(file_path):
-    """Load dataset from a JSONL file (JSON Lines format)."""
+    """Load dataset from a JSONL file (JSON Lines format).
+    
+    Expects Alpaca-style format (instruction/input/output) or pre-formatted
+    messages format. Converts Alpaca-style entries to messages format.
+    """
     with open(file_path, 'r') as f:
         data = [json.loads(line) for line in f]
-    return Dataset.from_list(data)
+
+    def to_messages(example):
+        # If already in messages format, pass through
+        if "messages" in example:
+            return {"messages": example["messages"]}
+        # Alpaca-style: instruction + optional input -> output
+        user_content = example["instruction"]
+        if example.get("input", "").strip():
+            user_content = f"{example['instruction']}\n\n{example['input']}"
+        return {
+            "messages": [
+                {"role": "user", "content": user_content},
+                {"role": "assistant", "content": example["output"]}
+            ]
+        }
+
+    dataset = Dataset.from_list(data)
+    return dataset.map(to_messages)
 
 
 def load_hf_dataset(dataset_name="yahma/alpaca-cleaned"):
