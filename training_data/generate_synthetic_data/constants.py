@@ -3,6 +3,144 @@ MODEL_NAME="qwen2.5:14b"  # Change to 14B when ready
 
 NEW_LINE = "\n"
 
+COMBO_QUESTION_TEMPLATES = [
+    {
+        "type": "how_does_it_work",
+        "task_instruction": """Generate exactly 3 Q&A pairs explaining HOW this combo works.
+Focus on: the sequence of steps, what triggers what, and why the loop is infinite (if applicable).
+At least one question must come from the perspective of a player who has never seen this combo before."""
+    },
+    {
+        "type": "what_do_i_need",
+        "task_instruction": """Generate exactly 3 Q&A pairs focused on the REQUIREMENTS of this combo.
+Focus on: what cards are needed, what zone each piece needs to be in, what mana or other resources are required.
+At least one question must be phrased as a player asking 'I have X, what else do I need to go infinite?'"""
+    },
+    {
+        "type": "why_does_this_work",
+        "task_instruction": """Generate exactly 3 Q&A pairs explaining WHY this combo works from a rules perspective.
+Focus on: which specific abilities or rules interactions enable the combo, and why removing any one piece breaks it.
+At least one question must address a potential misconception about why the combo functions."""
+    },
+    {
+        "type": "what_is_the_result",
+        "task_instruction": """Generate exactly 3 Q&A pairs focused on the OUTCOME of this combo.
+Focus on: what the combo produces, how it wins the game, and what a player should do once the loop is established.
+At least one question must be from the perspective of the OPPONENT asking what just happened to them."""
+    },
+]
+
+RULE_INTERACTION_TEMPLATES = [
+    {
+        "type": "plain_english",
+        "task_instruction": """Generate exactly 3 Q&A pairs explaining how these two rules interact in plain English.
+At least one question must come from a newer player who doesn't know the terminology —
+phrased as something they'd actually ask at a kitchen table game."""
+    },
+    {
+        "type": "in_game_scenario",
+        "task_instruction": """Generate exactly 3 Q&A pairs presenting concrete in-game scenarios
+where BOTH rules are relevant to determining the outcome. Questions must describe a specific
+board state or game action — not ask abstractly about either rule. At least one must start with
+'What happens when...' or 'My opponent just...'"""
+    },
+    {
+        "type": "edge_case",
+        "task_instruction": """Generate exactly 3 Q&A pairs exploring edge cases or common
+misconceptions that arise specifically from the interaction of these two rules — not a
+misunderstanding of either rule in isolation. At least one question must address something
+a player might incorrectly assume when applying one rule without considering the other."""
+    },
+]
+
+RULE_EXPLANATION_TEMPLATES = [
+    {
+        "type": "plain_english",
+        "task_instruction": """Generate exactly 3 Q&A pairs explaining this rule in plain English.
+At least one question must come from a newer player who doesn't know the terminology — 
+phrased as something they'd actually ask at a kitchen table game."""
+    },
+    {
+        "type": "in_game_scenario",
+        "task_instruction": """Generate exactly 3 Q&A pairs presenting concrete in-game scenarios 
+where this rule determines the outcome. Questions must describe a specific board state or 
+game action — not ask abstractly about the rule. At least one must start with 
+'What happens when...' or 'My opponent just...'"""
+    },
+    {
+        "type": "edge_case",
+        "task_instruction": """Generate exactly 3 Q&A pairs exploring edge cases or common 
+misconceptions about this rule. At least one question must address something a player 
+might incorrectly assume about how this rule works."""
+    },
+]
+
+RULE_INTERACTION_VALIDATION = {
+    "plain_english": """
+1. The answer explains how BOTH rules interact in plain language — no extrapolation beyond what either rule states.
+2. The answer uses plain language accessible to a newer player — minimal jargon, and any jargon used is explained.
+3. The question is phrased naturally as something a kitchen table player would actually ask.
+4. The answer includes a concrete in-game example that illustrates how the two rules interact.
+5. The answer quotes or closely paraphrases text from BOTH rules when explaining why the outcome occurs.
+6. The answer explains which rule applies first or takes precedence.
+7. HARD REJECT if the answer references any rule number — mechanics must be explained conversationally.
+8. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
+9. The answer is at least 80 characters long and provides sufficient detail.""",
+
+    "in_game_scenario": """
+1. The question describes a specific board state or game action where BOTH rules are relevant — not just one.
+2. The answer walks through what happens in that specific scenario step by step.
+3. The answer states the concrete final outcome — vague answers like "it depends" are validation failures.
+4. The answer explains how both rules contributed to that outcome, not just the dominant one.
+5. The answer quotes or closely paraphrases text from BOTH rules to explain WHY the outcome occurs.
+6. The answer explains which rule applies first or takes precedence.
+7. HARD REJECT if the answer references any rule number — mechanics must be explained conversationally.
+8. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
+9. The answer is at least 80 characters long and provides sufficient detail.""",
+
+    "edge_case": """
+1. The question targets a genuine misconception that arises specifically from the interaction of BOTH rules — not a misunderstanding of either rule in isolation.
+2. The answer explicitly identifies what a player might incorrectly assume when applying one rule without considering the other.
+3. The answer corrects the misconception and explains WHY the correct ruling is what it is.
+4. The answer explains which rule applies first or takes precedence in resolving the confusion.
+5. The answer quotes or closely paraphrases text from BOTH rules to justify the ruling.
+6. HARD REJECT if the answer references any rule number — mechanics must be explained conversationally.
+7. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
+8. The answer is at least 80 characters long and provides sufficient detail.""",
+}
+
+RULE_EXPLANATION_VALIDATION = {
+    "plain_english": """
+1. The answer is directly grounded in the rule text provided — no extrapolation beyond what the rule states.
+2. The answer uses plain language accessible to a newer player — minimal jargon, and any jargon used is explained.
+3. The question is phrased naturally as something a kitchen table player would actually ask.
+4. The answer includes a concrete in-game example that illustrates the rule.
+5. The answer quotes or closely paraphrases the relevant rule text when explaining why something works.
+6. HARD REJECT if the answer references any rule number — mechanics must be explained conversationally.
+7. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
+8. The answer is at least 80 characters long and provides sufficient detail.""",
+
+    "in_game_scenario": """
+1. The answer is directly grounded in the rule text provided — no extrapolation beyond what the rule states.
+2. The question describes a specific board state or game action — not an abstract question about the rule.
+3. The answer walks through what happens in that specific scenario, not just what the rule says in general.
+4. The answer includes the concrete outcome of the scenario — vague answers like "it depends" are validation failures.
+5. The answer quotes or closely paraphrases the relevant rule text to explain WHY the outcome occurs.
+6. HARD REJECT if the answer references any rule number — mechanics must be explained conversationally.
+7. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
+8. The answer is at least 80 characters long and provides sufficient detail.""",
+
+    "edge_case": """
+1. The answer is directly grounded in the rule text provided — no extrapolation beyond what the rule states.
+2. The question targets a genuine misconception or non-obvious edge case — not a basic application of the rule.
+3. The answer explicitly identifies what a player might incorrectly assume and corrects it.
+4. The answer explains WHY the correct ruling is what it is, not just what it is.
+5. The answer quotes or closely paraphrases the relevant rule text to justify the ruling.
+6. HARD REJECT if the answer references any rule number — mechanics must be explained conversationally.
+7. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
+8. The answer is at least 80 characters long and provides sufficient detail.""",
+}
+
 # Rule sections that are most relevant for gameplay scenarios
 RELEVANT_RULE_SECTIONS = [
     '1',   # Game Concepts

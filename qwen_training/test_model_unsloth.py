@@ -5,7 +5,7 @@ import torch
 
 # Load your trained adapter
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name="./output-7b-mtg-unsloth",  # your output dir
+    model_name="./output-27b-mtg-unsloth",  # your output dir
     dtype=None,
     load_in_4bit=True,
 )

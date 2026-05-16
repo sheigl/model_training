@@ -4,6 +4,7 @@ from rich.status import Status
 from query_model import QueryModel
 import json
 from common import MTG_NOTATION_LEGEND, OUTPUT_FORMAT, REQUIREMENTS_BASE, SYSTEM_MESSAGE, NEW_LINE, build_card_detail, validate_and_loop_with_suggested_fix
+from constants import COMBO_QUESTION_TEMPLATES
 from scryfall_mongodb import ScryfallMongo
 import random
 from typing import Any, Callable
@@ -62,7 +63,7 @@ class GenerateComboQueries:
             
             combo_name = combo.name        
             # Build prompt
-            prompts: list[tuple[str, list[Card], str]] = []
+            prompts: list[tuple[str, list[Card], str, dict[str, str]]] = []
             
             description: str = combo.description
             notes: str = combo.notes
@@ -75,18 +76,31 @@ class GenerateComboQueries:
                 
             cards_in_combo: list[Card] = combo.cards_in_combo
             
-            prompts.append((self.__build_combo_prompt(cards_in_combo, description, random.choice(combo.features or [])), cards_in_combo, description))
-            
+            selected_templates = random.sample(COMBO_QUESTION_TEMPLATES, k=2)
+
+            for template in selected_templates:
+                prompts.append((
+                    self.__build_combo_prompt(
+                        cards_in_combo,
+                        description,
+                        random.choice(combo.features or []),
+                        template  # pass template through
+                    ),
+                    cards_in_combo,
+                    description,
+                    template
+                ))            
+
             query_model = QueryModel()
             
-            for prompt, cards_in_combo, description in prompts:         
+            for prompt, cards_in_combo, description, template in prompts:         
                 try:
                     
                     response =  query_model.query(models[ModelType.GENERATION], prompt)
                     qa_pairs = list(map(lambda qa: QuestionAnswer(qa["question"], qa["answer"]), json.loads(response)))
                     
                     qa_context = f"""
-For combo_query category: verify the following:
+For combo_query category ({template["type"]}): verify the following:
 1. The sequence of triggers described matches the order in the provided combo steps. A correct description of individual triggers in the wrong order is still a factual error.
 2. The answer explicitly names ALL required combo pieces and explains each one's role.
 3. The answer states the concrete outcome matching the COMBO RESULT field — vague phrases like "very powerful" or "wins the game" are validation failures.
@@ -106,7 +120,8 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
                         enable_extra_validation=False,
                         build_context=lambda: qa_context,
                         source_category="combo_query",
-                        source_data=[combo_name]
+                        source_data=list(map(lambda c: c.name, cards_in_combo)),
+                        source_template=template["type"]
                     )
                     
                     if is_valid and doc:
@@ -119,7 +134,13 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
             i = i + 1
 
 
-    def __build_combo_prompt(self, cards: list[Card], combo: str, random_combo_feature: str) -> str:
+    def __build_combo_prompt(
+        self,
+        cards: list[Card],
+        combo: str,
+        random_combo_feature: str,
+        template: dict  # add this parameter
+    ) -> str:
         """Generate combo question prompt with MTG notation guide."""
         requirementList = (f"{i + 1}. {desc}" for i, desc in enumerate(REQUIREMENTS_BASE))
         requirements = NEW_LINE.join(requirementList)
@@ -127,28 +148,28 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
         combo_result = f"\nCOMBO RESULT: {random_combo_feature}" if random_combo_feature else ""
 
         prompt = f"""
-{SYSTEM_MESSAGE}
+    {SYSTEM_MESSAGE}
 
-{MTG_NOTATION_LEGEND}
+    {MTG_NOTATION_LEGEND}
 
-<cards>
-{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards))}
-</cards>
+    <cards>
+    {NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards))}
+    </cards>
 
-<combo>
-AUTHORITATIVE COMBO — treat this as ground truth, overriding any inferences from card text alone:
+    <combo>
+    AUTHORITATIVE COMBO — treat this as ground truth, overriding any inferences from card text alone:
 
-{combo}{combo_result}
-</combo>
+    {combo}{combo_result}
+    </combo>
 
-<task>
-Generate exactly 3 Q&A pairs about the combo above.
+    <task>
+    {template["task_instruction"]}
 
-REQUIREMENTS:
-{requirements}
+    REQUIREMENTS:
+    {requirements}
 
-{OUTPUT_FORMAT}
-</task>"""
+    {OUTPUT_FORMAT}
+    </task>"""
 
         return prompt
 

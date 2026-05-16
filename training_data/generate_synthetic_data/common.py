@@ -438,7 +438,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return prompt
 
 
-def build_rule_explanation_prompt(rule_number: str, rule_text: str) -> str:
+def build_rule_explanation_prompt(rule_number: str, rule_text: str, template: dict[str, str]) -> str:
     """Generate natural Q&A from a specific rule, grounded in actual rule text."""
     prompt = f"""
 {SYSTEM_MESSAGE}
@@ -452,26 +452,23 @@ Rule {rule_number}: {rule_text}
 </rule>
 
 <task>
-Generate exactly 3 Q&A pairs based on the rule above.
+{template["task_instruction"]}
 
 REQUIREMENTS:
-1. At least one question MUST come from the perspective of a player encountering this rule mid-game for the first time — someone who doesn't know the rule number or technical terminology. Examples: "What happens if..." or "Can I still..." or "Does it matter if..."
-2. At least one question MUST address a common misconception or edge case that this rule clarifies.
-3. Questions must be varied and natural-sounding. Do not ask "What does rule {rule_number} say about..." — players don't talk that way.
-4. Classify each answer by question type and adjust depth accordingly:
+1. Questions must be varied and natural-sounding. Do not ask "What does rule {rule_number} say about..." — players don't talk that way.
+2. Classify each answer by question type and adjust depth accordingly:
    - "what happens when" questions → walk through the sequence of events concisely, citing relevant rule text to explain WHY.
    - "can I" questions → confirm or deny, then explain the mechanic that determines the answer.
    - "does X apply when" questions → state whether it applies and quote or paraphrase the rule condition that determines it.
-5. Every answer MUST include a concrete in-game example that illustrates the rule. Never explain a rule in purely abstract terms.
-6. When explaining why something works, quote or closely paraphrase the relevant part of the rule text from the <rule> block above.
-7. Do NOT reference the rule number in answers — explain mechanics conversationally as a rules expert would.
-8. Answers must be plain text only. Do not use markdown formatting such as bold (**text**), italics, or bullet points.
-9. The answer field MUST be a single string (not an array).
+3. Every answer MUST include a concrete in-game example that illustrates the rule. Never explain a rule in purely abstract terms.
+4. When explaining why something works, quote or closely paraphrase the relevant part of the rule text from the <rule> block above.
+5. Do NOT reference the rule number in answers — explain mechanics conversationally as a rules expert would.
+6. Answers must be plain text only. Do not use markdown formatting such as bold (**text**), italics, or bullet points.
+7. The answer field MUST be a single string (not an array).
 
 {OUTPUT_FORMAT}
 </task>"""
     return prompt
-
 
 def build_rule_interaction_prompt(rule1_num: str, rule1_text: str, rule2_num: str, rule2_text: str) -> str:
     """Generate scenario Q&A where two rules interact, grounded in both rule texts."""
@@ -851,7 +848,8 @@ def validate_and_loop_with_suggested_fix(
     enable_extra_validation: bool, 
     build_context: Callable[[], str],
     source_category: str,
-    source_data: list[str]) -> tuple[bool, QuestionAnswerEnhanced | None]:
+    source_data: list[str],
+    source_template: str | None) -> tuple[bool, QuestionAnswerEnhanced | None]:
     for enumerated_i, qa in enumerate(qa_pairs):
         
         should_validate = True
@@ -900,6 +898,7 @@ def validate_and_loop_with_suggested_fix(
             doc.validation_score = score
             doc.needs_review = (not should_validate)
             doc.suggested_fix = suggested_fix if not is_valid else None
+            doc.source_template = source_template
             
             
             return is_valid, doc

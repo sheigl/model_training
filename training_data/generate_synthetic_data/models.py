@@ -22,6 +22,7 @@ class QuestionAnswerEnhanced(QuestionAnswer):
         self.content_hash: str | None = None
         self.generated_at: datetime | None = None
         self.version: int = 0
+        self.source_template : str | None = None
         
 
 class ModelType(Enum):

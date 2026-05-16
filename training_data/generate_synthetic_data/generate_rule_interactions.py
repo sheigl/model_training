@@ -8,6 +8,7 @@ import random
 from typing import Any, Callable
 from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced
 from logger import print
+from constants import RULE_INTERACTION_TEMPLATES, RULE_INTERACTION_VALIDATION
 
 console = Console()
 
@@ -73,22 +74,27 @@ class GenerateRuleInteractions:
 
             pair_name = pair.name
 
-            prompts: list[tuple[str, str, str, str, str]] = []
+            prompts: list[tuple[str, str, str, str, str, dict[str, str]]] = []
 
-            prompts.append((
-                self.__build_interaction_prompt(
-                    pair.rule1_number, pair.rule1_text,
-                    pair.rule2_number, pair.rule2_text
-                ),
-                pair.rule1_number,
-                pair.rule1_text,
-                pair.rule2_number,
-                pair.rule2_text,
-            ))
+            selected_templates = random.sample(RULE_INTERACTION_TEMPLATES, k=2)
+
+            for template in selected_templates:
+                prompts.append((
+                    self.__build_interaction_prompt(
+                        pair.rule1_number, pair.rule1_text,
+                        pair.rule2_number, pair.rule2_text,
+                        template
+                    ),
+                    pair.rule1_number,
+                    pair.rule1_text,
+                    pair.rule2_number,
+                    pair.rule2_text,
+                    template
+                ))
 
             query_model = QueryModel()
 
-            for prompt, rule1_num, rule1_text, rule2_num, rule2_text in prompts:
+            for prompt, rule1_num, rule1_text, rule2_num, rule2_text, template in prompts:
                 try:
                     response = query_model.query(models[ModelType.GENERATION], prompt)
                     qa_pairs = list(
@@ -99,14 +105,8 @@ class GenerateRuleInteractions:
                     )
 
                     qa_context = f"""
-For rule_interaction category: verify the following:
-1. The answer explains how BOTH rules interact to produce the outcome — not just one rule in isolation.
-2. The answer explains which rule applies first or takes precedence.
-3. The answer states a concrete final game outcome — vague phrases like "it depends" without full elaboration are validation failures.
-4. The answer is grounded in the provided rule texts and does not hallucinate mechanics not described by either rule.
-5. The answer quotes or closely paraphrases text from both rules when explaining why the outcome occurs.
-6. HARD REJECT if the answer references any rule number (e.g. "Rule 704.2", "Rule 603.1") — mechanics must be explained conversationally without citing rule numbers.
-7. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
+For rule_interaction category ({template["type"]}): verify the following:
+{RULE_INTERACTION_VALIDATION[template["type"]]}
 
 Rule {rule1_num}: {rule1_text}
 Rule {rule2_num}: {rule2_text}
@@ -121,6 +121,7 @@ Rule {rule2_num}: {rule2_text}
                         build_context=lambda: qa_context,
                         source_category="rule_interaction",
                         source_data=[f"rule_{rule1_num}", f"rule_{rule2_num}"],
+                        source_template=template["type"]
                     )
 
                     if is_valid and doc:
@@ -138,6 +139,7 @@ Rule {rule2_num}: {rule2_text}
         rule1_text: str,
         rule2_num: str,
         rule2_text: str,
+        template: dict[str, str]
     ) -> str:
         prompt = f"""
     {SYSTEM_MESSAGE}
@@ -153,7 +155,7 @@ Rule {rule2_num}: {rule2_text}
     </rules>
 
     <task>
-    Generate exactly 3 Q&A pairs presenting realistic in-game scenarios where BOTH rules above are relevant to determining the outcome.
+    {template["task_instruction"]}
 
     REQUIREMENTS:
     1. At least one question MUST come from the perspective of a player mid-game who doesn't know the rules terminology — someone describing what's happening at the table. Examples: "I just cast X and my opponent did Y, what happens?" or "We disagreed about what happens when..."

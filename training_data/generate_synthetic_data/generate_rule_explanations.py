@@ -9,6 +9,8 @@ from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced
 from logger import print
 import random
 
+from constants import RULE_EXPLANATION_TEMPLATES, RULE_EXPLANATION_VALIDATION
+
 console = Console()
 
 class GenerateRuleExplanations:
@@ -57,28 +59,29 @@ class GenerateRuleExplanations:
             rule_text = rule['rule_text']
 
             # Build prompt
-            prompts: list[tuple[str, str, str]] = []
+            prompts: list[tuple[str, str, str, dict[str, str]]] = []
 
-            prompts.append((build_rule_explanation_prompt(rule_num, rule_text), rule_num, rule_text))
+            selected_templates = random.sample(RULE_EXPLANATION_TEMPLATES, k=2)
+
+            for template in selected_templates:
+                prompts.append((
+                    build_rule_explanation_prompt(rule_num, rule_text, template),
+                    rule_num,
+                    rule_text,
+                    template
+                ))
 
             query_model = QueryModel()
 
-            for prompt, rule_num, rule_text in prompts:
+            for prompt, rule_num, rule_text, template in prompts:
                 try:
 
                     response = query_model.query(models[ModelType.GENERATION], prompt)
                     qa_pairs = list(map(lambda qa: QuestionAnswer(qa["question"], qa["answer"]), json.loads(response)))
 
                     qa_context = f"""
-For rule_explanation category: verify the following:
-1. The answer is directly grounded in the rule text provided — no extrapolation beyond what the rule states.
-2. The answer uses correct MTG terminology and accurately reflects the rule.
-3. The question is a natural question a player would ask — not phrased as "What does rule X say about..."
-4. The answer includes a concrete in-game example that illustrates the rule.
-5. The answer quotes or closely paraphrases the relevant rule text when explaining why something works.
-6. HARD REJECT if the answer references any rule number (e.g. "Rule 704.2", "Rule 603.1") — mechanics must be explained conversationally without citing rule numbers.
-7. HARD REJECT if the answer contains markdown formatting such as bold (**text**) or bullet points.
-8. The answer is at least 80 characters long and provides sufficient detail.
+For rule_explanation category ({template["type"]}): verify the following:
+{RULE_EXPLANATION_VALIDATION[template["type"]]}
 
 Rule {rule_num}: {rule_text}
 """
@@ -91,7 +94,8 @@ Rule {rule_num}: {rule_text}
                         enable_extra_validation=True,
                         build_context=lambda: qa_context,
                         source_category="rule_explanation",
-                        source_data=[f"rule_{rule_num}"]
+                        source_data=[f"rule_{rule_num}"],
+                        source_template=template["type"]
                     )
 
                     if is_valid and doc:
