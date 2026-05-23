@@ -2,7 +2,7 @@
 import logging
 from rich.console import Console
 from rich.logging import RichHandler
-
+echo = print
 console = Console()
 
 logging.basicConfig(
@@ -18,4 +18,5 @@ logger = logging.getLogger("mtg")
 
 def print(*args, **kwargs):
     msg = " ".join(str(a) for a in args)
-    logger.info(msg)
+    echo(msg)
+    #logger.info(msg)

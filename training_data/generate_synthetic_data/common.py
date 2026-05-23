@@ -848,7 +848,7 @@ def validate_and_loop_with_suggested_fix(
     enable_extra_validation: bool, 
     build_context: Callable[[], str],
     source_category: str,
-    source_data: list[str],
+    source_data: list,
     source_template: str | None) -> tuple[bool, QuestionAnswerEnhanced | None]:
     for enumerated_i, qa in enumerate(qa_pairs):
         

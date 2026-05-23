@@ -112,6 +112,9 @@ The combo listed below should be considered more than anything else, and is 100%
 Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}
 """
                     
+                    source_data: list[Any] = list(map(lambda c: c.toDict(), cards_in_combo))
+                    source_data.append(combo.toDict())
+
                     is_valid, doc = validate_and_loop_with_suggested_fix(
                         query_model=query_model,
                         models=models,
@@ -120,7 +123,7 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
                         enable_extra_validation=False,
                         build_context=lambda: qa_context,
                         source_category="combo_query",
-                        source_data=list(map(lambda c: c.name, cards_in_combo)),
+                        source_data=source_data,
                         source_template=template["type"]
                     )
                     

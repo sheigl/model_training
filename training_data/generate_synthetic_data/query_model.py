@@ -31,7 +31,7 @@ class QueryModel():
         try:
             if model.provider == ModelProvider.ANTHROPIC:
                 print(f"  → Using Anthropic API for model {model.name}")
-                anthropic_key = os.getenv("ANTHROPIC_KEY")
+                anthropic_key = model.api_key or os.getenv("ANTHROPIC_KEY")
                 self.anthropic_client = Anthropic(api_key=anthropic_key) if not self.anthropic_client else self.anthropic_client
             
             print(f"  → RESPONSE:")
@@ -62,23 +62,24 @@ class QueryModel():
                                 # Print ONLY the new text (not the event object)
                                 print(new_text, end="", flush=True)
             elif model.provider == ModelProvider.OPENAI:
-                client = OpenAI(base_url=model.provider_url, api_key="none")
+                openai_key = model.api_key or os.getenv("OPENAI_API_KEY") or "none"
+                client = OpenAI(base_url=model.provider_url, api_key=openai_key)
                 stream = client.chat.completions.create(
                     model=model.name,
                     messages=[
                         {"role": "user", "content": prompt}],
                     stream=True,
                     max_tokens=max_tokens,
-                    temperature=1.0,
-                    top_p=0.95,
-                    presence_penalty=1.5,
-                    extra_body={
-                        "top_k": 20,
-                        "min_p": 0.0,
-                        "repetition_penalty": 1.0,
-                        "chat_template_kwargs": {"enable_thinking": True},
-                        "max_context_length": max_tokens * 2
-                    }
+                    #temperature=1.0,
+                    #top_p=0.95,
+                    #presence_penalty=1.5,
+                    #extra_body={
+                    #    "top_k": 20,
+                    #    "min_p": 0.0,
+                    #    "repetition_penalty": 1.0,
+                    #    "chat_template_kwargs": {"enable_thinking": True},
+                    #    "max_context_length": max_tokens * 2
+                    #}
                 )
                 
                 for chunk in stream:

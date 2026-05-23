@@ -94,7 +94,7 @@ Rule {rule_num}: {rule_text}
                         enable_extra_validation=True,
                         build_context=lambda: qa_context,
                         source_category="rule_explanation",
-                        source_data=[f"rule_{rule_num}"],
+                        source_data=[f"Rule {rule_num}: {rule_text}"],
                         source_template=template["type"]
                     )
 

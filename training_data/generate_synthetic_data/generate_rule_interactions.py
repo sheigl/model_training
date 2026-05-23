@@ -120,7 +120,7 @@ Rule {rule2_num}: {rule2_text}
                         enable_extra_validation=True,
                         build_context=lambda: qa_context,
                         source_category="rule_interaction",
-                        source_data=[f"rule_{rule1_num}", f"rule_{rule2_num}"],
+                        source_data=[f"Rule {rule1_num}: {rule1_text}", f"Rule {rule2_num}: {rule2_text}"],
                         source_template=template["type"]
                     )
 

@@ -14,7 +14,7 @@ class QuestionAnswerEnhanced(QuestionAnswer):
         super().__init__(question, answer)
         
         self.category: str | None = None
-        self.source_data: list[str] | None = None
+        self.source_data: list | None = None
         self.validated: bool = False
         self.validation_score: float | None = None
         self.needs_review: bool = True
@@ -35,11 +35,12 @@ class ModelProvider(Enum):
     OPENAI = "openai"
 
 class Model:
-    def __init__(self, name: str, type: ModelType):
+    def __init__(self, name: str, type: ModelType, api_key: str | None = None):
         self.name = self._parse_model_name(name)
         self.type = type
         self.provider = self._parse_provider(name)
         self.provider_url = self._parse_provider_host(name)
+        self.api_key = api_key or self._parse_api_key(name)
     
     def _parse_provider(self, model_name: str) -> ModelProvider:
         if "anthropic" in model_name:
@@ -50,15 +51,13 @@ class Model:
             return ModelProvider.OLLAMA
     
     def _parse_model_name(self, model_name: str):
-        if "anthropic" in model_name:
-            return model_name[model_name.rfind(',')+1:]
-        elif "openai" in model_name:
-            return model_name[model_name.rfind(',')+1:]
-        else:
-            if "," in model_name:
-                return model_name.split(',')[1]
-            else:
-                return model_name
+        if "," not in model_name:
+            return model_name
+        parts = model_name.split(',')
+        # host,model -> parts[1]
+        # host,provider_hint,model -> parts[2]
+        # host,provider_hint,model,api_key -> parts[2]
+        return parts[2] if len(parts) >= 3 else parts[1]
         
     def _parse_provider_host(self, model_name: str) -> str | None:
         if "," in model_name:
@@ -66,12 +65,23 @@ class Model:
             return parts[0]
         else:
             return "http://127.0.0.1:11434"
+
+    def _parse_api_key(self, model_name: str) -> str | None:
+        if "," in model_name:
+            parts = model_name.split(',')
+            if len(parts) >= 4:
+                return parts[3]
+        return None
         
 class Requirement:
     def __init__(self, name: str, scryfall_query: str, zone_locations: list[str]):
         self.name = name
         self.scryfall_query = scryfall_query
         self.zone_locations = zone_locations
+
+    def toDict(self):
+        dictionary = self.__dict__
+        return dictionary
 
 class Card:
     def __init__(self, 
@@ -92,6 +102,10 @@ class Card:
         self.color_identity = color_identity
         self.zone_locations = zone_locations
 
+    def toDict(self):
+        dictionary = self.__dict__
+        return dictionary
+
 class ProjectedCombo:
     def __init__(self, 
                  name: str, 
@@ -106,3 +120,9 @@ class ProjectedCombo:
         self.features = features
         self.requirements = requirements
         self.notes = notes
+
+    def toDict(self):
+        dictionary = self.__dict__
+        dictionary["cards_in_combo"] = list(map(lambda c: c.toDict(), self.cards_in_combo))
+        dictionary["requirements"] = list(map(lambda r: r.toDict(), self.requirements))
+        return dictionary
