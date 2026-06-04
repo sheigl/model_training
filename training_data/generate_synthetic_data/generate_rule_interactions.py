@@ -6,7 +6,7 @@ import json
 from common import MTG_NOTATION_LEGEND, OUTPUT_FORMAT, SYSTEM_MESSAGE, NEW_LINE, build_rule_interaction_prompt, validate_and_loop_with_suggested_fix
 import random
 from typing import Any, Callable
-from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced
+from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
 from logger import print
 from constants import RULE_INTERACTION_TEMPLATES, RULE_INTERACTION_VALIDATION
 
@@ -39,12 +39,14 @@ class GenerateRuleInteractions:
         models: dict[ModelType, Model],
         validation_pct: int,
         target_count: int = 5000,
+        metrics: ValidationMetrics | None = None,
     ) -> None:
         self.rules_collection = rules_collection
         self.save_item = save_item
         self.models = models
         self.validation_pct = validation_pct
         self.target_count = target_count
+        self.metrics = metrics
 
     def generate_rule_interactions(self) -> None:
         """Generate rule interaction queries — returns MongoDB documents via save_item."""
@@ -121,7 +123,8 @@ Rule {rule2_num}: {rule2_text}
                         build_context=lambda: qa_context,
                         source_category="rule_interaction",
                         source_data=[f"Rule {rule1_num}: {rule1_text}", f"Rule {rule2_num}: {rule2_text}"],
-                        source_template=template["type"]
+                        source_template=template["type"],
+                        metrics=self.metrics
                     )
 
                     if is_valid and doc:

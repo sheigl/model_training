@@ -2,7 +2,7 @@ import random
 import re
 from typing import Any, Callable
 from query_model import QueryModel
-from models import Card, Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced
+from models import Card, Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
 from constants import *
 
 
@@ -843,54 +843,71 @@ def map_card(card: dict) -> Card | None: # type: ignore
 def validate_and_loop_with_suggested_fix(
     query_model: QueryModel,
     models: dict[ModelType, Model],
-    qa_pairs: list[QuestionAnswer], 
+    qa_pairs: list[QuestionAnswer],
     validation_pct: float,
-    enable_extra_validation: bool, 
+    enable_extra_validation: bool,
     build_context: Callable[[], str],
     source_category: str,
     source_data: list,
-    source_template: str | None) -> tuple[bool, QuestionAnswerEnhanced | None]:
+    source_template: str | None,
+    metrics: ValidationMetrics | None = None) -> tuple[bool, QuestionAnswerEnhanced | None]:
     for enumerated_i, qa in enumerate(qa_pairs):
-        
+
+        if metrics:
+            metrics.record_candidate(source_category, source_template)
+
         should_validate = True
-        
+
         if random.random() > validation_pct:
             should_validate = False
-        
+
+        if not should_validate and metrics:
+            metrics.record_skip(source_category, source_template)
+
         iteration = 0
         is_valid: bool = True
         reason: str | None = None
         score: float | None = None
         suggested_fix: str | None = None
-        
+
         while should_validate:
+            if metrics:
+                metrics.record_validation_attempt(source_category, source_template)
+
             qa_context = build_context()
-            
+
             is_valid, reason, score, suggested_fix = query_model.validate_qa(
                 validation_model=models[ModelType.VALIDATION],
-                question=qa.question, 
+                question=qa.question,
                 answer=qa.answer,
                 context=qa_context,
                 category=source_category,
                 enable_extra_validation=enable_extra_validation
             )
-            
+
             if not is_valid and suggested_fix:
                 print(f"    ✗ REJECTED but suggested fix provided: {suggested_fix}. Applying fix and re-validating...")
                 qa.answer = suggested_fix
                 iteration += 1
+                if metrics:
+                    metrics.record_fix_attempt(source_category, source_template)
                 if iteration >= 3:
                     print(f"    ✗ REJECTED after 3 iterations, moving on.")
                     break
-                continue                    
+                continue
             elif is_valid:
-                break     
+                break
             else:
                 print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa.question[:80]}")
-        
-        print(f"    ✓ ACCEPTED (score: {score}/10): {qa.question[:80]}")
-        
+
         if is_valid:
+            print(f"    ✓ ACCEPTED (score: {score}/10): {qa.question[:80]}")
+            if metrics:
+                if iteration == 0:
+                    metrics.record_first_attempt_pass(score, source_category, source_template)
+                else:
+                    metrics.record_pass_after_fix(score, source_category, source_template)
+
             doc = QuestionAnswerEnhanced(qa.question, qa.answer)
             doc.category = source_category
             doc.source_data = source_data
@@ -899,11 +916,22 @@ def validate_and_loop_with_suggested_fix(
             doc.needs_review = (not should_validate)
             doc.suggested_fix = suggested_fix if not is_valid else None
             doc.source_template = source_template
-            
-            
+
+            if metrics:
+                metrics.flush()
+                metrics.print_rolling_summary()
+
             return is_valid, doc
-                
         else:
+            if should_validate and metrics:
+                if iteration == 0:
+                    metrics.record_failed_first_attempt(source_category, source_template)
+                else:
+                    metrics.record_failed_after_fixes(source_category, source_template)
             print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
-            
+
+        if metrics:
+            metrics.flush()
+            metrics.print_rolling_summary()
+
     return False, None

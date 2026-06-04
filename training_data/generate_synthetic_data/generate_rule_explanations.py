@@ -5,7 +5,7 @@ from query_model import QueryModel
 import json
 from common import MTG_NOTATION_LEGEND, OUTPUT_FORMAT, REQUIREMENTS_BASE, SYSTEM_MESSAGE, NEW_LINE, build_rule_explanation_prompt, validate_and_loop_with_suggested_fix
 from typing import Any, Callable
-from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced
+from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
 from logger import print
 import random
 
@@ -20,13 +20,15 @@ class GenerateRuleExplanations:
         save_item: Callable[[QuestionAnswerEnhanced], None],
         models: dict[ModelType, Model],
         validation_pct: int,
-        target_count=5000) -> None:
+        target_count=5000,
+        metrics: ValidationMetrics | None = None) -> None:
 
         self.rules_collection = rules_collection
         self.save_item = save_item
         self.models = models
         self.validation_pct = validation_pct
         self.target_count = target_count
+        self.metrics = metrics
 
 
     def generate_rule_explanations(self) -> None:
@@ -95,7 +97,8 @@ Rule {rule_num}: {rule_text}
                         build_context=lambda: qa_context,
                         source_category="rule_explanation",
                         source_data=[f"Rule {rule_num}: {rule_text}"],
-                        source_template=template["type"]
+                        source_template=template["type"],
+                        metrics=self.metrics
                     )
 
                     if is_valid and doc:

@@ -8,7 +8,7 @@ from constants import COMBO_QUESTION_TEMPLATES
 from scryfall_mongodb import ScryfallMongo
 import random
 from typing import Any, Callable
-from models import Card, Model, ModelType, ProjectedCombo, QuestionAnswer, QuestionAnswerEnhanced, Requirement
+from models import Card, Model, ModelType, ProjectedCombo, QuestionAnswer, QuestionAnswerEnhanced, Requirement, ValidationMetrics
 from logger import print
 
 console = Console()
@@ -18,12 +18,13 @@ class GenerateComboQueries:
         self,
         combos_collection: pymongo.collection.Collection,  # type: ignore
         card_collection: pymongo.collection.Collection,  # type: ignore
-        scryfall_client: ScryfallMongo, 
-        save_item: Callable[[QuestionAnswerEnhanced], None], 
+        scryfall_client: ScryfallMongo,
+        save_item: Callable[[QuestionAnswerEnhanced], None],
         models: dict[ModelType, Model],
         validation_pct: int,
-        target_count=5000) -> None:
-        
+        target_count=5000,
+        metrics: ValidationMetrics | None = None) -> None:
+
         self.combos_collection = combos_collection
         self.card_collection = card_collection
         self.scryfall_client = scryfall_client
@@ -31,6 +32,7 @@ class GenerateComboQueries:
         self.models = models
         self.validation_pct = validation_pct
         self.target_count = target_count
+        self.metrics = metrics
         
 
     def generate_combo_queries(self) -> None:
@@ -124,7 +126,8 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
                         build_context=lambda: qa_context,
                         source_category="combo_query",
                         source_data=source_data,
-                        source_template=template["type"]
+                        source_template=template["type"],
+                        metrics=self.metrics
                     )
                     
                     if is_valid and doc:

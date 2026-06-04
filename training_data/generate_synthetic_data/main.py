@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import uuid
 from typing import Collection
 
 from generate_archetypes import * 
@@ -67,6 +68,7 @@ import argparse
 import time
 import ollama
 from common import *
+from models import ValidationMetrics
 from scryfall_mongodb import ScryfallMongo
 
 # =============================================================================
@@ -104,7 +106,10 @@ def get_mongo_collections(uri, username, password):
     rules = client['mtg_rules']['rules']
     glossary = client['mtg_rules']['glossary']
 
-    return cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, ScryfallMongo(client=client)
+    # Metrics collection (separate DB so concurrent generators don't collide)
+    metrics_collection = client['synthetic_metrics']['generator_runs']
+
+    return cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, ScryfallMongo(client=client), metrics_collection
 
 
 def save_to_mongo(synthetic_collection, examples: list[QuestionAnswerEnhanced], batch_size=500):
@@ -223,7 +228,8 @@ def main():
     parser.add_argument('--phase4', action='store_true', help='Generate all Phase 4 formats (9K total) - EDHREC grounded')
     parser.add_argument('--all', action='store_true', help='Generate all formats (Phase 1 + Phase 2 + Phase 3 + Phase 4)')
     parser.add_argument('--validation-pct', type=float, default=1, help='Set the percentage of QA pairs to validate')
-    
+    parser.add_argument('--metrics-path', type=str, default=None, help='Path to write validation metrics JSON file')
+
     args = parser.parse_args()
     
     models: dict[ModelType, Model] = {
@@ -305,21 +311,44 @@ def main():
     
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
-    cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, scryfall_client = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
+    cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, scryfall_client, metrics_collection = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
     print("  ✓ Connected")
-    
+
+    # Unique run ID shared by all generators in this process
+    run_id = str(uuid.uuid4())
+
+    # Helper to create a per-generator metrics instance
+    metrics_path_base = args.metrics_path or f"/tmp/opencode/synthetic_validation_metrics_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    active_metrics: list[ValidationMetrics] = []
+
+    def make_metrics(generator_name: str) -> ValidationMetrics:
+        # Derive a per-generator file path by inserting the name before .json
+        if metrics_path_base.endswith('.json'):
+            generator_path = metrics_path_base[:-5] + f"_{generator_name}.json"
+        else:
+            generator_path = metrics_path_base + f"_{generator_name}.json"
+        m = ValidationMetrics(
+            output_path=generator_path,
+            metrics_collection=metrics_collection,
+            run_id=run_id,
+            generator_name=generator_name,
+        )
+        active_metrics.append(m)
+        return m
+
     # Generate all synthetic data
     all_documents = []
-    
+
     # Original formats
     if args.combo_queries > 0: GenerateComboQueries(
-        combos, 
-        cards, 
-        scryfall_client, 
-        lambda doc: save_to_mongo(synthetic, [doc]), 
-        models, 
+        combos,
+        cards,
+        scryfall_client,
+        lambda doc: save_to_mongo(synthetic, [doc]),
+        models,
         args.validation_pct,
-        target_count=args.combo_queries).generate_combo_queries()
+        target_count=args.combo_queries,
+        metrics=make_metrics("GenerateComboQueries")).generate_combo_queries()
     
     if args.card_search > 0:
         GenerateCardSearchQueries()
@@ -430,7 +459,8 @@ def main():
             lambda doc: save_to_mongo(synthetic, [doc]),
             models,
             args.validation_pct,
-            target_count=args.rule_explanations
+            target_count=args.rule_explanations,
+            metrics=make_metrics("GenerateRuleExplanations")
         ).generate_rule_explanations()
 
     if args.rule_interactions > 0:
@@ -439,7 +469,8 @@ def main():
             lambda doc: save_to_mongo(synthetic, [doc]),
             models,
             args.validation_pct,
-            target_count=args.rule_interactions
+            target_count=args.rule_interactions,
+            metrics=make_metrics("GenerateRuleInteractions")
         ).generate_rule_interactions()
 
     if args.glossary_examples > 0:
@@ -505,7 +536,42 @@ def main():
     
     needs_review = sum(1 for d in all_documents if d.get('needs_review', False))
     print(f"\n⚠️  Needs manual review: {needs_review:,}")
-    
+
+    # Write final validation metrics to MongoDB (and file as fallback)
+    used_metrics = [m for m in active_metrics if m.total_candidates > 0]
+    if used_metrics:
+        print(f"\n📊 Validation metrics written to MongoDB (synthetic_metrics.generator_runs, run_id={run_id})")
+        for m in used_metrics:
+            m.write_to_file(m.output_path)
+            print(f"  → {m.generator_name}: doc_id={m._id}  file={m.output_path}")
+
+        print(f"\n{'='*80}")
+        print("VALIDATION METRICS SUMMARY")
+        print(f"{'='*80}")
+        print(f"  Run ID: {run_id}")
+        for m in used_metrics:
+            summary = m.summary()
+            print(f"\n  Generator: {m.generator_name} (doc_id={m._id})")
+            print(f"    Total candidates:      {summary['total_candidates']:,}")
+            print(f"    Validated:             {summary['total_validated']:,}")
+            print(f"    Skipped (no validate): {summary['total_skipped']:,}")
+            print(f"    Passed:                {summary['total_passed']:,}")
+            print(f"      - First attempt:     {summary['total_first_attempt_passes']:,}")
+            print(f"      - After fix:         {summary['total_pass_after_fix']:,}")
+            print(f"    Failed:                {summary['total_failed']:,}")
+            print(f"      - First attempt:     {summary['total_failed_first_attempt']:,}")
+            print(f"      - After fix(es):     {summary['total_failed_after_fixes']:,}")
+            print(f"    Fix attempts:          {summary['total_fix_attempts']:,}")
+            print(f"    Overall pass rate:       {summary['overall_pass_rate']:.1f}%")
+            print(f"    First-attempt pass rate: {summary['first_attempt_pass_rate']:.1f}%")
+            if summary['fix_recovery_rate'] is not None:
+                print(f"    Fix recovery rate:       {summary['fix_recovery_rate']:.1f}%")
+            print(f"    Fix involvement rate:    {summary['fix_involvement_rate']:.1f}%")
+            if summary.get('by_category'):
+                print(f"\n    Breakdown by category:")
+                for cat, stats in sorted(summary['by_category'].items()):
+                    print(f"      {cat:22s}: {stats['passed']:>4} passed / {stats['failed']:>4} failed / {stats['validated']:>4} validated (pass rate: {stats['pass_rate']:.1f}%)  [first_pass: {stats['first_attempt_passes']}, after_fix: {stats['pass_after_fix']}, failed_first: {stats['failed_first_attempt']}, failed_after_fix: {stats['failed_after_fixes']}]")
+
     print(f"\n✅ Ready to extract!")
     print("="*80)
 
