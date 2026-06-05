@@ -3,80 +3,94 @@ from rich.console import Console
 from rich.status import Status
 from query_model import QueryModel
 import json
-from common import MTG_NOTATION_LEGEND, OUTPUT_FORMAT, REQUIREMENTS_BASE, SYSTEM_MESSAGE, NEW_LINE, build_card_detail, validate_and_loop_with_suggested_fix
+from common import build_archetype_prompt, validate_and_loop_with_suggested_fix
 from scryfall_mongodb import ScryfallMongo
-import random
 from typing import Any, Callable
-from models import Card, Model, ModelType, ProjectedCombo, QuestionAnswer, QuestionAnswerEnhanced, Requirement
+from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
 from logger import print
-from archetype_models import ArchetypeDocument
 
+DEFAULT = 5000
+console = Console()
 
 class GenerateArchetypes:
     def __init__(
         self,
         card_collection: pymongo.collection.Collection,  # type: ignore
         archetype_collection: pymongo.collection.Collection,  # type: ignore
-        scryfall_client: ScryfallMongo, ) -> None:
+        scryfall_client: ScryfallMongo,
+        save_item: Callable[[QuestionAnswerEnhanced], None],
+        models: dict[ModelType, Model],
+        validation_pct: int,
+        target_count: int = DEFAULT,
+        metrics: ValidationMetrics | None = None,
+    ) -> None:
         self.card_collection = card_collection
         self.archetype_collection = archetype_collection
         self.scryfall_client = scryfall_client
-        
-    #def __get_scryfall_cards() -> None:
-    def __get_archetype_articles(self) -> list[ArchetypeDocument]:
-        docs = [ArchetypeDocument.from_dict(d) for d in self.archetype_collection.find()]
-        return docs
+        self.save_item = save_item
+        self.models = models
+        self.validation_pct = validation_pct
+        self.target_count = target_count
+        self.metrics = metrics
 
-    def generate_archetypes(self, target_count=5000) -> None:
-        """
-        Generate deck archetype and strategy Q&A.
+    def generate_archetypes(self) -> None:
+        print(f"\n=== GENERATING {self.target_count:,} ARCHETYPE QUESTIONS ===")
 
-        Examples:
-        - "How does a stax deck win?"
-        - "What are the weaknesses of voltron?"
-        - "How do I recognize a storm deck?"
-        """
-        print(f"\n=== GENERATING {target_count:,} ARCHETYPE QUESTIONS ===")  
-        
+        archetypes = [
+            ("Aggro", "A strategy focused on dealing quick damage with low-cost creatures."),
+            ("Control", "A strategy that counters threats and wins through card advantage."),
+            ("Combo", "A strategy that assembles specific card combinations to win instantly."),
+            ("Midrange", "A strategy that plays efficient threats and disrupts opponents."),
+            ("Stax", "A control strategy using resource denial and lock pieces."),
+            ("Voltron", "A strategy that equips one commander to deal lethal commander damage."),
+            ("Tokens", "A strategy that swarms the board with creature tokens."),
+            ("Reanimator", "A strategy that puts powerful creatures into play from the graveyard."),
+            ("Storm", "A strategy that casts many spells in one turn to win with a storm payoff."),
+            ("Pillow Fort", "A defensive strategy that prevents opponents from attacking you."),
+        ]
+
+        print(f"  → Processing {len(archetypes):,} archetypes...")
+
+        i: int = 0
         for archetype, context in archetypes:
-            if len(mongo_documents) >= target_count:
+            if i >= self.target_count:
                 break
 
-            print(f"  → {archetype}")
+            if (i + 1) % 100 == 0:
+                print(f"    Generated {i:,}/{self.target_count:,}...")
+
             prompt = build_archetype_prompt(archetype, context)
 
             try:
-                response = query_ollama(MODEL_NAME, prompt)
-                response = response.replace("```json", "").replace("```", "").strip()
-                qa_pairs = json.loads(response)
+                query_model = QueryModel()
+                response = query_model.query(self.models[ModelType.GENERATION], prompt)
+                qa_pairs = list(
+                    map(
+                        lambda qa: QuestionAnswer(qa["question"], qa["answer"]),
+                        json.loads(response),
+                    )
+                )
 
-                for qa in qa_pairs:
-                    if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                        is_valid, reason, score = query_ollama.validate_qa(
-                            qa['question'], qa['answer'],
-                            context=f"Archetype: {archetype}\nContext: {context}",
-                            category="archetype"
-                        )
-                        if is_valid:
-                            mongo_documents.append({
-                                "question": qa['question'],
-                                "answer": qa['answer'],
-                                "category": "archetype",
-                                "source_data": ["strategy"],
-                                "archetype": archetype,
-                                "validated": True,
-                                "validation_score": score,
-                                "needs_review": False
-                            })
-                            print(f"    ✓ ACCEPTED (score: {score}/10): {qa['question'][:80]}")
-                            if len(mongo_documents) >= target_count:
-                                break
-                        else:
-                            print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:80]}")
-                    else:
-                        print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:80]}")
+                qa_context = f"Archetype: {archetype}\nContext: {context}"
+
+                is_valid, doc = validate_and_loop_with_suggested_fix(
+                    query_model=query_model,
+                    models=self.models,
+                    qa_pairs=qa_pairs,
+                    validation_pct=self.validation_pct,
+                    enable_extra_validation=False,
+                    build_context=lambda: qa_context,
+                    source_category="archetype",
+                    source_data=[archetype, context],
+                    source_template=None,
+                    metrics=self.metrics,
+                )
+
+                if is_valid and doc:
+                    self.save_item(doc)
+
             except Exception as e:
                 print(f"  ✗ Error for archetype '{archetype}': {type(e).__name__}: {e}")
                 continue
 
-        print(f"  ✓ Generated {len(mongo_documents):,} archetype questions")
+            i = i + 1

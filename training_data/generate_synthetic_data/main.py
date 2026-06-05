@@ -68,7 +68,7 @@ import argparse
 import time
 import ollama
 from common import *
-from models import ValidationMetrics
+from models import ValidationMetrics, QuestionAnswerEnhanced
 from scryfall_mongodb import ScryfallMongo
 
 # =============================================================================
@@ -90,7 +90,7 @@ def get_mongo_collections(uri, username, password):
     articles = client['edhrec']['articles']
     guides = client['edhrec']['guides']
     game_changers = client['edhrec']['game-changers']
-    #architypes = 
+    archetypes = client['mtg_archetypes']['archetypes']
 
     # Top cards by color
     top_cards = {
@@ -109,7 +109,7 @@ def get_mongo_collections(uri, username, password):
     # Metrics collection (separate DB so concurrent generators don't collide)
     metrics_collection = client['synthetic_metrics']['generator_runs']
 
-    return cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, ScryfallMongo(client=client), metrics_collection
+    return cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, archetypes, ScryfallMongo(client=client), metrics_collection
 
 
 def save_to_mongo(synthetic_collection, examples: list[QuestionAnswerEnhanced], batch_size=500):
@@ -311,7 +311,7 @@ def main():
     
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
-    cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, scryfall_client, metrics_collection = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
+    cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, archetypes, scryfall_client, metrics_collection = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
     print("  ✓ Connected")
 
     # Unique run ID shared by all generators in this process
@@ -320,6 +320,7 @@ def main():
     # Helper to create a per-generator metrics instance
     metrics_path_base = args.metrics_path or f"/tmp/opencode/synthetic_validation_metrics_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
     active_metrics: list[ValidationMetrics] = []
+    all_documents: list[dict] = []
 
     def make_metrics(generator_name: str) -> ValidationMetrics:
         # Derive a per-generator file path by inserting the name before .json
@@ -332,131 +333,193 @@ def main():
             metrics_collection=metrics_collection,
             run_id=run_id,
             generator_name=generator_name,
+            generation_model=models[ModelType.GENERATION].name,
+            validation_model=models[ModelType.VALIDATION].name,
         )
         active_metrics.append(m)
         return m
 
+    def save_item(doc: QuestionAnswerEnhanced) -> None:
+        save_to_mongo(synthetic, [doc])
+        all_documents.append(doc.__dict__)
+
     # Generate all synthetic data
-    all_documents = []
 
     # Original formats
-    if args.combo_queries > 0: GenerateComboQueries(
-        combos,
-        cards,
-        scryfall_client,
-        lambda doc: save_to_mongo(synthetic, [doc]),
-        models,
-        args.validation_pct,
-        target_count=args.combo_queries,
-        metrics=make_metrics("GenerateComboQueries")).generate_combo_queries()
+    if args.combo_queries > 0:
+        GenerateComboQueries(
+            combos,
+            cards,
+            scryfall_client,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.combo_queries,
+            metrics=make_metrics("GenerateComboQueries")
+        ).generate_combo_queries()
     
     if args.card_search > 0:
-        GenerateCardSearchQueries()
-        docs = generate_card_search_queries(cards, args.card_search)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} card search documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateCardSearchQueries(
+            cards,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.card_search,
+            metrics=make_metrics("GenerateCardSearchQueries")
+        ).generate_card_search_queries()
     
     if args.commander > 0:
-        docs = generate_commander_knowledge(args.commander)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} commander knowledge documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateCommanderKnowledge(
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.commander,
+            metrics=make_metrics("GenerateCommanderKnowledge")
+        ).generate_commander_knowledge()
     
     if args.multi_card > 0:
-        docs = generate_multi_card_usage(combos, args.multi_card)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} multi-card usage documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateMultiCardUsage(
+            combos,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.multi_card,
+            metrics=make_metrics("GenerateMultiCardUsage")
+        ).generate_multi_card_usage()
     
     if args.comparison > 0:
-        docs = generate_comparison_questions(cards, args.comparison)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} comparison question documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateComparisonQuestions(
+            cards,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.comparison,
+            metrics=make_metrics("GenerateComparisonQuestions")
+        ).generate_comparison_questions()
     
     if args.reverse_lookup > 0:
-        docs = generate_reverse_lookup_questions(cards, args.reverse_lookup)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} reverse lookup question documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateReverseLookupQuestions(
+            cards,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.reverse_lookup,
+            metrics=make_metrics("GenerateReverseLookupQuestions")
+        ).generate_reverse_lookup_questions()
     
     if args.synergy > 0:
-        docs = generate_synergy_questions(cards, combos, args.synergy)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} synergy question documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateSynergyQuestions(
+            cards,
+            combos,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.synergy,
+            metrics=make_metrics("GenerateSynergyQuestions")
+        ).generate_synergy_questions()
     
     if args.budget > 0:
-        docs = generate_budget_alternatives(cards, args.budget)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} budget alternative question documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateBudgetAlternatives(
+            cards,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.budget,
+            metrics=make_metrics("GenerateBudgetAlternatives")
+        ).generate_budget_alternatives()
     
     if args.color_identity > 0:
-        docs = generate_color_identity_questions(cards, commanders, args.color_identity)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} color identity question documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateColorIdentityQuestions(
+            cards,
+            commanders,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.color_identity,
+            metrics=make_metrics("GenerateColorIdentityQuestions")
+        ).generate_color_identity_questions()
     
     if args.guidelines > 0:
-        docs = generate_quick_guidelines(args.guidelines)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} guideline question documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateQuickGuidelines(
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.guidelines,
+            metrics=make_metrics("GenerateQuickGuidelines")
+        ).generate_quick_guidelines()
     
     if args.terminology > 0:
-        docs = generate_terminology_questions(args.terminology)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} terminology question documents")
-        save_to_mongo(synthetic, docs)  # Save incrementally after each format
+        GenerateTerminologyQuestions(
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.terminology,
+            metrics=make_metrics("GenerateTerminologyQuestions")
+        ).generate_terminology_questions()
 
     # Phase 2: Strategy/Theory formats
     if args.deckbuilding_theory > 0:
-        docs = generate_deckbuilding_theory(args.deckbuilding_theory)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} deckbuilding theory documents")
-        save_to_mongo(synthetic, docs)
+        GenerateDeckbuildingTheory(
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.deckbuilding_theory,
+            metrics=make_metrics("GenerateDeckbuildingTheory")
+        ).generate_deckbuilding_theory()
 
     if args.commander_building > 0:
-        docs = generate_commander_building(args.commander_building)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} commander building documents")
-        save_to_mongo(synthetic, docs)
+        GenerateCommanderBuilding(
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.commander_building,
+            metrics=make_metrics("GenerateCommanderBuilding")
+        ).generate_commander_building()
 
     if args.rules_scenarios > 0:
-        docs = generate_rules_scenarios(args.rules_scenarios)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} rules scenario documents")
-        save_to_mongo(synthetic, docs)
+        GenerateRulesScenarios(
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.rules_scenarios,
+            metrics=make_metrics("GenerateRulesScenarios")
+        ).generate_rules_scenarios()
 
     if args.archetypes > 0:
         GenerateArchetypes(
-            cards, 
-            scryfall_client, 
-            lambda doc: save_to_mongo(synthetic, [doc]), 
-            models, 
+            cards,
+            archetypes,
+            scryfall_client,
+            save_item,
+            models,
             args.validation_pct,
-            target_count=args.combo_queries
-        )
+            target_count=args.archetypes,
+            metrics=make_metrics("GenerateArchetypes")
+        ).generate_archetypes()
 
     if args.game_theory > 0:
-        docs = generate_game_theory(args.game_theory)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} game theory documents")
-        save_to_mongo(synthetic, docs)
+        GenerateGameTheory(
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.game_theory,
+            metrics=make_metrics("GenerateGameTheory")
+        ).generate_game_theory()
 
     if args.meta_knowledge > 0:
-        docs = generate_meta_knowledge(args.meta_knowledge)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} meta knowledge documents")
-        save_to_mongo(synthetic, docs)
+        GenerateMetaKnowledge(
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.meta_knowledge,
+            metrics=make_metrics("GenerateMetaKnowledge")
+        ).generate_meta_knowledge()
 
     # Phase 3: Rules-grounded formats
     if args.rule_explanations > 0:
         GenerateRuleExplanations(
             rules,
-            lambda doc: save_to_mongo(synthetic, [doc]),
+            save_item,
             models,
             args.validation_pct,
             target_count=args.rule_explanations,
@@ -466,7 +529,7 @@ def main():
     if args.rule_interactions > 0:
         GenerateRuleInteractions(
             rules,
-            lambda doc: save_to_mongo(synthetic, [doc]),
+            save_item,
             models,
             args.validation_pct,
             target_count=args.rule_interactions,
@@ -474,53 +537,85 @@ def main():
         ).generate_rule_interactions()
 
     if args.glossary_examples > 0:
-        docs = generate_glossary_with_examples(glossary, args.glossary_examples)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} glossary with examples documents")
-        save_to_mongo(synthetic, docs)
+        GenerateGlossaryWithExamples(
+            glossary,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.glossary_examples,
+            metrics=make_metrics("GenerateGlossaryWithExamples")
+        ).generate_glossary_with_examples()
 
     if args.rule_edge_cases > 0:
-        docs = generate_rule_edge_cases(rules, args.rule_edge_cases)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} rule edge case documents")
-        save_to_mongo(synthetic, docs)
+        GenerateRuleEdgeCases(
+            rules,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.rule_edge_cases,
+            metrics=make_metrics("GenerateRuleEdgeCases")
+        ).generate_rule_edge_cases()
 
     if args.rule_why > 0:
-        docs = generate_rule_why_questions(rules, args.rule_why)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} rule why question documents")
-        save_to_mongo(synthetic, docs)
+        GenerateRuleWhyQuestions(
+            rules,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.rule_why,
+            metrics=make_metrics("GenerateRuleWhyQuestions")
+        ).generate_rule_why_questions()
 
     # Phase 4: EDHREC-grounded formats
     if args.article_qa > 0:
-        docs = generate_article_qa(articles, args.article_qa)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} article Q&A documents")
-        save_to_mongo(synthetic, docs)
+        GenerateArticleQa(
+            articles,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.article_qa,
+            metrics=make_metrics("GenerateArticleQa")
+        ).generate_article_qa()
 
     if args.guide_qa > 0:
-        docs = generate_guide_qa(guides, args.guide_qa)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} guide Q&A documents")
-        save_to_mongo(synthetic, docs)
+        GenerateGuideQa(
+            guides,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.guide_qa,
+            metrics=make_metrics("GenerateGuideQa")
+        ).generate_guide_qa()
 
     if args.staple_analysis > 0:
-        docs = generate_staple_analysis(game_changers, args.staple_analysis)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} staple analysis documents")
-        save_to_mongo(synthetic, docs)
+        GenerateStapleAnalysis(
+            game_changers,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.staple_analysis,
+            metrics=make_metrics("GenerateStapleAnalysis")
+        ).generate_staple_analysis()
 
     if args.color_staples > 0:
-        docs = generate_color_staples(top_cards, args.color_staples)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} color staple documents")
-        save_to_mongo(synthetic, docs)
+        GenerateColorStaples(
+            top_cards,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.color_staples,
+            metrics=make_metrics("GenerateColorStaples")
+        ).generate_color_staples()
 
     if args.salt_questions > 0:
-        docs = generate_salt_questions(game_changers, args.salt_questions)
-        all_documents.extend(docs)
-        print(f"  ✓ Generated {len(docs):,} salt question documents")
-        save_to_mongo(synthetic, docs)
+        GenerateSaltQuestions(
+            game_changers,
+            save_item,
+            models,
+            args.validation_pct,
+            target_count=args.salt_questions,
+            metrics=make_metrics("GenerateSaltQuestions")
+        ).generate_salt_questions()
     
     # Summary
     print("\n" + "="*80)
@@ -549,6 +644,8 @@ def main():
         print("VALIDATION METRICS SUMMARY")
         print(f"{'='*80}")
         print(f"  Run ID: {run_id}")
+        print(f"  Generation model: {models[ModelType.GENERATION].name}")
+        print(f"  Validation model: {models[ModelType.VALIDATION].name}")
         for m in used_metrics:
             summary = m.summary()
             print(f"\n  Generator: {m.generator_name} (doc_id={m._id})")

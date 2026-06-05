@@ -1,88 +1,102 @@
 import pymongo
+from rich.console import Console
+from rich.status import Status
 from query_model import QueryModel
 import json
-from common import MODEL_NAME, build_staple_analysis_prompt
+from common import build_staple_analysis_prompt, validate_and_loop_with_suggested_fix
+from typing import Any, Callable
+from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
+from logger import print
 
-def generate_staple_analysis(game_changers_collection, target_count=2000) -> list[dict]:
-    """
-    Generate Q&A analyzing why game-changer cards are Commander staples.
-    Uses num_decks and salt scores to ground the analysis.
+DEFAULT = 2000
+console = Console()
 
-    Examples:
-    - "Why is Rhystic Study in 939K Commander decks?"
-    - "Why do people hate Sol Ring at the table?"
-    - "What kind of decks want Smothering Tithe?"
-    """
-    print(f"\n=== GENERATING {target_count:,} STAPLE ANALYSIS QUESTIONS ===")
-    mongo_documents = []
+class GenerateStapleAnalysis:
+    def __init__(
+        self,
+        game_changers_collection: pymongo.collection.Collection,  # type: ignore
+        save_item: Callable[[QuestionAnswerEnhanced], None],
+        models: dict[ModelType, Model],
+        validation_pct: int,
+        target_count: int = DEFAULT,
+        metrics: ValidationMetrics | None = None,
+    ) -> None:
+        self.game_changers_collection = game_changers_collection
+        self.save_item = save_item
+        self.models = models
+        self.validation_pct = validation_pct
+        self.target_count = target_count
+        self.metrics = metrics
 
-    print("  → Fetching game-changer cards from MongoDB...")
-    all_changers = list(game_changers_collection.find(
-        {'game_changer': True, 'oracle_text': {'$exists': True, '$ne': ''}},
-        {'name': 1, 'oracle_text': 1, 'type': 1, 'mana_cost': 1,
-         'num_decks': 1, 'salt': 1, 'tags': 1, 'color_identity': 1}
-    ).sort('num_decks', -1))  # Sort by popularity
+    def generate_staple_analysis(self) -> None:
+        print(f"\n=== GENERATING {self.target_count:,} STAPLE ANALYSIS QUESTIONS ===")
 
-    print(f"  → Found {len(all_changers):,} game-changer cards")
+        cards: list[dict] = []
+        with console.status("[bold green]Extracting game-changer cards...") as status:
+            all_changers = list(
+                self.game_changers_collection.find(
+                    {"game_changer": True, "oracle_text": {"$exists": True, "$ne": ""}},
+                    {
+                        "name": 1,
+                        "oracle_text": 1,
+                        "type": 1,
+                        "mana_cost": 1,
+                        "num_decks": 1,
+                        "salt": 1,
+                        "tags": 1,
+                        "color_identity": 1,
+                    },
+                ).sort("num_decks", -1)
+            )
+            cards = all_changers[: self.target_count + int(self.target_count * 0.25)]
+            status.update(f"[bold green]Extracted {len(cards):,} game-changer cards")
 
-    for card in all_changers:
-        if len(mongo_documents) >= target_count:
-            break
+        print(f"  → Processing {len(cards):,} cards...")
 
-        name = card.get('name', '')
-        if not name:
-            continue
+        i: int = 0
+        for card in cards:
+            if i >= self.target_count:
+                break
 
-        if (len(mongo_documents) + 1) % 100 == 0:
-            print(f"    Generated {len(mongo_documents):,}/{target_count:,}...")
+            name = card.get("name", "")
+            if not name:
+                continue
 
-        prompt = build_staple_analysis_prompt(card)
+            if (i + 1) % 100 == 0:
+                print(f"    Generated {i:,}/{self.target_count:,}...")
 
-        try:
-            response = query_ollama(MODEL_NAME, prompt)
-            response = response.replace("```json", "").replace("```", "").strip()
-            if not response.startswith('['):
-                start = response.find('[')
-                end = response.rfind(']')
-                if start != -1 and end != -1:
-                    response = response[start:end+1]
-            qa_pairs = json.loads(response)
+            prompt = build_staple_analysis_prompt(card)
 
-            accepted = 0
-            for qa in qa_pairs:
-                if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    # Validate: card name must appear in answer
-                    if name not in qa['answer']:
-                        continue
-                    is_valid, reason, score = validate_qa(
-                        qa['question'], qa['answer'],
-                        context=f"Card: {name}\nDecks played in: {card.get('num_decks', 0):,}\nSalt score: {card.get('salt', 0):.2f}",
-                        category="staple_analysis"
+            try:
+                query_model = QueryModel()
+                response = query_model.query(self.models[ModelType.GENERATION], prompt)
+                qa_pairs = list(
+                    map(
+                        lambda qa: QuestionAnswer(qa["question"], qa["answer"]),
+                        json.loads(response),
                     )
-                    if is_valid:
-                        mongo_documents.append({
-                            "question": qa['question'],
-                            "answer": qa['answer'],
-                            "category": "staple_analysis",
-                            "source_data": [name],
-                            "card_name": name,
-                            "num_decks": card.get('num_decks', 0),
-                            "salt": card.get('salt', 0),
-                            "validated": True,
-                            "validation_score": score,
-                            "needs_review": False
-                        })
-                        accepted += 1
-                        if len(mongo_documents) >= target_count:
-                            break
-                    else:
-                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:60]}")
+                )
 
-            print(f"    ✓ ACCEPTED {accepted}/3 from: {name}")
-        except Exception as e:
-            print(f"  ✗ Error for card '{name}': {type(e).__name__}: {e}")
-            continue
+                qa_context = f"Card: {name}\nDecks played in: {card.get('num_decks', 0):,}\nSalt score: {card.get('salt', 0):.2f}"
 
-    print(f"  ✓ Generated {len(mongo_documents):,} staple analysis questions")
-    return mongo_documents
+                is_valid, doc = validate_and_loop_with_suggested_fix(
+                    query_model=query_model,
+                    models=self.models,
+                    qa_pairs=qa_pairs,
+                    validation_pct=self.validation_pct,
+                    enable_extra_validation=False,
+                    build_context=lambda: qa_context,
+                    source_category="staple_analysis",
+                    source_data=[name],
+                    source_template=None,
+                    metrics=self.metrics,
+                )
 
+                if is_valid and doc:
+                    self.save_item(doc)
+
+            except Exception as e:
+                print(f"  ✗ Error for card '{name}': {type(e).__name__}: {e}")
+                continue
+
+            i = i + 1

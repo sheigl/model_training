@@ -1,86 +1,98 @@
 import random
-
 import pymongo
+from rich.console import Console
+from rich.status import Status
 from query_model import QueryModel
 import json
-from common import MODEL_NAME, build_guide_qa_prompt, clean_html
+from common import build_guide_qa_prompt, clean_html, validate_and_loop_with_suggested_fix
+from typing import Any, Callable
+from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
+from logger import print
 
-def generate_guide_qa(guides_collection, target_count=2000) -> list[dict]:
-    """
-    Generate Q&A grounded in EDHREC guide content.
-    Guides are more instructional than articles — focus on how-to and best practices.
+DEFAULT = 2000
+console = Console()
 
-    Examples:
-    - "How do I build a consistent mana base?"
-    - "What mistakes do beginners make with Commander deckbuilding?"
-    """
-    print(f"\n=== GENERATING {target_count:,} GUIDE Q&A ===")
-    mongo_documents = []
+class GenerateGuideQa:
+    def __init__(
+        self,
+        guides_collection: pymongo.collection.Collection,  # type: ignore
+        save_item: Callable[[QuestionAnswerEnhanced], None],
+        models: dict[ModelType, Model],
+        validation_pct: int,
+        target_count: int = DEFAULT,
+        metrics: ValidationMetrics | None = None,
+    ) -> None:
+        self.guides_collection = guides_collection
+        self.save_item = save_item
+        self.models = models
+        self.validation_pct = validation_pct
+        self.target_count = target_count
+        self.metrics = metrics
 
-    print("  → Fetching guides from MongoDB...")
-    all_guides = list(guides_collection.find(
-        {'title': {'$exists': True}, 'content': {'$exists': True, '$ne': ''}},
-        {'title': 1, 'content': 1}
-    ))
+    def generate_guide_qa(self) -> None:
+        print(f"\n=== GENERATING {self.target_count:,} GUIDE Q&A ===")
 
-    good_guides = [g for g in all_guides if len(clean_html(g.get('content', ''))) > 300]
-    random.shuffle(good_guides)
-    print(f"  → Found {len(good_guides):,} guides with sufficient content")
+        guides: list[dict] = []
+        with console.status("[bold green]Extracting guide data...") as status:
+            all_guides = list(
+                self.guides_collection.find(
+                    {"title": {"$exists": True}, "content": {"$exists": True, "$ne": ""}},
+                    {"title": 1, "content": 1},
+                )
+            )
+            good_guides = [g for g in all_guides if len(clean_html(g.get("content", ""))) > 300]
+            random.shuffle(good_guides)
+            guides = good_guides[: self.target_count + int(self.target_count * 0.25)]
+            status.update(f"[bold green]Extracted {len(guides):,} guides")
 
-    for guide in good_guides:
-        if len(mongo_documents) >= target_count:
-            break
+        print(f"  → Processing {len(guides):,} guides...")
 
-        title = guide.get('title', '')
-        content = clean_html(guide.get('content', ''))[:2000]
+        i: int = 0
+        for guide in guides:
+            if i >= self.target_count:
+                break
 
-        if not title or not content:
-            continue
+            title = guide.get("title", "")
+            content = clean_html(guide.get("content", ""))[:2000]
 
-        if (len(mongo_documents) + 1) % 100 == 0:
-            print(f"    Generated {len(mongo_documents):,}/{target_count:,}...")
+            if not title or not content:
+                continue
 
-        prompt = build_guide_qa_prompt(title, content)
+            if (i + 1) % 100 == 0:
+                print(f"    Generated {i:,}/{self.target_count:,}...")
 
-        try:
-            response = query_ollama(MODEL_NAME, prompt, max_tokens=8192)
-            response = response.replace("```json", "").replace("```", "").strip()
-            if not response.startswith('['):
-                start = response.find('[')
-                end = response.rfind(']')
-                if start != -1 and end != -1:
-                    response = response[start:end+1]
-            qa_pairs = json.loads(response)
+            prompt = build_guide_qa_prompt(title, content)
 
-            accepted = 0
-            for qa in qa_pairs:
-                if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    is_valid, reason, score = validate_qa(
-                        qa['question'], qa['answer'],
-                        context=f"Guide: {title}\n{content[:500]}",
-                        category="guide_qa"
+            try:
+                query_model = QueryModel()
+                response = query_model.query(self.models[ModelType.GENERATION], prompt, max_tokens=8192)
+                qa_pairs = list(
+                    map(
+                        lambda qa: QuestionAnswer(qa["question"], qa["answer"]),
+                        json.loads(response),
                     )
-                    if is_valid:
-                        mongo_documents.append({
-                            "question": qa['question'],
-                            "answer": qa['answer'],
-                            "category": "guide_qa",
-                            "source_data": [title],
-                            "guide_title": title,
-                            "validated": True,
-                            "validation_score": score,
-                            "needs_review": False
-                        })
-                        accepted += 1
-                        if len(mongo_documents) >= target_count:
-                            break
-                    else:
-                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:60]}")
+                )
 
-            print(f"    ✓ ACCEPTED {accepted}/4 from: {title[:60]}")
-        except Exception as e:
-            print(f"  ✗ Error for guide '{title[:50]}': {type(e).__name__}: {e}")
-            continue
+                qa_context = f"Guide: {title}\n{content[:500]}"
 
-    print(f"  ✓ Generated {len(mongo_documents):,} guide Q&A examples")
-    return mongo_documents
+                is_valid, doc = validate_and_loop_with_suggested_fix(
+                    query_model=query_model,
+                    models=self.models,
+                    qa_pairs=qa_pairs,
+                    validation_pct=self.validation_pct,
+                    enable_extra_validation=True,
+                    build_context=lambda: qa_context,
+                    source_category="guide_qa",
+                    source_data=[title],
+                    source_template=None,
+                    metrics=self.metrics,
+                )
+
+                if is_valid and doc:
+                    self.save_item(doc)
+
+            except Exception as e:
+                print(f"  ✗ Error for guide '{title[:50]}': {type(e).__name__}: {e}")
+                continue
+
+            i = i + 1

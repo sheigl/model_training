@@ -38,11 +38,15 @@ class ValidationMetrics:
         metrics_collection=None,
         run_id: str | None = None,
         generator_name: str | None = None,
+        generation_model: str | None = None,
+        validation_model: str | None = None,
     ):
         self.output_path = output_path
         self.metrics_collection = metrics_collection
         self.run_id = run_id or str(uuid.uuid4())
         self.generator_name = generator_name or "unknown"
+        self.generation_model = generation_model or "unknown"
+        self.validation_model = validation_model or "unknown"
         self._id = str(uuid.uuid4())
         self.total_candidates = 0
         self.total_validated = 0
@@ -242,6 +246,8 @@ class ValidationMetrics:
         total_validated_or_skipped = self.total_validated + self.total_skipped
         total_with_fixes = self.total_pass_after_fix + self.total_failed_after_fixes
         return {
+            "generation_model": self.generation_model,
+            "validation_model": self.validation_model,
             "total_candidates": self.total_candidates,
             "total_validated": self.total_validated,
             "total_skipped": self.total_skipped,

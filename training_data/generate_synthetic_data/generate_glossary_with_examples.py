@@ -1,89 +1,97 @@
 import random
-
 import pymongo
+from rich.console import Console
+from rich.status import Status
 from query_model import QueryModel
 import json
-from common import MODEL_NAME, build_glossary_with_examples_prompt
+from common import build_glossary_with_examples_prompt, validate_and_loop_with_suggested_fix
+from typing import Any, Callable
+from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
+from logger import print
 
-def generate_glossary_with_examples(glossary_collection, target_count=1500) -> list[dict]:
-    """
-    Generate Q&A from glossary terms with concrete in-game examples.
-    Grounded in the official glossary definition — not just "what does X mean".
+DEFAULT = 1500
+console = Console()
 
-    Examples:
-    - "Give me an example of deathtouch in a game."
-    - "How does lifelink work in practice?"
-    - "What's the difference between exile and destroy?"
-    """
-    print(f"\n=== GENERATING {target_count:,} GLOSSARY WITH EXAMPLES QUESTIONS ===")
-    mongo_documents = []
+class GenerateGlossaryWithExamples:
+    def __init__(
+        self,
+        glossary_collection: pymongo.collection.Collection,  # type: ignore
+        save_item: Callable[[QuestionAnswerEnhanced], None],
+        models: dict[ModelType, Model],
+        validation_pct: int,
+        target_count: int = DEFAULT,
+        metrics: ValidationMetrics | None = None,
+    ) -> None:
+        self.glossary_collection = glossary_collection
+        self.save_item = save_item
+        self.models = models
+        self.validation_pct = validation_pct
+        self.target_count = target_count
+        self.metrics = metrics
 
-    print("  → Fetching glossary terms from MongoDB...")
-    all_terms = list(glossary_collection.find(
-        {'word': {'$exists': True}, 'definition': {'$exists': True, '$ne': ''}},
-        {'word': 1, 'definition': 1}
-    ))
+    def generate_glossary_with_examples(self) -> None:
+        print(f"\n=== GENERATING {self.target_count:,} GLOSSARY WITH EXAMPLES QUESTIONS ===")
 
-    # Filter to terms with meaningful definitions
-    meaningful_terms = [t for t in all_terms if len(t.get('definition', '')) > 30]
-    random.shuffle(meaningful_terms)
-    print(f"  → Found {len(meaningful_terms):,} glossary terms")
+        terms: list[dict] = []
+        with console.status("[bold green]Extracting glossary terms...") as status:
+            all_terms = list(
+                self.glossary_collection.find(
+                    {"word": {"$exists": True}, "definition": {"$exists": True, "$ne": ""}},
+                    {"word": 1, "definition": 1},
+                )
+            )
+            meaningful_terms = [t for t in all_terms if len(t.get("definition", "")) > 30]
+            random.shuffle(meaningful_terms)
+            terms = meaningful_terms[: self.target_count + int(self.target_count * 0.25)]
+            status.update(f"[bold green]Extracted {len(terms):,} glossary terms")
 
-    for term_doc in meaningful_terms:
-        if len(mongo_documents) >= target_count:
-            break
+        print(f"  → Processing {len(terms):,} glossary terms...")
 
-        term = term_doc.get('word', '')
-        definition = term_doc.get('definition', '')
+        i: int = 0
+        for term_doc in terms:
+            if i >= self.target_count:
+                break
 
-        if not term or not definition:
-            continue
+            term = term_doc.get("word", "")
+            definition = term_doc.get("definition", "")
+            if not term or not definition:
+                continue
 
-        if (len(mongo_documents) + 1) % 100 == 0:
-            print(f"    Generated {len(mongo_documents):,}/{target_count:,}...")
+            if (i + 1) % 100 == 0:
+                print(f"    Generated {i:,}/{self.target_count:,}...")
 
-        prompt = build_glossary_with_examples_prompt(term, definition)
+            prompt = build_glossary_with_examples_prompt(term, definition)
 
-        try:
-            response = query_ollama(MODEL_NAME, prompt)
-            response = response.replace("```json", "").replace("```", "").strip()
-            if not response.startswith('['):
-                start = response.find('[')
-                end = response.rfind(']')
-                if start != -1 and end != -1:
-                    response = response[start:end+1]
-            qa_pairs = json.loads(response)
-
-            for qa in qa_pairs:
-                if 'question' in qa and 'answer' in qa and len(qa['answer']) > 80:
-                    is_valid, reason, score = validate_qa(
-                        qa['question'], qa['answer'],
-                        context=f"Term: {term}\nDefinition: {definition}",
-                        category="glossary_with_examples"
+            try:
+                query_model = QueryModel()
+                response = query_model.query(self.models[ModelType.GENERATION], prompt)
+                qa_pairs = list(
+                    map(
+                        lambda qa: QuestionAnswer(qa["question"], qa["answer"]),
+                        json.loads(response),
                     )
-                    if is_valid:
-                        mongo_documents.append({
-                            "question": qa['question'],
-                            "answer": qa['answer'],
-                            "category": "glossary_with_examples",
-                            "source_data": [f"glossary_{term}"],
-                            "term": term,
-                            "definition": definition,
-                            "validated": True,
-                            "validation_score": score,
-                            "needs_review": False
-                        })
-                        print(f"    ✓ ACCEPTED (score: {score}/10, {term}): {qa['question'][:70]}")
-                        if len(mongo_documents) >= target_count:
-                            break
-                    else:
-                        print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa['question'][:60]}")
-                else:
-                    print(f"    ✗ REJECTED (too short or missing keys): {str(qa)[:60]}")
-        except Exception as e:
-            print(f"  ✗ Error for term '{term}': {type(e).__name__}: {e}")
-            continue
+                )
 
-    print(f"  ✓ Generated {len(mongo_documents):,} glossary with examples questions")
-    return mongo_documents
+                qa_context = f"Term: {term}\nDefinition: {definition}"
 
+                is_valid, doc = validate_and_loop_with_suggested_fix(
+                    query_model=query_model,
+                    models=self.models,
+                    qa_pairs=qa_pairs,
+                    validation_pct=self.validation_pct,
+                    enable_extra_validation=False,
+                    build_context=lambda: qa_context,
+                    source_category="glossary_with_examples",
+                    source_data=[f"glossary_{term}"],
+                    source_template=None,
+                    metrics=self.metrics,
+                )
+
+                if is_valid and doc:
+                    self.save_item(doc)
+
+            except Exception as e:
+                print(f"  ✗ Error for term '{term}': {type(e).__name__}: {e}")
+                continue
+
+            i = i + 1
