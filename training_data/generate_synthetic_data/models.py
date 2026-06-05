@@ -23,6 +23,9 @@ class QuestionAnswerEnhanced(QuestionAnswer):
         self.generated_at: datetime | None = None
         self.version: int = 0
         self.source_template : str | None = None
+        self.generation_model: str | None = None
+        self.validation_model: str | None = None
+        self.run_id: str | None = None
         
 
 class ValidationMetrics:

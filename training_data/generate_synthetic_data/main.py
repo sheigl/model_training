@@ -55,6 +55,8 @@ MongoDB Schema:
   "source_data": ["card_name", ...],  // Cards/combos referenced
   "validated": true,
   "needs_review": false,
+  "generation_model": "qwen2.5:14b",  // Model that generated the Q&A pair
+  "validation_model": "qwen2.5:14b",  // Model that validated it (null if not validated)
   "generated_at": "2026-02-13T..."
 }
 """

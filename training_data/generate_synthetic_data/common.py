@@ -868,7 +868,6 @@ def validate_and_loop_with_suggested_fix(
         is_valid: bool = True
         reason: str | None = None
         score: float | None = None
-        suggested_fix: str | None = None
 
         while should_validate:
             if metrics:
@@ -876,7 +875,7 @@ def validate_and_loop_with_suggested_fix(
 
             qa_context = build_context()
 
-            is_valid, reason, score, suggested_fix = query_model.validate_qa(
+            is_valid, reason, score = query_model.validate_qa(
                 validation_model=models[ModelType.VALIDATION],
                 question=qa.question,
                 answer=qa.answer,
@@ -885,20 +884,32 @@ def validate_and_loop_with_suggested_fix(
                 enable_extra_validation=enable_extra_validation
             )
 
-            if not is_valid and suggested_fix:
-                print(f"    ✗ REJECTED but suggested fix provided: {suggested_fix}. Applying fix and re-validating...")
-                qa.answer = suggested_fix
+            if not is_valid:
+                print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa.question[:80]}")
+                print(f"    → Passing back to generation model for correction...")
+                new_answer = query_model.regenerate_answer(
+                    generation_model=models[ModelType.GENERATION],
+                    question=qa.question,
+                    old_answer=qa.answer,
+                    reason=reason,
+                    score=score,
+                    context=qa_context,
+                    category=source_category
+                )
+                if new_answer:
+                    qa.answer = new_answer
+                else:
+                    print(f"    ✗ Regeneration failed, moving on.")
+                    break
                 iteration += 1
                 if metrics:
                     metrics.record_fix_attempt(source_category, source_template)
                 if iteration >= 3:
-                    print(f"    ✗ REJECTED after 3 iterations, moving on.")
+                    print(f"    ✗ REJECTED after 3 regeneration attempts, moving on.")
                     break
                 continue
-            elif is_valid:
-                break
             else:
-                print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa.question[:80]}")
+                break
 
         if is_valid:
             print(f"    ✓ ACCEPTED (score: {score}/10): {qa.question[:80]}")
@@ -914,8 +925,11 @@ def validate_and_loop_with_suggested_fix(
             doc.validated = should_validate
             doc.validation_score = score
             doc.needs_review = (not should_validate)
-            doc.suggested_fix = suggested_fix if not is_valid else None
+            doc.suggested_fix = None
             doc.source_template = source_template
+            doc.generation_model = models[ModelType.GENERATION].name
+            doc.validation_model = models[ModelType.VALIDATION].name if should_validate else None
+            doc.run_id = metrics.run_id if metrics else None
 
             if metrics:
                 metrics.flush()

@@ -217,7 +217,7 @@ class QueryModel():
             return False, f"Validation error: {str(e)}", 0
 
 
-    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> tuple[bool, str | None, float | None, str | None]:
+    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> tuple[bool, str | None, float | None]:
         """
         Generic Q&A validator — calls the model to score any question/answer pair.
 
@@ -225,7 +225,7 @@ class QueryModel():
         `context` should contain the source material the answer is grounded in
         (rule text, article content, archetype description, etc.).
 
-        Returns: (is_valid: bool, reason: str, score: int)
+        Returns: (is_valid: bool, reason: str, score: float)
         """
         prompt = self.__build_qa_validation_prompt(question, answer, context, category, enable_extra_validation)
 
@@ -243,22 +243,74 @@ class QueryModel():
             is_acceptable = result.get('is_acceptable', False)
             errors = result.get('errors', '')
             reason = result.get('reason', f"Score {score}/10")
-            suggested_fix = result.get('suggested_fix', '')
 
             # Force reject if errors mentioned
             if errors and errors.lower() not in ['none', 'n/a', '']:
                 is_acceptable = False
                 score = min(score, 4)
 
-            return is_acceptable and score >= 7, reason, score, suggested_fix
+            return is_acceptable and score >= 7, reason, score
 
         except json.JSONDecodeError as e:
             print(f"    ⚠️  Validation JSON parse failed: {e}")
-            return False, f"Validation parse failed: {str(e)}", 0, None
+            return False, f"Validation parse failed: {str(e)}", 0
         except Exception as e:
             print(f"    ⚠️  Validation error: {e}")
-            return False, f"Validation error: {str(e)}", 0, None
-        
+            return False, f"Validation error: {str(e)}", 0
+
+    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "") -> str | None:
+        """
+        Ask the generation model to produce a corrected answer based on validation feedback.
+        Returns the new answer string, or None if regeneration failed.
+        """
+        context_block = (
+            f"\nSource material the answer should be grounded in:\n{context}\n"
+            if context else ""
+        )
+
+        prompt = f"""{SYSTEM_MESSAGE}
+
+You previously generated an answer to the following question. It was validated and found to have issues.
+
+Question: {question}
+
+Previous answer: {old_answer}
+
+Validation feedback: {reason} (Score: {score}/10)
+Category: {category or 'general'}{context_block}
+
+Please provide a corrected answer that addresses the validation feedback. Be concise, accurate, and directly answer the question.
+
+Output ONLY a JSON object:
+{{
+"answer": "<corrected answer text>"
+}}
+
+Output ONLY valid JSON, no other text."""
+
+        try:
+            response = self.query(generation_model, prompt)
+            response = response.replace("```json", "").replace("```", "").strip()
+            if not response.startswith('{'):
+                start = response.find('{')
+                end = response.rfind('}')
+                if start != -1 and end != -1:
+                    response = response[start:end+1]
+
+            result = json.loads(response)
+            new_answer = result.get('answer', '').strip()
+            if new_answer:
+                return new_answer
+            else:
+                print("    ⚠️  Regeneration returned empty answer.")
+                return None
+        except json.JSONDecodeError as e:
+            print(f"    ⚠️  Regeneration JSON parse failed: {e}")
+            return None
+        except Exception as e:
+            print(f"    ⚠️  Regeneration error: {e}")
+            return None
+
     def __build_qa_validation_prompt(self, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> str:
         """Build the generic Q&A validation prompt used by validate_qa()."""
         
@@ -327,8 +379,7 @@ class QueryModel():
     "is_acceptable": <true/false>,
     "errors": "<factual errors if any, or 'none'>",
     "missing_info": "<what is missing or vague, if anything. If score is 7 or above with no errors, leave blank.>",
-    "reason": "<one sentence summary. If score is 7 or above with no errors, leave blank.>",
-    "suggested_fix": "<if rejected, provide a corrected answer. If score is 7 or above with no errors, leave blank.>"
+    "reason": "<one sentence summary. If score is 7 or above with no errors, leave blank.>"
     }}
 
     Output ONLY valid JSON, no other text."""
