@@ -219,28 +219,73 @@ Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c)
         
         return cards
 
+    # Rarity tiers for stratified sampling (lower score = rarer = higher priority)
+    RARE_FEATURES = [
+        "Lock", "Infinite combat phases", "Infinite self-mill",
+        "Infinite landfall triggers", "Infinite Treasure tokens"
+    ]
+    MEDIUM_FEATURES = [
+        "Infinite +1/+1 counters (single)", "Infinite colored mana",
+        "Infinite creature tokens", "Infinite draw triggers",
+        "Infinite lifegain triggers", "Infinite colorless mana"
+    ]
+
     def __extract_combo_data(
-        self, 
+        self,
         combos_collection: pymongo.collection.Collection,  # pyright: ignore[reportPrivateImportUsage]
         card_collection: pymongo.collection.Collection,  # pyright: ignore[reportPrivateImportUsage]
         scryfall_client: ScryfallMongo,
         target_count: int,
         rich_status: Status) -> list[ProjectedCombo]:
-        """Extract combo data from commander spellbook documents and prepare for prompt generation."""
-        all_combos = list(combos_collection.find({'status': 'OK'}))
+        """Extract combo data from commander spellbook documents using stratified sampling by feature rarity.
+
+        Combos producing rare features (lock, combat phases, self-mill, etc.) get ~4x representation.
+        Medium-rarity features get ~2x. Common patterns (ETB/LTB/death/sacrifice) stay at 1x.
+        Final pool is shuffled so you don't get blocks of same-type combos.
+        """
+        pipeline = [
+            {"$match": {"status": "OK"}},
+            {"$unwind": "$produces"},
+            {"$addFields": {
+                "produces.rarityScore": {
+                    "$switch": {
+                        "branches": [
+                            {"case": {"$in": ["$produces.feature.name", self.RARE_FEATURES]}, "then": 1},
+                            {"case": {"$in": ["$produces.feature.name", self.MEDIUM_FEATURES]}, "then": 2},
+                            {"case": True, "then": 3}
+                        ]
+                    }
+                }
+            }},
+            {"$group": {
+                "_id": "$_id",
+                "name": {"$first": "$name"},
+                "description": {"$first": "$description"},
+                "uses": {"$first": "$uses"},
+                "produces": {"$push": "$produces"},
+                "notes": {"$first": "$notes"},
+                "requires": {"$first": "$requires"},
+                "bestRarityScore": {"$min": "$produces.rarityScore"}
+            }},
+            {"$sort": {"bestRarityScore": 1, "_id": 1}},
+            # Pull a larger pool biased toward rare features
+            {"$limit": target_count + int(target_count * 0.75)}
+        ]
+
+        all_combos = list(combos_collection.aggregate(pipeline))
         combos: list[ProjectedCombo] = []
         
-        random.shuffle(all_combos)
-        all_combos = all_combos[:target_count + int(target_count * .25)]
-        
+        seen_names: set[str] = set()
+
         for i, combo in enumerate(all_combos):
-            
+
             rich_status.update(f"[bold green]Extracting combo data... {i+1}/{len(all_combos)}")
             cards: list[dict] = combo.get('uses', [])
             combo_name = "|".join(map(lambda card: card.get('card', {}).get('name', 'Unknown'), cards))
-            
-            if len(list(filter(lambda combo: combo.name == combo_name, combos))) > 0:
+
+            if combo_name in seen_names:
                 continue
+            seen_names.add(combo_name)
             
             projected_combo: ProjectedCombo = ProjectedCombo(
                 name=combo_name,
