@@ -319,19 +319,11 @@ def main():
     # Unique run ID shared by all generators in this process
     run_id = str(uuid.uuid4())
 
-    # Helper to create a per-generator metrics instance
-    metrics_path_base = args.metrics_path or f"/tmp/opencode/synthetic_validation_metrics_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
     active_metrics: list[ValidationMetrics] = []
     all_documents: list[dict] = []
 
     def make_metrics(generator_name: str) -> ValidationMetrics:
-        # Derive a per-generator file path by inserting the name before .json
-        if metrics_path_base.endswith('.json'):
-            generator_path = metrics_path_base[:-5] + f"_{generator_name}.json"
-        else:
-            generator_path = metrics_path_base + f"_{generator_name}.json"
         m = ValidationMetrics(
-            output_path=generator_path,
             metrics_collection=metrics_collection,
             run_id=run_id,
             generator_name=generator_name,
@@ -634,13 +626,13 @@ def main():
     needs_review = sum(1 for d in all_documents if d.get('needs_review', False))
     print(f"\n⚠️  Needs manual review: {needs_review:,}")
 
-    # Write final validation metrics to MongoDB (and file as fallback)
+    # Write final validation metrics to MongoDB
     used_metrics = [m for m in active_metrics if m.total_candidates > 0]
     if used_metrics:
         print(f"\n📊 Validation metrics written to MongoDB (synthetic_metrics.generator_runs, run_id={run_id})")
         for m in used_metrics:
-            m.write_to_file(m.output_path)
-            print(f"  → {m.generator_name}: doc_id={m._id}  file={m.output_path}")
+            m.flush()
+            print(f"  → {m.generator_name}: doc_id={m._id}")
 
         print(f"\n{'='*80}")
         print("VALIDATION METRICS SUMMARY")

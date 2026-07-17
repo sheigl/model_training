@@ -1,8 +1,11 @@
 #!/bin/sh
 
+#./run_combos.sh 1000 https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.5:9b,sk-1234-dasdasdjkase381312321==2311 https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.6:27b,sk-1234-dasdasdjkase381312321==2311
+
+
 NUM=${1:-1}
-MODEL=${2:-http://localhost:8080/v1,openai,qwen3.6:27b}
-VALIDATION_MODEL=${3:-http://localhost:8080/v1,openai,qwen3.6:27b}
+MODEL=${2:-https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.6:27b-small,sk-UA85o9nOaSFX6IA0xjyK3kvjLRcZcsPm}
+VALIDATION_MODEL=${3:-https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.6:27b-small,sk-UA85o9nOaSFX6IA0xjyK3kvjLRcZcsPm}
 VALIDATION_PCT=${4:-1}
 
 BASE_DIR=/home/sheigl/code/model_training

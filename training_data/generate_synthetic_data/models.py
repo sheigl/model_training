@@ -37,14 +37,12 @@ class ValidationMetrics:
 
     def __init__(
         self,
-        output_path: str | None = None,
         metrics_collection=None,
         run_id: str | None = None,
         generator_name: str | None = None,
         generation_model: str | None = None,
         validation_model: str | None = None,
     ):
-        self.output_path = output_path
         self.metrics_collection = metrics_collection
         self.run_id = run_id or str(uuid.uuid4())
         self.generator_name = generator_name or "unknown"
@@ -182,11 +180,9 @@ class ValidationMetrics:
             }
 
     def flush(self):
-        """Write current metrics to MongoDB (if configured) and/or local file."""
+        """Write current metrics to MongoDB (if configured)."""
         if self.metrics_collection is not None:
             self.save_to_mongo(self.metrics_collection)
-        if self.output_path:
-            self.write_to_file(self.output_path)
 
     def save_to_mongo(self, collection):
         """Upsert this metrics instance into the given MongoDB collection."""
@@ -270,17 +266,6 @@ class ValidationMetrics:
             "by_category": _build_substats(self.category_stats),
             "by_template": _build_substats(self.template_stats),
         }
-
-    def write_to_file(self, filepath: str):
-        import json
-        from datetime import datetime
-        data = {
-            "generated_at": datetime.utcnow().isoformat() + "Z",
-            "metrics": self.summary(),
-        }
-        with open(filepath, "w") as f:
-            json.dump(data, f, indent=2)
-
 
 class ModelType(Enum):
     GENERATION = "generation"
