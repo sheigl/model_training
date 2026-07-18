@@ -4,8 +4,8 @@
 
 
 NUM=${1:-1}
-MODEL=${2:-https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.6:27b-small,sk-UA85o9nOaSFX6IA0xjyK3kvjLRcZcsPm}
-VALIDATION_MODEL=${3:-https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.6:27b-small,sk-UA85o9nOaSFX6IA0xjyK3kvjLRcZcsPm}
+MODEL=${2:-https://server.tailc63ae8.ts.net:4444/v1,openai,ornith-1.0:9b,sk-UA85o9nOaSFX6IA0xjyK3kvjLRcZcsPm}
+VALIDATION_MODEL=${3:-https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.6:27b,sk-UA85o9nOaSFX6IA0xjyK3kvjLRcZcsPm}
 VALIDATION_PCT=${4:-1}
 
 BASE_DIR=/home/sheigl/code/model_training
