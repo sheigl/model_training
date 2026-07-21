@@ -3,33 +3,33 @@ import sys
 import uuid
 from typing import Collection
 
-from generate_archetypes import * 
-from generate_article_qa import * 
-from generate_budget_alternatives import * 
-from generate_card_search_queries import * 
-from generate_color_identity_questions import * 
-from generate_color_staples import * 
-from generate_combo_queries import * 
-from generate_commander_building import * 
-from generate_commander_knowledge import * 
-from generate_comparison_questions import * 
-from generate_deckbuilding_theory import * 
-from generate_game_theory import * 
-from generate_glossary_with_examples import * 
-from generate_guide_qa import * 
-from generate_meta_knowledge import * 
-from generate_multi_card_usage import * 
-from generate_quick_guidelines import * 
-from generate_reverse_lookup_questions import * 
-from generate_rule_edge_cases import * 
-from generate_rule_explanations import * 
-from generate_rule_interactions import * 
-from generate_rule_why_questions import * 
-from generate_rules_scenarios import * 
-from generate_salt_questions import * 
-from generate_staple_analysis import * 
-from generate_synergy_questions import * 
-from generate_terminology_questions import *
+from .generate_archetypes import * 
+from .generate_article_qa import * 
+from .generate_budget_alternatives import * 
+from .generate_card_search_queries import GenerateCardSearchQueries 
+from .generate_color_identity_questions import * 
+from .generate_color_staples import * 
+from .generate_combo_queries import * 
+from .generate_commander_building import * 
+from .generate_commander_knowledge import * 
+from .generate_comparison_questions import * 
+from .generate_deckbuilding_theory import * 
+from .generate_game_theory import * 
+from .generate_glossary_with_examples import * 
+from .generate_guide_qa import * 
+from .generate_meta_knowledge import * 
+from .generate_multi_card_usage import * 
+from .generate_quick_guidelines import * 
+from .generate_reverse_lookup_questions import * 
+from .generate_rule_edge_cases import * 
+from .generate_rule_explanations import * 
+from .generate_rule_interactions import * 
+from .generate_rules_scenarios import * 
+from .generate_rule_why_questions import * 
+from .generate_salt_questions import * 
+from .generate_staple_analysis import * 
+from .generate_synergy_questions import GenerateSynergyQuestions, GenerateSynergyQuestionsLegacy 
+from .generate_terminology_questions import *
 from dotenv import load_dotenv;
 sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_buffering=True) # type: ignore
 # Load environment variables from .env file
@@ -69,9 +69,9 @@ from datetime import datetime
 import argparse
 import time
 import ollama
-from common import *
-from models import ValidationMetrics, QuestionAnswerEnhanced
-from scryfall_mongodb import ScryfallMongo
+from .common import *
+from .models import ValidationMetrics, QuestionAnswerEnhanced
+from .data_access import MTGDataAccess
 
 # =============================================================================
 # MONGODB SETUP
@@ -111,7 +111,8 @@ def get_mongo_collections(uri, username, password):
     # Metrics collection (separate DB so concurrent generators don't collide)
     metrics_collection = client['synthetic_metrics']['generator_runs']
 
-    return cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, archetypes, ScryfallMongo(client=client), metrics_collection
+    return (cards, combos, synthetic, commanders, rules, glossary, articles, guides, 
+            game_changers, top_cards, archetypes, metrics_collection)
 
 
 def save_to_mongo(synthetic_collection, examples: list[QuestionAnswerEnhanced], batch_size=500):
@@ -172,8 +173,6 @@ def save_to_mongo(synthetic_collection, examples: list[QuestionAnswerEnhanced], 
     print(f"  ✓ Done: {inserted:,} inserted, {skipped:,} skipped as duplicates")
 
 
-
-
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -230,6 +229,7 @@ def main():
     parser.add_argument('--phase4', action='store_true', help='Generate all Phase 4 formats (9K total) - EDHREC grounded')
     parser.add_argument('--all', action='store_true', help='Generate all formats (Phase 1 + Phase 2 + Phase 3 + Phase 4)')
     parser.add_argument('--validation-pct', type=float, default=1, help='Set the percentage of QA pairs to validate')
+    parser.add_argument("--dry-run", action="store_true", help="Run in dry-run mode (no MongoDB writes)")
     parser.add_argument('--metrics-path', type=str, default=None, help='Path to write validation metrics JSON file')
 
     args = parser.parse_args()
@@ -313,8 +313,18 @@ def main():
     
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
-    cards, combos, synthetic, commanders, rules, glossary, articles, guides, game_changers, top_cards, archetypes, scryfall_client, metrics_collection = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
+    (cards, combos, synthetic, commanders, rules, glossary, articles, guides, 
+     game_changers, top_cards, archetypes, metrics_collection) = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
     print("  ✓ Connected")
+
+    # Create single MTGDataAccess instance for new generators
+    data_access = MTGDataAccess(
+        uri=args.mongo_uri,
+        username=args.mongo_user,
+        password=args.mongo_pass,
+    )
+    data_access.connect()
+    print("  ✓ MTGDataAccess connected")
 
     # Unique run ID shared by all generators in this process
     run_id = str(uuid.uuid4())
@@ -339,277 +349,297 @@ def main():
 
     # Generate all synthetic data
 
-    # Original formats
+    # Original formats (old pattern - pass collections directly)
     if args.combo_queries > 0:
         GenerateComboQueries(
-            combos,
-            cards,
-            scryfall_client,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.combo_queries,
+            save_item=save_item,
             metrics=make_metrics("GenerateComboQueries")
-        ).generate_combo_queries()
-    
+        ).generate()
+
     if args.card_search > 0:
         GenerateCardSearchQueries(
-            cards,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.card_search,
-            metrics=make_metrics("GenerateCardSearchQueries")
-        ).generate_card_search_queries()
+            save_item=save_item,
+            metrics=make_metrics("GenerateCardSearchQueries"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
     
     if args.commander > 0:
         GenerateCommanderKnowledge(
-            save_item,
-            models,
-            args.validation_pct,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.commander,
-            metrics=make_metrics("GenerateCommanderKnowledge")
-        ).generate_commander_knowledge()
+            save_item=save_item,
+            metrics=make_metrics("GenerateCommanderKnowledge"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
     
     if args.multi_card > 0:
         GenerateMultiCardUsage(
-            combos,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.multi_card,
-            metrics=make_metrics("GenerateMultiCardUsage")
-        ).generate_multi_card_usage()
+            save_item=save_item,
+            metrics=make_metrics("GenerateMultiCardUsage"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
     
     if args.comparison > 0:
         GenerateComparisonQuestions(
-            cards,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.comparison,
-            metrics=make_metrics("GenerateComparisonQuestions")
-        ).generate_comparison_questions()
+            save_item=save_item,
+            metrics=make_metrics("GenerateComparisonQuestions"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
     
     if args.reverse_lookup > 0:
         GenerateReverseLookupQuestions(
-            cards,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.reverse_lookup,
-            metrics=make_metrics("GenerateReverseLookupQuestions")
-        ).generate_reverse_lookup_questions()
+            save_item=save_item,
+            metrics=make_metrics("GenerateReverseLookupQuestions"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
     
     if args.synergy > 0:
         GenerateSynergyQuestions(
-            cards,
-            combos,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.synergy,
-            metrics=make_metrics("GenerateSynergyQuestions")
-        ).generate_synergy_questions()
+            save_item=save_item,
+            metrics=make_metrics("GenerateSynergyQuestions"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
     
     if args.budget > 0:
         GenerateBudgetAlternatives(
-            cards,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.budget,
-            metrics=make_metrics("GenerateBudgetAlternatives")
-        ).generate_budget_alternatives()
+            save_item=save_item,
+            metrics=make_metrics("GenerateBudgetAlternatives"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
     
     if args.color_identity > 0:
         GenerateColorIdentityQuestions(
-            cards,
-            commanders,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.color_identity,
-            metrics=make_metrics("GenerateColorIdentityQuestions")
-        ).generate_color_identity_questions()
+            save_item=save_item,
+            metrics=make_metrics("GenerateColorIdentityQuestions"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
     
     if args.guidelines > 0:
-        GenerateQuickGuidelines(
-            save_item,
-            models,
-            args.validation_pct,
+        from .generate_quick_guidelines import GenerateQuickGuidelines as GenerateQuickGuidelinesNew
+        GenerateQuickGuidelinesNew(
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.guidelines,
-            metrics=make_metrics("GenerateQuickGuidelines")
-        ).generate_quick_guidelines()
+            save_item=save_item,
+            metrics=make_metrics("GenerateQuickGuidelines"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
     
     if args.terminology > 0:
         GenerateTerminologyQuestions(
-            save_item,
-            models,
-            args.validation_pct,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.terminology,
-            metrics=make_metrics("GenerateTerminologyQuestions")
-        ).generate_terminology_questions()
+            save_item=save_item,
+            metrics=make_metrics("GenerateTerminologyQuestions"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     # Phase 2: Strategy/Theory formats
     if args.deckbuilding_theory > 0:
         GenerateDeckbuildingTheory(
-            save_item,
-            models,
-            args.validation_pct,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.deckbuilding_theory,
-            metrics=make_metrics("GenerateDeckbuildingTheory")
-        ).generate_deckbuilding_theory()
+            save_item=save_item,
+            metrics=make_metrics("GenerateDeckbuildingTheory"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     if args.commander_building > 0:
         GenerateCommanderBuilding(
-            save_item,
-            models,
-            args.validation_pct,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.commander_building,
-            metrics=make_metrics("GenerateCommanderBuilding")
-        ).generate_commander_building()
+            save_item=save_item,
+            metrics=make_metrics("GenerateCommanderBuilding"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     if args.rules_scenarios > 0:
         GenerateRulesScenarios(
-            save_item,
-            models,
-            args.validation_pct,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.rules_scenarios,
-            metrics=make_metrics("GenerateRulesScenarios")
-        ).generate_rules_scenarios()
+            save_item=save_item,
+            metrics=make_metrics("GenerateRulesScenarios"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     if args.archetypes > 0:
         GenerateArchetypes(
-            cards,
-            archetypes,
-            scryfall_client,
-            save_item,
-            models,
-            args.validation_pct,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.archetypes,
-            metrics=make_metrics("GenerateArchetypes")
-        ).generate_archetypes()
+            save_item=save_item,
+            metrics=make_metrics("GenerateArchetypes"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     if args.game_theory > 0:
         GenerateGameTheory(
-            save_item,
-            models,
-            args.validation_pct,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.game_theory,
-            metrics=make_metrics("GenerateGameTheory")
-        ).generate_game_theory()
+            save_item=save_item,
+            metrics=make_metrics("GenerateGameTheory"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     if args.meta_knowledge > 0:
         GenerateMetaKnowledge(
-            save_item,
-            models,
-            args.validation_pct,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.meta_knowledge,
-            metrics=make_metrics("GenerateMetaKnowledge")
-        ).generate_meta_knowledge()
+            save_item=save_item,
+            metrics=make_metrics("GenerateMetaKnowledge"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
-    # Phase 3: Rules-grounded formats
+    # Phase 3: Rules-grounded formats (BaseGenerator + MTGDataAccess pattern)
     if args.rule_explanations > 0:
         GenerateRuleExplanations(
-            rules,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.rule_explanations,
-            metrics=make_metrics("GenerateRuleExplanations")
-        ).generate_rule_explanations()
+            save_item=save_item,
+            metrics=make_metrics("GenerateRuleExplanations"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     if args.rule_interactions > 0:
         GenerateRuleInteractions(
-            rules,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.rule_interactions,
-            metrics=make_metrics("GenerateRuleInteractions")
-        ).generate_rule_interactions()
+            save_item=save_item,
+            metrics=make_metrics("GenerateRuleInteractions"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     if args.glossary_examples > 0:
         GenerateGlossaryWithExamples(
-            glossary,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.glossary_examples,
-            metrics=make_metrics("GenerateGlossaryWithExamples")
-        ).generate_glossary_with_examples()
+            save_item=save_item,
+            metrics=make_metrics("GenerateGlossaryWithExamples"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     if args.rule_edge_cases > 0:
         GenerateRuleEdgeCases(
-            rules,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.rule_edge_cases,
-            metrics=make_metrics("GenerateRuleEdgeCases")
-        ).generate_rule_edge_cases()
+            save_item=save_item,
+            metrics=make_metrics("GenerateRuleEdgeCases"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     if args.rule_why > 0:
         GenerateRuleWhyQuestions(
-            rules,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.rule_why,
-            metrics=make_metrics("GenerateRuleWhyQuestions")
-        ).generate_rule_why_questions()
+            save_item=save_item,
+            metrics=make_metrics("GenerateRuleWhyQuestions"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+        ).generate()
 
     # Phase 4: EDHREC-grounded formats
     if args.article_qa > 0:
         GenerateArticleQa(
-            articles,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.article_qa,
+            save_item=save_item,
             metrics=make_metrics("GenerateArticleQa")
-        ).generate_article_qa()
+        ).generate()
 
     if args.guide_qa > 0:
         GenerateGuideQa(
-            guides,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.guide_qa,
-            metrics=make_metrics("GenerateGuideQa")
-        ).generate_guide_qa()
+            save_item=save_item,
+            metrics=make_metrics("GenerateGuideQa"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
 
     if args.staple_analysis > 0:
         GenerateStapleAnalysis(
-            game_changers,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.staple_analysis,
-            metrics=make_metrics("GenerateStapleAnalysis")
-        ).generate_staple_analysis()
+            save_item=save_item,
+            metrics=make_metrics("GenerateStapleAnalysis"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
 
     if args.color_staples > 0:
         GenerateColorStaples(
-            top_cards,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.color_staples,
-            metrics=make_metrics("GenerateColorStaples")
-        ).generate_color_staples()
+            save_item=save_item,
+            metrics=make_metrics("GenerateColorStaples"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
 
     if args.salt_questions > 0:
         GenerateSaltQuestions(
-            game_changers,
-            save_item,
-            models,
-            args.validation_pct,
+            data_access=data_access,
+            models=models,
+            validation_pct=args.validation_pct,
             target_count=args.salt_questions,
-            metrics=make_metrics("GenerateSaltQuestions")
-        ).generate_salt_questions()
+            save_item=save_item,
+            metrics=make_metrics("GenerateSaltQuestions"),
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+        ).generate()
     
     # Summary
     print("\n" + "="*80)
@@ -665,6 +695,9 @@ def main():
 
     print(f"\n✅ Ready to extract!")
     print("="*80)
+
+    # Clean up
+    data_access.close()
 
 
 if __name__ == "__main__":

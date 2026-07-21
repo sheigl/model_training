@@ -1,97 +1,64 @@
+"""Generate glossary Q&A pairs with examples using BaseGenerator and MTGDataAccess."""
+
 import random
-import pymongo
-from rich.console import Console
-from rich.status import Status
-from query_model import QueryModel
-import json
-from common import build_glossary_with_examples_prompt, validate_and_loop_with_suggested_fix
-from typing import Any, Callable
-from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
-from logger import print
+from typing import Callable, Iterator
 
-DEFAULT = 1500
-console = Console()
+from .base_generator import BaseGenerator, TemplateConfig
+from .common import build_glossary_with_examples_prompt
+from .data_access import MTGDataAccess
+from .domain_models import GlossaryTerm
+from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 
-class GenerateGlossaryWithExamples:
+
+class GenerateGlossaryWithExamples(BaseGenerator[GlossaryTerm]):
+    """Generate Q&A from glossary terms with concrete in-game examples."""
+
+    TEMPLATES: list[TemplateConfig] = [
+        TemplateConfig(
+            template_id="glossary_example",
+            task_instruction=(
+                "Generate 3 Q&A pairs about this MTG term. "
+                "Include the definition AND a concrete in-game example."
+            ),
+        )
+    ]
+
     def __init__(
         self,
-        glossary_collection: pymongo.collection.Collection,  # type: ignore
-        save_item: Callable[[QuestionAnswerEnhanced], None],
+        data_access: MTGDataAccess,
         models: dict[ModelType, Model],
-        validation_pct: int,
-        target_count: int = DEFAULT,
+        validation_pct: float,
+        target_count: int,
+        save_item: Callable[[QuestionAnswerEnhanced], None],
         metrics: ValidationMetrics | None = None,
+        dry_run: bool = False,
     ) -> None:
-        self.glossary_collection = glossary_collection
-        self.save_item = save_item
-        self.models = models
-        self.validation_pct = validation_pct
-        self.target_count = target_count
-        self.metrics = metrics
+        super().__init__(
+            models=models,
+            validation_pct=validation_pct,
+            target_count=target_count,
+            save_item=save_item,
+            metrics=metrics,
+            generator_name="GenerateGlossaryWithExamples",
+            dry_run=dry_run,
+        )
+        self.data_access = data_access
 
-    def generate_glossary_with_examples(self) -> None:
-        print(f"\n=== GENERATING {self.target_count:,} GLOSSARY WITH EXAMPLES QUESTIONS ===")
+    def get_data_batches(self) -> Iterator[list[GlossaryTerm]]:
+        """Fetch glossary terms and yield filtered batches."""
+        terms = self.data_access.get_glossary()
+        meaningful = [t for t in terms if len(t.definition) > 30]
+        random.shuffle(meaningful)
 
-        terms: list[dict] = []
-        with console.status("[bold green]Extracting glossary terms...") as status:
-            all_terms = list(
-                self.glossary_collection.find(
-                    {"word": {"$exists": True}, "definition": {"$exists": True, "$ne": ""}},
-                    {"word": 1, "definition": 1},
-                )
-            )
-            meaningful_terms = [t for t in all_terms if len(t.get("definition", "")) > 30]
-            random.shuffle(meaningful_terms)
-            terms = meaningful_terms[: self.target_count + int(self.target_count * 0.25)]
-            status.update(f"[bold green]Extracted {len(terms):,} glossary terms")
+        buffer = int(self.target_count * 1.25)
+        for term in meaningful[:buffer]:
+            yield [term]
 
-        print(f"  → Processing {len(terms):,} glossary terms...")
+    def build_prompt(self, template: TemplateConfig, data_batch: GlossaryTerm) -> str:
+        """Build prompt using the common.py builder."""
+        return build_glossary_with_examples_prompt(
+            data_batch.term, data_batch.definition
+        )
 
-        i: int = 0
-        for term_doc in terms:
-            if i >= self.target_count:
-                break
-
-            term = term_doc.get("word", "")
-            definition = term_doc.get("definition", "")
-            if not term or not definition:
-                continue
-
-            if (i + 1) % 100 == 0:
-                print(f"    Generated {i:,}/{self.target_count:,}...")
-
-            prompt = build_glossary_with_examples_prompt(term, definition)
-
-            try:
-                query_model = QueryModel()
-                response = query_model.query(self.models[ModelType.GENERATION], prompt)
-                qa_pairs = list(
-                    map(
-                        lambda qa: QuestionAnswer(qa["question"], qa["answer"]),
-                        json.loads(response),
-                    )
-                )
-
-                qa_context = f"Term: {term}\nDefinition: {definition}"
-
-                is_valid, doc = validate_and_loop_with_suggested_fix(
-                    query_model=query_model,
-                    models=self.models,
-                    qa_pairs=qa_pairs,
-                    validation_pct=self.validation_pct,
-                    enable_extra_validation=False,
-                    build_context=lambda: qa_context,
-                    source_category="glossary_with_examples",
-                    source_data=[f"glossary_{term}"],
-                    source_template=None,
-                    metrics=self.metrics,
-                )
-
-                if is_valid and doc:
-                    self.save_item(doc)
-
-            except Exception as e:
-                print(f"  ✗ Error for term '{term}': {type(e).__name__}: {e}")
-                continue
-
-            i = i + 1
+    def get_source_category(self) -> str:
+        return "glossary_with_examples"

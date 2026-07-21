@@ -1,121 +1,160 @@
-from rich.console import Console
-from query_model import QueryModel
-import json
-from common import build_meta_knowledge_prompt, validate_and_loop_with_suggested_fix
-from typing import Any, Callable
-from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
-from logger import print
+"""Generate meta knowledge Q&A pairs using BaseGenerator."""
 
-console = Console()
+from typing import Iterator
 
-class GenerateMetaKnowledge:
-    def __init__(
-        self,
-        save_item: Callable[[QuestionAnswerEnhanced], None],
-        models: dict[ModelType, Model],
-        validation_pct: int,
-        target_count=1000,
-        metrics: ValidationMetrics | None = None) -> None:
+from .base_generator import BaseGenerator
+from .common import (
+    MTG_NOTATION_LEGEND,
+    OUTPUT_FORMAT,
+    TemplateConfig,
+)
 
-        self.save_item = save_item
-        self.models = models
-        self.validation_pct = validation_pct
-        self.target_count = target_count
-        self.metrics = metrics
 
-    def generate_meta_knowledge(self) -> None:
-        """Generate meta and power level Q&A - returns MongoDB documents via save_item."""
-        save_item = self.save_item
-        models = self.models
-        validation_pct = self.validation_pct
-        target_count = self.target_count
+# Validation criteria for meta knowledge templates
+META_KNOWLEDGE_GENERAL_VALIDATION = """
+HARD REJECT RULES:
+1. Answer does not provide actionable meta knowledge advice — vague platitudes are validation failures.
+2. Answer contains markdown formatting (bold, italics, bullet points).
+3. Answer references rule numbers directly — mechanics must be explained conversationally.
+4. Answer is less than 80 characters.
+5. JSON parsing fails.
 
-        print(f"\n=== GENERATING {target_count:,} META KNOWLEDGE QUESTIONS ===")
+VALIDATION CHECKLIST:
+1. The answer provides specific, accurate meta knowledge for the given topic.
+2. The answer explains power levels, competitive considerations, or format-specific knowledge.
+3. At least one question comes from a practical perspective (e.g., "How do I assess...?" or "What separates...?").
+"""
 
-        topics = [
-            (
-                "cEDH viability and what separates competitive from casual",
-                "cEDH decks win on turns 3-5, use fast mana (Mana Crypt, Chrome Mox), run tutors, counterspells, and win through established combo lines. Power level 9-10."
-            ),
-            (
-                "Commander power level scale (1-10)",
-                "The 1-10 power level scale: 1-3 precon/kitchen table, 4-6 focused casual, 7-8 optimized synergy, 9 high power, 10 cEDH. How to self-assess your deck."
-            ),
-            (
-                "pod communication and power level matching",
-                "How to communicate your deck's power level to your pod, why mismatched power levels ruin games, asking before you sit down."
-            ),
-            (
-                "fast mana and why it's powerful",
-                "Sol Ring, Mana Crypt, Chrome Mox — why fast mana is so format-warping, what separates high power from casual, the role of 0-cost acceleration."
-            ),
-            (
-                "tutors and deck consistency",
-                "How tutors increase consistency, why tutors are stronger in Commander than other formats, the tradeoff between consistency and fun."
-            ),
-            (
-                "common cEDH win conditions and strategies",
-                "Flash Hulk, Thassa's Oracle + Demonic Consultation, Underworld Breach loops, Dockside Extortionist combos — recognizing and playing against them."
-            ),
-            (
-                "evaluating commanders for power level",
-                "What makes a commander powerful: built-in card advantage, low mana cost, combo enabler, resilience. Why some commanders are format staples."
-            ),
-            (
-                "meta reads and adapting your deck",
-                "Reading your local meta, building hate for common strategies, adjusting your deck for the environment you play in."
-            ),
-            (
-                "banned list philosophy in Commander",
-                "Why certain cards are banned in Commander (Flash, Primeval Titan, Braids), how the rules committee evaluates bans, why some powerful cards aren't banned."
-            ),
-        ]
+META_KNOWLEDGE_DEEP_DIVE_VALIDATION = """
+HARD REJECT RULES:
+1. Answer does not include specific card names, strategy references, or competitive analysis.
+2. Answer contains markdown formatting (bold, italics, bullet points).
+3. Answer references rule numbers directly — mechanics must be explained conversationally.
+4. Answer is less than 80 characters.
+5. JSON parsing fails.
 
-        query_model = QueryModel()
-        total_generated = 0
+VALIDATION CHECKLIST:
+1. The answer includes specific card names or strategy references relevant to the topic.
+2. The answer provides deep competitive analysis with power level reasoning.
+3. The answer explains WHY specific cards or strategies are meta-relevant.
+"""
 
-        for topic, context in topics:
-            if total_generated >= target_count:
+
+class GenerateMetaKnowledge(BaseGenerator[str]):
+    """Generate meta and power level Q&A covering cEDH, pod dynamics, and format knowledge."""
+
+    TEMPLATES = [
+        TemplateConfig(
+            template_id="general_advice",
+            task_instruction="""You are an expert in Magic: The Gathering Commander meta and competitive play. Generate exactly 3 Q&A pairs about:
+
+Topic: {topic}
+Context: {context}
+
+Questions should cover power levels, meta considerations, format-specific knowledge, and competitive vs casual play. Be specific — avoid vague platitudes.
+
+Output JSON array with question/answer pairs. Keep answers 3-5 sentences with specific, accurate meta knowledge.
+{output_format}""",
+            validation_rules=META_KNOWLEDGE_GENERAL_VALIDATION.strip().split("\n"),
+            weight=1.0,
+        ),
+        TemplateConfig(
+            template_id="meta_deep_dive",
+            task_instruction="""You are an expert in Magic: The Gathering Commander meta and competitive play. Generate exactly 3 Q&A pairs about:
+
+Topic: {topic}
+Context: {context}
+
+Each answer MUST include specific card names, strategy references, or competitive analysis. Explain WHY specific cards or strategies are meta-relevant and how they shape the competitive landscape.
+
+Output JSON array with question/answer pairs. Keep answers 3-5 sentences with specific card/strategy references and power level reasoning.
+{output_format}""",
+            validation_rules=META_KNOWLEDGE_DEEP_DIVE_VALIDATION.strip().split("\n"),
+            weight=1.0,
+        ),
+    ]
+
+    # All topics preserved from the original generator — order and content must not change
+    TOPICS = [
+        (
+            "cEDH viability and what separates competitive from casual",
+            "cEDH decks win on turns 3-5, use fast mana (Mana Crypt, Chrome Mox), run tutors, counterspells, and win through established combo lines. Power level 9-10.",
+        ),
+        (
+            "Commander power level scale (1-10)",
+            "The 1-10 power level scale: 1-3 precon/kitchen table, 4-6 focused casual, 7-8 optimized synergy, 9 high power, 10 cEDH. How to self-assess your deck.",
+        ),
+        (
+            "pod communication and power level matching",
+            "How to communicate your deck's power level to your pod, why mismatched power levels ruin games, asking before you sit down.",
+        ),
+        (
+            "fast mana and why it's powerful",
+            "Sol Ring, Mana Crypt, Chrome Mox — why fast mana is so format-warping, what separates high power from casual, the role of 0-cost acceleration.",
+        ),
+        (
+            "tutors and deck consistency",
+            "How tutors increase consistency, why tutors are stronger in Commander than other formats, the tradeoff between consistency and fun.",
+        ),
+        (
+            "common cEDH win conditions and strategies",
+            "Flash Hulk, Thassa's Oracle + Demonic Consultation, Underworld Breach loops, Dockside Extortionist combos — recognizing and playing against them.",
+        ),
+        (
+            "evaluating commanders for power level",
+            "What makes a commander powerful: built-in card advantage, low mana cost, combo enabler, resilience. Why some commanders are format staples.",
+        ),
+        (
+            "meta reads and adapting your deck",
+            "Reading your local meta, building hate for common strategies, adjusting your deck for the environment you play in.",
+        ),
+        (
+            "banned list philosophy in Commander",
+            "Why certain cards are banned in Commander (Flash, Primeval Titan, Braids), how the rules committee evaluates bans, why some powerful cards aren't banned.",
+        ),
+    ]
+
+    def get_data_batches(self) -> Iterator[list[str]]:
+        """Yield one topic name per batch."""
+        while True:
+            for topic_name, _ in self.TOPICS:
+                yield [topic_name]
+
+    def build_prompt(self, template: TemplateConfig, data_batch: str) -> str:
+        """Build the LLM prompt for a meta knowledge topic."""
+        topic = data_batch
+
+        # Find context for this topic
+        context = ""
+        for tname, ctx in self.TOPICS:
+            if tname == topic:
+                context = ctx
                 break
 
-            print(f"  → {topic}")
-            prompt = build_meta_knowledge_prompt(topic, context)
+        task_instruction = template.task_instruction.format(
+            topic=topic,
+            context=context,
+            output_format=OUTPUT_FORMAT.strip(),
+        )
 
-            try:
-                response = query_model.query(models[ModelType.GENERATION], prompt)
-                response = response.replace("```json", "").replace("```", "").strip()
-                qa_pairs = list(map(lambda qa: QuestionAnswer(qa["question"], qa["answer"]), json.loads(response)))
+        prompt = f"""{MTG_NOTATION_LEGEND}
 
-                qa_context = f"Topic: {topic}\nContext: {context}"
+<task>
+{task_instruction}
+</task>"""
 
-                for qa in qa_pairs:
-                    if total_generated >= target_count:
-                        break
+        return prompt
 
-                    if len(qa.answer) <= 80:
-                        print(f"    ✗ REJECTED (too short): {qa.question[:80]}")
-                        continue
+    def get_source_category(self) -> str:
+        return "meta_knowledge"
 
-                    is_valid, doc = validate_and_loop_with_suggested_fix(
-                        query_model=query_model,
-                        models=models,
-                        qa_pairs=[qa],
-                        validation_pct=validation_pct,
-                        enable_extra_validation=False,
-                        build_context=lambda: qa_context,
-                        source_category="meta_knowledge",
-                        source_data=["meta_strategy"],
-                        source_template=None,
-                        metrics=self.metrics
-                    )
+    def build_context(self, template: TemplateConfig, data_batch: str) -> str:
+        """Build validation context for the generated Q&A."""
+        topic = data_batch
+        context = ""
+        for tname, ctx in self.TOPICS:
+            if tname == topic:
+                context = ctx
+                break
 
-                    if is_valid and doc:
-                        doc.topic = topic  # type: ignore[attr-defined]
-                        save_item(doc)
-                        total_generated += 1
-
-            except Exception as e:
-                print(f"  ✗ Error for topic '{topic}': {type(e).__name__}: {e}")
-                continue
-
-        print(f"  ✓ Generated {total_generated:,} meta knowledge questions")
+        return f"Category: {self.get_source_category()}\nTemplate: {template.template_id}\nTopic: {topic}\nContext: {context}"

@@ -1,123 +1,80 @@
+"""Generate 'why does this work' Q&A pairs using BaseGenerator and MTGDataAccess."""
+
 import random
-import pymongo
-from rich.console import Console
-from rich.status import Status
-from query_model import QueryModel
-import json
-from common import build_rule_why_prompt, validate_and_loop_with_suggested_fix
-from typing import Any, Callable
-from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
-from logger import print
+from typing import Callable, Iterator
 
-DEFAULT = 1000
-console = Console()
+from .base_generator import BaseGenerator, TemplateConfig
+from .common import build_rule_why_prompt
+from .data_access import MTGDataAccess
+from .domain_models import Rule
+from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 
-class GenerateRuleWhyQuestions:
+
+class GenerateRuleWhyQuestions(BaseGenerator[Rule]):
+    """Generate backward-reasoning 'why does this work' questions from rule text."""
+
+    TEMPLATES: list[TemplateConfig] = [
+        TemplateConfig(
+            template_id="why",
+            task_instruction=(
+                "Generate 2 Q&A pairs that ask WHY a ruling works the way it does. "
+                "Start from a known outcome and ask why."
+            ),
+        )
+    ]
+
+    PRINCIPLE_SECTIONS: list[str] = [
+        "116", "117", "118", "120",
+        "601", "602", "603", "604", "608",
+        "700", "701", "702", "704", "706",
+    ]
+
     def __init__(
         self,
-        rules_collection: pymongo.collection.Collection,  # type: ignore
-        save_item: Callable[[QuestionAnswerEnhanced], None],
+        data_access: MTGDataAccess,
         models: dict[ModelType, Model],
-        validation_pct: int,
-        target_count: int = DEFAULT,
+        validation_pct: float,
+        target_count: int,
+        save_item: Callable[[QuestionAnswerEnhanced], None],
         metrics: ValidationMetrics | None = None,
+        dry_run: bool = False,
     ) -> None:
-        self.rules_collection = rules_collection
-        self.save_item = save_item
-        self.models = models
-        self.validation_pct = validation_pct
-        self.target_count = target_count
-        self.metrics = metrics
+        super().__init__(
+            models=models,
+            validation_pct=validation_pct,
+            target_count=target_count,
+            save_item=save_item,
+            metrics=metrics,
+            generator_name="GenerateRuleWhyQuestions",
+            dry_run=dry_run,
+        )
+        self.data_access = data_access
 
-    def generate_rule_why_questions(self) -> None:
-        print(f"\n=== GENERATING {self.target_count:,} RULE WHY QUESTIONS ===")
+    def get_data_batches(self) -> Iterator[list[Rule]]:
+        """Fetch rules from principle sections and yield filtered batches."""
+        rules = self.data_access.get_rules({"text": {"$exists": True}})
 
-        principle_sections = [
-            "116",
-            "117",
-            "118",
-            "120",
-            "601",
-            "602",
-            "603",
-            "604",
-            "608",
-            "700",
-            "701",
-            "702",
-            "704",
-            "706",
-        ]
-
-        rules: list[dict] = []
-        with console.status("[bold green]Extracting rule data...") as status:
-            all_rules = list(
-                self.rules_collection.find(
-                    {"text": {"$exists": True, "$not": {"$regex": r"^See rule \d"}}},
-                    {"rule_number": 1, "text": 1},
-                )
-            )
-
-            principle_rules: list[dict] = []
-            for rule in all_rules:
-                num = rule.get("rule_number", "")
-                text = rule.get("text", "")
-                if len(text) < 100:
-                    continue
-                for prefix in principle_sections:
-                    if num.startswith(prefix):
-                        principle_rules.append(rule)
-                        break
-
-            random.shuffle(principle_rules)
-            rules = principle_rules[: self.target_count + int(self.target_count * 0.25)]
-            status.update(f"[bold green]Extracted {len(rules):,} principle rules")
-
-        print(f"  → Processing {len(rules):,} rules...")
-
-        i: int = 0
+        principle_rules: list[Rule] = []
         for rule in rules:
-            if i >= self.target_count:
-                break
-
-            rule_num = rule.get("rule_number", "")
-            rule_text = rule.get("text", "")
-
-            if (i + 1) % 100 == 0:
-                print(f"    Generated {i:,}/{self.target_count:,}...")
-
-            prompt = build_rule_why_prompt(rule_num, rule_text)
-
-            try:
-                query_model = QueryModel()
-                response = query_model.query(self.models[ModelType.GENERATION], prompt)
-                qa_pairs = list(
-                    map(
-                        lambda qa: QuestionAnswer(qa["question"], qa["answer"]),
-                        json.loads(response),
-                    )
-                )
-
-                qa_context = f"Rule {rule_num}: {rule_text}"
-
-                is_valid, doc = validate_and_loop_with_suggested_fix(
-                    query_model=query_model,
-                    models=self.models,
-                    qa_pairs=qa_pairs,
-                    validation_pct=self.validation_pct,
-                    enable_extra_validation=True,
-                    build_context=lambda: qa_context,
-                    source_category="rule_why",
-                    source_data=[f"rule_{rule_num}"],
-                    source_template=None,
-                    metrics=self.metrics,
-                )
-
-                if is_valid and doc:
-                    self.save_item(doc)
-
-            except Exception as e:
-                print(f"  ✗ Error for rule {rule_num}: {type(e).__name__}: {e}")
+            if len(rule.text) < 100:
                 continue
+            num = rule.rule_number
+            for prefix in self.PRINCIPLE_SECTIONS:
+                if num.startswith(prefix):
+                    principle_rules.append(rule)
+                    break
 
-            i = i + 1
+        random.shuffle(principle_rules)
+
+        buffer = int(self.target_count * 1.25)
+        for rule in principle_rules[:buffer]:
+            yield [rule]
+
+    def build_prompt(self, template: TemplateConfig, data_batch: Rule) -> str:
+        """Build prompt using the common.py builder."""
+        return build_rule_why_prompt(
+            data_batch.rule_number, data_batch.text
+        )
+
+    def get_source_category(self) -> str:
+        return "rule_why"

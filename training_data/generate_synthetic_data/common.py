@@ -1,9 +1,35 @@
 import random
 import re
 from typing import Any, Callable
-from query_model import QueryModel
-from models import Card, Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
-from constants import *
+from dataclasses import dataclass
+
+from .query_model import QueryModel
+from .models import Card, Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
+from .constants import *
+
+
+@dataclass(frozen=True)
+class TemplateConfig:
+    """Configuration for a generation template.
+
+    Attributes:
+        template_id: Unique identifier for this template (e.g., "how_does_it_work")
+        task_instruction: The prompt instruction for this template
+        weight: Selection weight for weighted random sampling (default 1.0)
+        validation_rules: Template-specific HARD REJECT rules (optional)
+        min_answer_length: Minimum answer length in characters (default 80)
+        max_answer_length: Maximum answer length in characters (default 2000)
+    """
+    template_id: str
+    task_instruction: str
+    weight: float = 1.0
+    validation_rules: list[str] | None = None
+    min_answer_length: int = 80
+    max_answer_length: int = 2000
+
+    def __post_init__(self):
+        if self.validation_rules is None:
+            object.__setattr__(self, "validation_rules", [])
 
 
 # =============================================================================
@@ -60,12 +86,23 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
     return prompt
 
 def build_card_detail(card_number: int | None, card: Card):
+    """Build a short card description for prompt context.
+
+    Supports both the legacy ``Card`` class and Pydantic domain models.
+    When given a Pydantic model with ``to_prompt_detail()``, delegates to it.
+    Otherwise falls back to the original formatting.
+    """
+    prefix = "" if card_number is None else f"Card {card_number}: "
+
+    # Delegate to Pydantic model's serialization when available
+    if hasattr(card, "to_prompt_detail"):
+        return f"{prefix}{card.to_prompt_detail()}"
+
     detail = f"""
-{"" if card_number is None else f"Card {card_number}: "}{card.name}
+{prefix}{card.name}
 Type: {card.type} | Cost: {card.mana_cost}
 Text: {card.text}
 """
-
     return detail
 
 def build_card_comparision_prompt(card1: Card, card2: Card) -> str:
@@ -820,24 +857,8 @@ def clean_html(raw: str) -> str:
     # Collapse whitespace
     return re.sub(r'\s+', ' ', raw).strip()
 
-def map_card(card: dict) -> Card | None: # type: ignore
-    import json
-    
-    if not card or 'name' not in card or 'type' not in card or 'manaCost' not in card or 'text' not in card:
-        return None
-    
-    projected_card: Card = Card(
-        name=card.get('name', 'Unknown'),
-        type=card.get('type', 'Unknown'),
-        mana_cost=card.get('manaCost', 'Unknown'),
-        text=card.get('text', ''),
-        subtypes=json.loads(card.get('subtypes', '[]')) if card.get('subtypes') else [],
-        supertypes=json.loads(card.get('supertypes', '[]')) if card.get('supertypes') else [],
-        color_identity=json.loads(card.get('colorIdentity', '[]')) if card.get('colorIdentity') else [],
-        zone_locations=[]
-    )
-    
-    return 
+# Re-export pure-card helpers (defined in card_utils to avoid heavy deps)
+from .card_utils import map_card, map_card_with_zones  # noqa: PLC0415 
 
 
 def validate_and_loop_with_suggested_fix(
@@ -885,7 +906,7 @@ def validate_and_loop_with_suggested_fix(
             )
 
             if not is_valid:
-                print(f"    ✗ REJECTED (score: {score}/10, {reason}): {qa.question[:80]}")
+                print(f"    ✗ REJECTED [attempt {iteration + 1}/3] (score: {score}/10, {reason}): {qa.question[:80]}")
                 print(f"    → Passing back to generation model for correction...")
                 new_answer = query_model.regenerate_answer(
                     generation_model=models[ModelType.GENERATION],
@@ -912,7 +933,8 @@ def validate_and_loop_with_suggested_fix(
                 break
 
         if is_valid:
-            print(f"    ✓ ACCEPTED (score: {score}/10): {qa.question[:80]}")
+            attempt_label = " (first attempt)" if iteration == 0 else f" (after {iteration} fix)"
+            print(f"    ✓ ACCEPTED{attempt_label} (score: {score}/10): {qa.question[:80]}")
             if metrics:
                 if iteration == 0:
                     metrics.record_first_attempt_pass(score, source_category, source_template)

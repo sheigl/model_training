@@ -1,96 +1,155 @@
-import pymongo
-from rich.console import Console
-from rich.status import Status
-from query_model import QueryModel
-import json
-from common import build_archetype_prompt, validate_and_loop_with_suggested_fix
-from scryfall_mongodb import ScryfallMongo
-from typing import Any, Callable
-from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
-from logger import print
+"""Generate archetype strategy Q&A pairs using BaseGenerator."""
 
-DEFAULT = 5000
-console = Console()
+from typing import Iterator
 
-class GenerateArchetypes:
-    def __init__(
-        self,
-        card_collection: pymongo.collection.Collection,  # type: ignore
-        archetype_collection: pymongo.collection.Collection,  # type: ignore
-        scryfall_client: ScryfallMongo,
-        save_item: Callable[[QuestionAnswerEnhanced], None],
-        models: dict[ModelType, Model],
-        validation_pct: int,
-        target_count: int = DEFAULT,
-        metrics: ValidationMetrics | None = None,
-    ) -> None:
-        self.card_collection = card_collection
-        self.archetype_collection = archetype_collection
-        self.scryfall_client = scryfall_client
-        self.save_item = save_item
-        self.models = models
-        self.validation_pct = validation_pct
-        self.target_count = target_count
-        self.metrics = metrics
+from .base_generator import BaseGenerator
+from .common import (
+    MTG_NOTATION_LEGEND,
+    OUTPUT_FORMAT,
+    TemplateConfig,
+)
 
-    def generate_archetypes(self) -> None:
-        print(f"\n=== GENERATING {self.target_count:,} ARCHETYPE QUESTIONS ===")
 
-        archetypes = [
-            ("Aggro", "A strategy focused on dealing quick damage with low-cost creatures."),
-            ("Control", "A strategy that counters threats and wins through card advantage."),
-            ("Combo", "A strategy that assembles specific card combinations to win instantly."),
-            ("Midrange", "A strategy that plays efficient threats and disrupts opponents."),
-            ("Stax", "A control strategy using resource denial and lock pieces."),
-            ("Voltron", "A strategy that equips one commander to deal lethal commander damage."),
-            ("Tokens", "A strategy that swarms the board with creature tokens."),
-            ("Reanimator", "A strategy that puts powerful creatures into play from the graveyard."),
-            ("Storm", "A strategy that casts many spells in one turn to win with a storm payoff."),
-            ("Pillow Fort", "A defensive strategy that prevents opponents from attacking you."),
-        ]
+# Validation criteria for archetype templates
+ARCHETYPE_GENERAL_VALIDATION = """
+HARD REJECT RULES:
+1. Answer does not provide actionable archetype strategy advice — vague platitudes are validation failures.
+2. Answer contains markdown formatting (bold, italics, bullet points).
+3. Answer references rule numbers directly — mechanics must be explained conversationally.
+4. Answer is less than 80 characters.
+5. JSON parsing fails.
 
-        print(f"  → Processing {len(archetypes):,} archetypes...")
+VALIDATION CHECKLIST:
+1. The answer provides specific strategic advice about the archetype.
+2. The answer explains strengths, weaknesses, or key strategic concepts.
+3. At least one question comes from a practical perspective (e.g., "How do I build...?" or "What are the weaknesses of...?").
+"""
 
-        i: int = 0
-        for archetype, context in archetypes:
-            if i >= self.target_count:
+ARCHETYPE_EXAMPLE_VALIDATION = """
+HARD REJECT RULES:
+1. Answer does not include at least one concrete card example relevant to the archetype.
+2. Answer contains markdown formatting (bold, italics, bullet points).
+3. Answer references rule numbers directly — mechanics must be explained conversationally.
+4. Answer is less than 80 characters.
+5. JSON parsing fails.
+
+VALIDATION CHECKLIST:
+1. The answer includes at least one specific card example that illustrates the archetype.
+2. The example is relevant to the archetype and accurately described.
+3. The answer explains WHY the card is key to the archetype's strategy.
+"""
+
+
+class GenerateArchetypes(BaseGenerator[str]):
+    """Generate deck archetype and strategy Q&A covering playstyles and strategic concepts."""
+
+    TEMPLATES = [
+        TemplateConfig(
+            template_id="general_advice",
+            task_instruction="""You are a Magic: The Gathering strategy expert. Generate exactly 3 Q&A pairs about the {archetype} archetype/strategy.
+
+Context:
+{context}
+
+Questions should cover: how the archetype works, strengths and weaknesses, key cards, how to play against it, when to choose it. Be specific — avoid vague platitudes.
+
+Output JSON array with question/answer pairs. Keep answers 3-5 sentences covering the strategic depth of the archetype.
+{output_format}""",
+            validation_rules=ARCHETYPE_GENERAL_VALIDATION.strip().split("\n"),
+            weight=1.0,
+        ),
+        TemplateConfig(
+            template_id="example_driven",
+            task_instruction="""You are a Magic: The Gathering strategy expert. Generate exactly 3 Q&A pairs about the {archetype} archetype/strategy using concrete card examples.
+
+Context:
+{context}
+
+Each answer MUST include at least one specific card example that illustrates the archetype. Explain WHY that card is a key piece of the strategy and how it fits into the archetype's game plan.
+
+Output JSON array with question/answer pairs. Keep answers 3-5 sentences with specific card references and strategic reasoning.
+{output_format}""",
+            validation_rules=ARCHETYPE_EXAMPLE_VALIDATION.strip().split("\n"),
+            weight=1.0,
+        ),
+    ]
+
+    # All 10 archetypes preserved from the original generator — order and content must not change
+    ARCHETYPES = [
+        (
+            "Aggro",
+            "A strategy focused on dealing quick damage with low-cost creatures.",
+        ),
+        (
+            "Control",
+            "A strategy that counters threats and wins through card advantage.",
+        ),
+        (
+            "Combo",
+            "A strategy that assembles specific card combinations to win instantly.",
+        ),
+        ("Midrange", "A strategy that plays efficient threats and disrupts opponents."),
+        ("Stax", "A control strategy using resource denial and lock pieces."),
+        (
+            "Voltron",
+            "A strategy that equips one commander to deal lethal commander damage.",
+        ),
+        ("Tokens", "A strategy that swarms the board with creature tokens."),
+        (
+            "Reanimator",
+            "A strategy that puts powerful creatures into play from the graveyard.",
+        ),
+        (
+            "Storm",
+            "A strategy that casts many spells in one turn to win with a storm payoff.",
+        ),
+        (
+            "Pillow Fort",
+            "A defensive strategy that prevents opponents from attacking you.",
+        ),
+    ]
+
+    def get_data_batches(self) -> Iterator[list[str]]:
+        """Yield one archetype name per batch."""
+        while True:
+            for archetype_name, _ in self.ARCHETYPES:
+                yield [archetype_name]
+
+    def build_prompt(self, template: TemplateConfig, data_batch: str) -> str:
+        """Build the LLM prompt for an archetype."""
+        archetype = data_batch
+
+        # Find context for this archetype
+        context = ""
+        for aname, ctx in self.ARCHETYPES:
+            if aname == archetype:
+                context = ctx
                 break
 
-            if (i + 1) % 100 == 0:
-                print(f"    Generated {i:,}/{self.target_count:,}...")
+        task_instruction = template.task_instruction.format(
+            archetype=archetype,
+            context=context,
+            output_format=OUTPUT_FORMAT.strip(),
+        )
 
-            prompt = build_archetype_prompt(archetype, context)
+        prompt = f"""{MTG_NOTATION_LEGEND}
 
-            try:
-                query_model = QueryModel()
-                response = query_model.query(self.models[ModelType.GENERATION], prompt)
-                qa_pairs = list(
-                    map(
-                        lambda qa: QuestionAnswer(qa["question"], qa["answer"]),
-                        json.loads(response),
-                    )
-                )
+<task>
+{task_instruction}
+</task>"""
 
-                qa_context = f"Archetype: {archetype}\nContext: {context}"
+        return prompt
 
-                is_valid, doc = validate_and_loop_with_suggested_fix(
-                    query_model=query_model,
-                    models=self.models,
-                    qa_pairs=qa_pairs,
-                    validation_pct=self.validation_pct,
-                    enable_extra_validation=False,
-                    build_context=lambda: qa_context,
-                    source_category="archetype",
-                    source_data=[archetype, context],
-                    source_template=None,
-                    metrics=self.metrics,
-                )
+    def get_source_category(self) -> str:
+        return "archetype"
 
-                if is_valid and doc:
-                    self.save_item(doc)
+    def build_context(self, template: TemplateConfig, data_batch: str) -> str:
+        """Build validation context for the generated Q&A."""
+        archetype = data_batch
+        context = ""
+        for aname, ctx in self.ARCHETYPES:
+            if aname == archetype:
+                context = ctx
+                break
 
-            except Exception as e:
-                print(f"  ✗ Error for archetype '{archetype}': {type(e).__name__}: {e}")
-                continue
-
-            i = i + 1
+        return f"Category: {self.get_source_category()}\nTemplate: {template.template_id}\nArchetype: {archetype}\nContext: {context}"

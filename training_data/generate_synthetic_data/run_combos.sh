@@ -4,7 +4,7 @@
 
 
 NUM=${1:-1}
-MODEL=${2:-https://server.tailc63ae8.ts.net:4444/v1,openai,ornith-1.0:9b,sk-UA85o9nOaSFX6IA0xjyK3kvjLRcZcsPm}
+MODEL=${2:-https://server.tailc63ae8.ts.net:4444/v1,openai,gemma4:12b,sk-UA85o9nOaSFX6IA0xjyK3kvjLRcZcsPm}
 VALIDATION_MODEL=${3:-https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.6:27b,sk-UA85o9nOaSFX6IA0xjyK3kvjLRcZcsPm}
 VALIDATION_PCT=${4:-1}
 
@@ -14,5 +14,6 @@ GEN_SYNTH=$BASE_DIR/training_data/generate_synthetic_data
 
 #nohup ./run_combos.sh 1000 > combos2.log 2>&1 &
 
-$PYTHON $GEN_SYNTH/main.py --combo-queries $NUM --model $MODEL --validation-model $VALIDATION_MODEL --validation-pct $VALIDATION_PCT
+cd $BASE_DIR
+$PYTHON -m training_data.generate_synthetic_data.main --combo-queries $NUM --model $MODEL --validation-model $VALIDATION_MODEL --validation-pct $VALIDATION_PCT
 

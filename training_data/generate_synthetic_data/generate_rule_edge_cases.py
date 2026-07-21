@@ -1,110 +1,83 @@
+"""Generate rule edge case Q&A pairs using BaseGenerator and MTGDataAccess."""
+
 import random
-import pymongo
-from rich.console import Console
-from rich.status import Status
-from query_model import QueryModel
-import json
-from common import COMPLEX_RULE_SECTIONS, build_rule_edge_case_prompt, validate_and_loop_with_suggested_fix
-from typing import Any, Callable
-from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
-from logger import print
+from typing import Callable, Iterator
 
-DEFAULT = 1500
-console = Console()
+from .base_generator import BaseGenerator, TemplateConfig
+from .common import build_rule_edge_case_prompt
+from .constants import COMPLEX_RULE_SECTIONS
+from .data_access import MTGDataAccess
+from .domain_models import Rule
+from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 
-class GenerateRuleEdgeCases:
+
+class GenerateRuleEdgeCases(BaseGenerator[Rule]):
+    """Generate tricky edge case questions from complex rule sections."""
+
+    TEMPLATES: list[TemplateConfig] = [
+        TemplateConfig(
+            template_id="edge_case",
+            task_instruction=(
+                "Generate 2 tricky edge case Q&A pairs from this rule. "
+                "Focus on non-obvious applications, common player mistakes, and edge cases."
+            ),
+        )
+    ]
+
     def __init__(
         self,
-        rules_collection: pymongo.collection.Collection,  # type: ignore
-        save_item: Callable[[QuestionAnswerEnhanced], None],
+        data_access: MTGDataAccess,
         models: dict[ModelType, Model],
-        validation_pct: int,
-        target_count: int = DEFAULT,
+        validation_pct: float,
+        target_count: int,
+        save_item: Callable[[QuestionAnswerEnhanced], None],
         metrics: ValidationMetrics | None = None,
+        dry_run: bool = False,
     ) -> None:
-        self.rules_collection = rules_collection
-        self.save_item = save_item
-        self.models = models
-        self.validation_pct = validation_pct
-        self.target_count = target_count
-        self.metrics = metrics
+        super().__init__(
+            models=models,
+            validation_pct=validation_pct,
+            target_count=target_count,
+            save_item=save_item,
+            metrics=metrics,
+            generator_name="GenerateRuleEdgeCases",
+            dry_run=dry_run,
+        )
+        self.data_access = data_access
 
-    def generate_rule_edge_cases(self) -> None:
-        print(f"\n=== GENERATING {self.target_count:,} RULE EDGE CASE QUESTIONS ===")
+    def get_data_batches(self) -> Iterator[list[Rule]]:
+        """Fetch rules from complex sections and yield filtered batches."""
+        rules = self.data_access.get_rules({"text": {"$exists": True}})
+        complex_section_prefixes = list(COMPLEX_RULE_SECTIONS.keys())
 
-        rules: list[dict] = []
-        with console.status("[bold green]Extracting rule data...") as status:
-            complex_section_prefixes = list(COMPLEX_RULE_SECTIONS.keys())
-
-            all_rules = list(
-                self.rules_collection.find(
-                    {"text": {"$exists": True, "$ne": "", "$not": {"$regex": r"^See rule \d"}}},
-                    {"rule_number": 1, "text": 1},
-                )
-            )
-
-            complex_rules: list[dict] = []
-            for rule in all_rules:
-                num = rule.get("rule_number", "")
-                text = rule.get("text", "")
-                if len(text) < 80:
-                    continue
-                for prefix in complex_section_prefixes:
-                    if num.startswith(prefix):
-                        rule["section_name"] = COMPLEX_RULE_SECTIONS[prefix]
-                        complex_rules.append(rule)
-                        break
-
-            random.shuffle(complex_rules)
-            rules = complex_rules[: self.target_count + int(self.target_count * 0.25)]
-            status.update(f"[bold green]Extracted {len(rules):,} complex rules")
-
-        print(f"  → Processing {len(rules):,} rules...")
-
-        i: int = 0
+        complex_rules: list[Rule] = []
         for rule in rules:
-            if i >= self.target_count:
+            if len(rule.text) < 80:
+                continue
+            num = rule.rule_number
+            for prefix in complex_section_prefixes:
+                if num.startswith(prefix):
+                    complex_rules.append(rule)
+                    break
+
+        random.shuffle(complex_rules)
+
+        buffer = int(self.target_count * 1.25)
+        for rule in complex_rules[:buffer]:
+            yield [rule]
+
+    def build_prompt(self, template: TemplateConfig, data_batch: Rule) -> str:
+        """Build prompt using the common.py builder with section name lookup."""
+        num = data_batch.rule_number
+        section_name = "General Rules"
+        for prefix in COMPLEX_RULE_SECTIONS:
+            if num.startswith(prefix):
+                section_name = COMPLEX_RULE_SECTIONS[prefix]
                 break
 
-            rule_num = rule.get("rule_number", "")
-            rule_text = rule.get("text", "")
-            section_name = rule.get("section_name", "General Rules")
+        return build_rule_edge_case_prompt(
+            data_batch.rule_number, data_batch.text, section_name
+        )
 
-            if (i + 1) % 100 == 0:
-                print(f"    Generated {i:,}/{self.target_count:,}...")
-
-            prompt = build_rule_edge_case_prompt(rule_num, rule_text, section_name)
-
-            try:
-                query_model = QueryModel()
-                response = query_model.query(self.models[ModelType.GENERATION], prompt)
-                qa_pairs = list(
-                    map(
-                        lambda qa: QuestionAnswer(qa["question"], qa["answer"]),
-                        json.loads(response),
-                    )
-                )
-
-                qa_context = f"Rule {rule_num} ({section_name}): {rule_text}"
-
-                is_valid, doc = validate_and_loop_with_suggested_fix(
-                    query_model=query_model,
-                    models=self.models,
-                    qa_pairs=qa_pairs,
-                    validation_pct=self.validation_pct,
-                    enable_extra_validation=True,
-                    build_context=lambda: qa_context,
-                    source_category="rule_edge_case",
-                    source_data=[f"rule_{rule_num}"],
-                    source_template=None,
-                    metrics=self.metrics,
-                )
-
-                if is_valid and doc:
-                    self.save_item(doc)
-
-            except Exception as e:
-                print(f"  ✗ Error for rule {rule_num}: {type(e).__name__}: {e}")
-                continue
-
-            i = i + 1
+    def get_source_category(self) -> str:
+        return "rule_edge_case"

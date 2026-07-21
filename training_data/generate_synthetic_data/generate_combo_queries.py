@@ -1,363 +1,262 @@
-import pymongo
-from rich.console import Console
-from rich.status import Status
-from query_model import QueryModel
-import json
-from common import MTG_NOTATION_LEGEND, OUTPUT_FORMAT, REQUIREMENTS_BASE, SYSTEM_MESSAGE, NEW_LINE, build_card_detail, validate_and_loop_with_suggested_fix
-from constants import COMBO_QUESTION_TEMPLATES
-from scryfall_mongodb import ScryfallMongo
+"""Generate combo query Q&A pairs using BaseGenerator and MTGDataAccess."""
+
 import random
-from typing import Any, Callable
-from models import Card, Model, ModelType, ProjectedCombo, QuestionAnswer, QuestionAnswerEnhanced, Requirement, ValidationMetrics
-from logger import print
+from typing import Iterator
 
-console = Console()
+from .base_generator import BaseGenerator, TemplateConfig
+from .data_access import MTGDataAccess
+from .domain_models import ComboWithCards
+from .models import Model, ModelType, ValidationMetrics
+from .common import (
+    MTG_NOTATION_LEGEND,
+    OUTPUT_FORMAT,
+    REQUIREMENTS_BASE,
+    SYSTEM_MESSAGE,
+    NEW_LINE,
+    build_card_detail,
+    validate_and_loop_with_suggested_fix,
+)
+from .logger import print
+from .query_model import QueryModel
 
-class GenerateComboQueries:
+
+# Validation criteria for each combo template type with HARD REJECT rules
+COMBO_HOW_VALIDATION = """
+HARD REJECT RULES:
+1. Answer does not explain the sequence of steps in the correct order — a correct description of individual triggers in the wrong order is a factual error.
+2. Answer does not explicitly name ALL required combo pieces and explain each one's role.
+3. Answer does not state the concrete outcome matching the COMBO RESULT field — vague phrases like "very powerful" or "wins the game" are validation failures.
+4. Answer does not cite or closely paraphrase oracle text when explaining why a trigger fires.
+5. Answer contains markdown formatting (bold, italics, bullet points).
+6. Answer references rule numbers directly — mechanics must be explained conversationally.
+7. Answer is less than 80 characters.
+8. JSON parsing fails.
+
+VALIDATION CHECKLIST:
+1. The sequence of triggers described matches the order in the provided combo steps.
+2. The answer explicitly names ALL required combo pieces and explains each one's role.
+3. The answer states the concrete outcome matching the COMBO RESULT field.
+4. Oracle text is cited or closely paraphrased when explaining why a trigger fires.
+5. At least one question comes from the perspective of a player who has never seen this combo before.
+"""
+
+COMBO_WHAT_VALIDATION = """
+HARD REJECT RULES:
+1. Answer does not list ALL required cards for the combo.
+2. Answer does not specify what zone each piece needs to be in (battlefield, hand, command zone, etc.).
+3. Answer does not state what mana or other resources are required.
+4. Answer does not include at least one question phrased as "I have X, what else do I need to go infinite?"
+5. Answer contains markdown formatting (bold, italics, bullet points).
+6. Answer references rule numbers directly.
+7. Answer is less than 80 characters.
+8. JSON parsing fails.
+
+VALIDATION CHECKLIST:
+1. All required combo pieces are listed.
+2. Zone requirements for each piece are specified.
+3. Mana/resource requirements are stated.
+4. At least one question is from the perspective of a player asking what else they need.
+"""
+
+COMBO_WHY_VALIDATION = """
+HARD REJECT RULES:
+1. Answer does not explain which specific abilities or rules interactions enable the combo.
+2. Answer does not explain why removing any one piece breaks the combo.
+3. Answer does not address at least one potential misconception about why the combo functions.
+4. Answer contains markdown formatting (bold, italics, bullet points).
+5. Answer references rule numbers directly.
+6. Answer is less than 80 characters.
+7. JSON parsing fails.
+
+VALIDATION CHECKLIST:
+1. Specific abilities/rules interactions enabling the combo are identified.
+2. Why each piece is essential is explained.
+3. At least one misconception is addressed and corrected.
+"""
+
+COMBO_RESULT_VALIDATION = """
+HARD REJECT RULES:
+1. Answer does not state the concrete outcome of the combo (what it produces).
+2. Answer uses vague phrases like "very powerful" or "wins the game" instead of specific outcomes.
+3. Answer does not explain how the combo wins the game or what the player should do once the loop is established.
+4. Answer does not include at least one question from the opponent's perspective asking what happened.
+5. Answer contains markdown formatting (bold, italics, bullet points).
+6. Answer references rule numbers directly.
+7. Answer is less than 80 characters.
+8. JSON parsing fails.
+
+VALIDATION CHECKLIST:
+1. The concrete outcome is stated explicitly (e.g., "infinite damage", "infinite mana of any color", "infinite creature tokens").
+2. How the combo wins the game is explained.
+3. What the player should do once the loop is established is described.
+4. At least one question is from the opponent's perspective.
+"""
+
+
+class GenerateComboQueries(BaseGenerator[ComboWithCards]):
+    """Generate combo query Q&A pairs from Commander Spellbook combos."""
+
+    TEMPLATES = [
+        TemplateConfig(
+            template_id="how_does_it_work",
+            task_instruction="""Generate exactly 3 Q&A pairs explaining HOW this combo works.
+Focus on: the sequence of steps, what triggers what, and why the loop is infinite (if applicable).
+At least one question must come from the perspective of a player who has never seen this combo before.""",
+            validation_rules=COMBO_HOW_VALIDATION.strip().split("\n"),
+            weight=1.0,
+        ),
+        TemplateConfig(
+            template_id="what_do_i_need",
+            task_instruction="""Generate exactly 3 Q&A pairs focused on the REQUIREMENTS of this combo.
+Focus on: what cards are needed, what zone each piece needs to be in, what mana or other resources are required.
+At least one question must be phrased as a player asking 'I have X, what else do I need to go infinite?'""",
+            validation_rules=COMBO_WHAT_VALIDATION.strip().split("\n"),
+            weight=1.0,
+        ),
+        TemplateConfig(
+            template_id="why_does_this_work",
+            task_instruction="""Generate exactly 3 Q&A pairs explaining WHY this combo works from a rules perspective.
+Focus on: which specific abilities or rules interactions enable the combo, and why removing any one piece breaks it.
+At least one question must address a potential misconception about why the combo functions.""",
+            validation_rules=COMBO_WHY_VALIDATION.strip().split("\n"),
+            weight=1.0,
+        ),
+        TemplateConfig(
+            template_id="what_is_the_result",
+            task_instruction="""Generate exactly 3 Q&A pairs focused on the OUTCOME of this combo.
+Focus on: what the combo produces, how it wins the game, and what a player should do once the loop is established.
+At least one question must be from the perspective of the OPPONENT asking what just happened to them.""",
+            validation_rules=COMBO_RESULT_VALIDATION.strip().split("\n"),
+            weight=1.0,
+        ),
+    ]
+
     def __init__(
         self,
-        combos_collection: pymongo.collection.Collection,  # type: ignore
-        card_collection: pymongo.collection.Collection,  # type: ignore
-        scryfall_client: ScryfallMongo,
-        save_item: Callable[[QuestionAnswerEnhanced], None],
+        data_access: MTGDataAccess,
         models: dict[ModelType, Model],
-        validation_pct: int,
-        target_count=5000,
-        metrics: ValidationMetrics | None = None) -> None:
+        validation_pct: float,
+        target_count: int = 5000,
+        save_item: callable = None,
+        metrics: ValidationMetrics | None = None,
+        dry_run: bool = False,
+        max_regeneration_attempts: int = 3,
+        batch_size: int = 1,
+        templates_per_item: int = 2,
+        enable_extra_validation: bool = True,
+    ):
+        super().__init__(
+            models=models,
+            validation_pct=validation_pct,
+            target_count=target_count,
+            save_item=save_item,
+            metrics=metrics,
+            generator_name="GenerateComboQueries",
+            dry_run=dry_run,
+            max_regeneration_attempts=max_regeneration_attempts,
+            batch_size=batch_size,
+            templates_per_item=templates_per_item,
+            enable_extra_validation=enable_extra_validation,
+        )
+        self.data_access = data_access
 
-        self.combos_collection = combos_collection
-        self.card_collection = card_collection
-        self.scryfall_client = scryfall_client
-        self.save_item = save_item
-        self.models = models
-        self.validation_pct = validation_pct
-        self.target_count = target_count
-        self.metrics = metrics
+    def get_data_batches(self) -> Iterator[ComboWithCards]:
+        """Fetch combo batches from MTGDataAccess."""
+        # Fetch more than target to account for filtering/validation failures
+        fetch_limit = self.target_count + int(self.target_count * 0.5)
+        combos = self.data_access.get_combos_enriched(limit=fetch_limit)
         
-
-    def generate_combo_queries(self) -> None:
-        """Generate combo queries - returns MongoDB documents"""
-        
-        combos_collection = self.combos_collection
-        card_collection = self.card_collection
-        scryfall_client = self.scryfall_client
-        save_item = self.save_item
-        models = self.models
-        validation_pct = self.validation_pct
-        target_count = self.target_count
-        
-        print(f"\n=== GENERATING {target_count:,} COMBO QUERIES ===")
-        
-        combos = []
-        
-        with console.status("[bold green]Extracting combo data...") as status:    
-            combos = self.__extract_combo_data(combos_collection, card_collection, scryfall_client, target_count, status)
-        
-        print(f"  → Processing {len(combos):,} cards...")
-        
-        i: int = 0
+        # Yield one combo at a time
         for combo in combos:
-            if i >= target_count:
-                break
-            
-            if (i + 1) % 100 == 0:
-                print(f"    Generated {i:,}/{target_count:,}...")
-            
-            combo_name = combo.name        
-            # Build prompt
-            prompts: list[tuple[str, list[Card], str, dict[str, str]]] = []
-            
-            description: str = combo.description
-            notes: str = combo.notes
-            
-            numbered_descriptions = (f"Step {i + 1}. {desc}" for i, desc in enumerate(description.split('\n')))
-            description = NEW_LINE.join(numbered_descriptions)
-            
-            if notes:
-                description = description + NEW_LINE + NEW_LINE + f"⚠️ WARNING: {notes}" 
-                
-            cards_in_combo: list[Card] = combo.cards_in_combo
-            
-            selected_templates = random.sample(COMBO_QUESTION_TEMPLATES, k=2)
+            yield combo
 
-            for template in selected_templates:
-                prompts.append((
-                    self.__build_combo_prompt(
-                        cards_in_combo,
-                        description,
-                        random.choice(combo.features or []),
-                        template  # pass template through
-                    ),
-                    cards_in_combo,
-                    description,
-                    template
-                ))            
+    def build_prompt(self, template: TemplateConfig, data_batch: ComboWithCards) -> str:
+        """Build the LLM prompt for a combo and template."""
+        combo = data_batch
+        
+        # Build card details for prompt
+        cards_in_combo = combo.cards
+        card_details = NEW_LINE.join(
+            map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo)
+        )
+        
+        # Format combo description with numbered steps
+        description = combo.description or ""
+        numbered_descriptions = (f"Step {i + 1}. {desc}" for i, desc in enumerate(description.split('\n')))
+        description = NEW_LINE.join(numbered_descriptions)
+        
+        # Handle notes field if present (may not be in domain model)
+        notes = getattr(combo, 'notes', None)
+        if notes:
+            description = description + NEW_LINE + NEW_LINE + f"⚠️ WARNING: {notes}"
+        
+        # Get a random feature/result from the combo
+        random_feature = ""
+        if combo.produces:
+            random_feature = random.choice(combo.produces).description
+        
+        # Build requirements list
+        requirement_list = (f"{i + 1}. {desc}" for i, desc in enumerate(REQUIREMENTS_BASE))
+        requirements = NEW_LINE.join(requirement_list)
+        
+        combo_result = f"\nCOMBO RESULT: {random_feature}" if random_feature else ""
 
-            query_model = QueryModel()
-            
-            for prompt, cards_in_combo, description, template in prompts:         
-                try:
-                    
-                    response =  query_model.query(models[ModelType.GENERATION], prompt)
-                    qa_pairs = list(map(lambda qa: QuestionAnswer(qa["question"], qa["answer"]), json.loads(response)))
-                    
-                    qa_context = f"""
-For combo_query category ({template["type"]}): verify the following:
+        prompt = f"""
+{SYSTEM_MESSAGE}
+
+{MTG_NOTATION_LEGEND}
+
+<cards>
+{card_details}
+</cards>
+
+<combo>
+AUTHORITATIVE COMBO — treat this as ground truth, overriding any inferences from card text alone:
+
+{description}{combo_result}
+</combo>
+
+<task>
+{template.task_instruction}
+
+REQUIREMENTS:
+{requirements}
+
+{OUTPUT_FORMAT}
+</task>"""
+
+        return prompt
+
+    def get_source_category(self) -> str:
+        return "combo_query"
+
+    def get_source_data(self, data_batch: ComboWithCards) -> list:
+        """Extract source data references for the generated document."""
+        combo = data_batch
+        source_data = [card.to_dict() for card in combo.cards]
+        source_data.append(combo.to_dict())
+        return source_data
+
+    def build_context(self, template: TemplateConfig, data_batch: ComboWithCards) -> str:
+        """Build validation context for the generated Q&A."""
+        combo = data_batch
+        card_details = NEW_LINE.join(
+            map(lambda c: build_card_detail(card_number=None, card=c), combo.cards)
+        )
+        
+        return f"""Category: {self.get_source_category()}
+Template: {template.template_id}
+
+For combo_query category ({template.template_id}): verify the following:
 1. The sequence of triggers described matches the order in the provided combo steps. A correct description of individual triggers in the wrong order is still a factual error.
 2. The answer explicitly names ALL required combo pieces and explains each one's role.
 3. The answer states the concrete outcome matching the COMBO RESULT field — vague phrases like "very powerful" or "wins the game" are validation failures.
 4. Oracle text is cited or closely paraphrased when explaining why a trigger fires.
 
-Don't get confused by the abilities on the cards below that have nothing to do with the combo. 
-The combo listed below should be considered more than anything else, and is 100% factually accurate and proven. 
+Don't get confused by the abilities on the cards below that have nothing to do with the combo.
+The combo listed below should be considered more than anything else, and is 100% factually accurate and proven.
 
-Cards:\n{NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards_in_combo))}\nCombo:\n{description}
-"""
-                    
-                    source_data: list[Any] = list(map(lambda c: c.toDict(), cards_in_combo))
-                    source_data.append(combo.toDict())
-
-                    is_valid, doc = validate_and_loop_with_suggested_fix(
-                        query_model=query_model,
-                        models=models,
-                        qa_pairs=qa_pairs,
-                        validation_pct=validation_pct,
-                        enable_extra_validation=False,
-                        build_context=lambda: qa_context,
-                        source_category="combo_query",
-                        source_data=source_data,
-                        source_template=template["type"],
-                        metrics=self.metrics
-                    )
-                    
-                    if is_valid and doc:
-                        save_item(doc)
-                
-                except Exception as e:
-                    print(f"  ✗ Error generating for {combo_name}: {type(e).__name__}: {e}")
-                    continue
-            
-            i = i + 1
-
-
-    def __build_combo_prompt(
-        self,
-        cards: list[Card],
-        combo: str,
-        random_combo_feature: str,
-        template: dict  # add this parameter
-    ) -> str:
-        """Generate combo question prompt with MTG notation guide."""
-        requirementList = (f"{i + 1}. {desc}" for i, desc in enumerate(REQUIREMENTS_BASE))
-        requirements = NEW_LINE.join(requirementList)
-        
-        combo_result = f"\nCOMBO RESULT: {random_combo_feature}" if random_combo_feature else ""
-
-        prompt = f"""
-    {SYSTEM_MESSAGE}
-
-    {MTG_NOTATION_LEGEND}
-
-    <cards>
-    {NEW_LINE.join(map(lambda c: build_card_detail(card_number=None, card=c), cards))}
-    </cards>
-
-    <combo>
-    AUTHORITATIVE COMBO — treat this as ground truth, overriding any inferences from card text alone:
-
-    {combo}{combo_result}
-    </combo>
-
-    <task>
-    {template["task_instruction"]}
-
-    REQUIREMENTS:
-    {requirements}
-
-    {OUTPUT_FORMAT}
-    </task>"""
-
-        return prompt
-
-    # TODO build combo text just like commander spellbook
-
-    # Initial Card State
-    #  Sol Ring in hand.
-    #  Teferi and Displacer Kitten on the battlefield.
-    # Mana Needed
-    # ({1} magic symbol)  Magic Symbol (1) available.
-    # Steps
-    # Cast Sol Ring by paying ({1} magic symbol)  Magic Symbol (1).
-    # Displacer Kitten triggers, blinking Teferi.
-    # Activate Sol Ring by tapping it, adding ({C} magic symbol)  Magic Symbol (C)({C} magic symbol)  Magic Symbol (C).
-    # Activate Teferi's second loyalty ability by removing three loyalty counters from it, returning Sol Ring from the battlefield to your hand and drawing a card.
-    # Repeat.
-    # Results
-    # Infinite card draw.
-    # Infinite draw triggers.
-    # Near-infinite colorless mana.
-    # Near-infinite storm count.
-
-    def __map_combo_cards(self, using_cards: list[dict], cards_collection: pymongo.collection.Collection) -> list[Card]: # type: ignore
-        cards: list[Card] = []
-        
-        for card in using_cards:
-            mapped_card = self.__map_using_card(Card(
-                name=card.get('card', {}).get('name', 'Unknown'),
-                type='',
-                mana_cost='',
-                text='',
-                subtypes=[],
-                supertypes=[],
-                color_identity=[],
-                zone_locations=card.get('zoneLocations', [])
-            ), cards_collection
-            )
-            
-            if mapped_card:
-                cards.append(mapped_card)
-        
-        return cards
-
-    # Rarity tiers for stratified sampling (lower score = rarer = higher priority)
-    RARE_FEATURES = [
-        "Lock", "Infinite combat phases", "Infinite self-mill",
-        "Infinite landfall triggers", "Infinite Treasure tokens"
-    ]
-    MEDIUM_FEATURES = [
-        "Infinite +1/+1 counters (single)", "Infinite colored mana",
-        "Infinite creature tokens", "Infinite draw triggers",
-        "Infinite lifegain triggers", "Infinite colorless mana"
-    ]
-
-    def __extract_combo_data(
-        self,
-        combos_collection: pymongo.collection.Collection,  # pyright: ignore[reportPrivateImportUsage]
-        card_collection: pymongo.collection.Collection,  # pyright: ignore[reportPrivateImportUsage]
-        scryfall_client: ScryfallMongo,
-        target_count: int,
-        rich_status: Status) -> list[ProjectedCombo]:
-        """Extract combo data from commander spellbook documents using stratified sampling by feature rarity.
-
-        Combos producing rare features (lock, combat phases, self-mill, etc.) get ~4x representation.
-        Medium-rarity features get ~2x. Common patterns (ETB/LTB/death/sacrifice) stay at 1x.
-        Final pool is shuffled so you don't get blocks of same-type combos.
-        """
-        pipeline = [
-            {"$match": {"status": "OK"}},
-            {"$unwind": "$produces"},
-            {"$addFields": {
-                "produces.rarityScore": {
-                    "$switch": {
-                        "branches": [
-                            {"case": {"$in": ["$produces.feature.name", self.RARE_FEATURES]}, "then": 1},
-                            {"case": {"$in": ["$produces.feature.name", self.MEDIUM_FEATURES]}, "then": 2},
-                            {"case": True, "then": 3}
-                        ]
-                    }
-                }
-            }},
-            {"$group": {
-                "_id": "$_id",
-                "name": {"$first": "$name"},
-                "description": {"$first": "$description"},
-                "uses": {"$first": "$uses"},
-                "produces": {"$push": "$produces"},
-                "notes": {"$first": "$notes"},
-                "requires": {"$first": "$requires"},
-                "bestRarityScore": {"$min": "$produces.rarityScore"}
-            }},
-            {"$sort": {"bestRarityScore": 1, "_id": 1}},
-            # Pull a larger pool biased toward rare features
-            {"$limit": target_count + int(target_count * 0.75)}
-        ]
-
-        all_combos = list(combos_collection.aggregate(pipeline))
-        combos: list[ProjectedCombo] = []
-        
-        seen_names: set[str] = set()
-
-        for i, combo in enumerate(all_combos):
-
-            rich_status.update(f"[bold green]Extracting combo data... {i+1}/{len(all_combos)}")
-            cards: list[dict] = combo.get('uses', [])
-            combo_name = "|".join(map(lambda card: card.get('card', {}).get('name', 'Unknown'), cards))
-
-            if combo_name in seen_names:
-                continue
-            seen_names.add(combo_name)
-            
-            projected_combo: ProjectedCombo = ProjectedCombo(
-                name=combo_name,
-                description=combo.get('description', None),
-                cards_in_combo=self.__map_combo_cards(cards, card_collection),
-                features=self.__map_features(combo),
-                requirements=self.__map_requirements(combo),
-                notes=combo.get('notes', None)
-            )
-            
-            if len(projected_combo.requirements) > 0:
-                for req in projected_combo.requirements:
-                    query = req.scryfall_query
-                    if not query:
-                        continue
-                    results = scryfall_client.search_scryfall(query=query)
-                    if hasattr(results, 'cards') and  len(results.cards) > 0:
-                        random_card = random.choice(results.cards)
-                        random_card_mapped = self.__map_using_card(Card(
-                            name=random_card.get('name', 'Unknown'),
-                            type='',
-                            mana_cost='',
-                            text='',
-                            subtypes=[],
-                            supertypes=[],
-                            color_identity=[],
-                            zone_locations=[]
-                        ), card_collection)
-                        if random_card_mapped:
-                            projected_combo.cards_in_combo.append(random_card_mapped)
-                    
-            combos.append(projected_combo)
-        
-        random.shuffle(combos)
-        return combos
-
-    def __map_requirements(self, combo: dict) -> list[Requirement]:
-        reqs: list[Requirement] = []
-        
-        if "requires" in combo:
-            for req in combo.get('requires', []):
-                reqs.append(Requirement(
-                    name=req.get('template', {}).get('name', None),
-                    scryfall_query=req.get('template', {}).get('scryfallQuery'),
-                    zone_locations=req.get('zoneLocations', [])
-                ))
-        
-        return reqs
-            
-    def __map_features(self, combo: dict) -> list[str]:
-        features = []
-        if "produces" in combo:
-            for feature in combo.get('produces', []):
-                features.append(feature.get('feature', {}).get('name', None))
-                
-        return features
-            
-    def __map_using_card(self, card: Card, card_collection: pymongo.collection.Collection) -> Card | None: # type: ignore
-        mtg_card: dict = card_collection.find_one({"name": card.name}) or {}
-        
-        if not mtg_card or 'name' not in mtg_card or 'type' not in mtg_card or 'manaCost' not in mtg_card or 'text' not in mtg_card:
-            return None
-        
-        projected_card: Card = Card(
-            name=mtg_card.get('name', 'Unknown'),
-            type=mtg_card.get('type', 'Unknown'),
-            mana_cost=mtg_card.get('manaCost', 'Unknown'),
-            text=mtg_card.get('text', ''),
-            subtypes=json.loads(mtg_card.get('subtypes', '[]')) if mtg_card.get('subtypes') else [],
-            supertypes=json.loads(mtg_card.get('supertypes', '[]')) if mtg_card.get('supertypes') else [],
-            color_identity=json.loads(mtg_card.get('colorIdentity', '[]')) if mtg_card.get('colorIdentity') else [],
-            zone_locations=card.zone_locations or []
-        )
-        
-        return projected_card
+Cards:
+{card_details}
+Combo:
+{combo.description or ''}"""

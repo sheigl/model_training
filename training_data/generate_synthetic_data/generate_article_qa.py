@@ -1,98 +1,118 @@
-import random
-import pymongo
-from rich.console import Console
-from rich.status import Status
-from query_model import QueryModel
-import json
-from common import build_article_qa_prompt, clean_html, validate_and_loop_with_suggested_fix
-from typing import Any, Callable
-from models import Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
-from logger import print
+"""Generate article Q&A pairs using BaseGenerator and MTGDataAccess."""
 
-DEFAULT = 2000
-console = Console()
+from typing import Iterator
 
-class GenerateArticleQa:
+from .base_generator import BaseGenerator, TemplateConfig
+from .data_access import MTGDataAccess
+from .domain_models import Article
+from .models import Model, ModelType, ValidationMetrics
+from .common import (
+    MTG_NOTATION_LEGEND,
+    OUTPUT_FORMAT,
+    SYSTEM_MESSAGE,
+    build_article_qa_prompt,
+    clean_html,
+    validate_and_loop_with_suggested_fix,
+)
+from .logger import print
+from .query_model import QueryModel
+
+
+# Validation criteria for article Q&A
+ARTICLE_QA_VALIDATION = """
+HARD REJECT RULES:
+1. Answer is not grounded in the article content — inventing information not present in the source.
+2. Answer does not synthesize the article's advice — merely quoting without explanation.
+3. Answer contains markdown formatting (bold, italics, bullet points).
+4. Answer references rule numbers directly — mechanics must be explained conversationally.
+5. Answer is less than 80 characters.
+6. JSON parsing fails.
+7. Question is not something a Commander player would naturally ask.
+
+VALIDATION CHECKLIST:
+1. The question is something a Commander player would naturally ask that the article answers.
+2. The answer synthesizes the article's advice rather than quoting directly.
+3. The answer is practical and actionable (3-5 sentences).
+4. The answer is grounded in the provided article content.
+"""
+
+
+class GenerateArticleQa(BaseGenerator[Article]):
+    """Generate Q&A pairs from EDHREC articles."""
+
+    TEMPLATES = [
+        TemplateConfig(
+            template_id="article_qa",
+            task_instruction="""Generate exactly 4 Q&A pairs from this EDHREC article.
+Questions should be what a Commander player would ask that this article answers.
+Answers MUST be grounded in the article content — do not invent information not present.
+Answers should synthesize the article's advice, not quote it directly.""",
+            validation_rules=ARTICLE_QA_VALIDATION.strip().split("\n"),
+            weight=1.0,
+        ),
+    ]
+
     def __init__(
         self,
-        articles_collection: pymongo.collection.Collection,  # type: ignore
-        save_item: Callable[[QuestionAnswerEnhanced], None],
+        data_access: MTGDataAccess,
         models: dict[ModelType, Model],
-        validation_pct: int,
-        target_count: int = DEFAULT,
+        validation_pct: float,
+        target_count: int = 2000,
+        save_item: callable = None,
         metrics: ValidationMetrics | None = None,
-    ) -> None:
-        self.articles_collection = articles_collection
-        self.save_item = save_item
-        self.models = models
-        self.validation_pct = validation_pct
-        self.target_count = target_count
-        self.metrics = metrics
+        dry_run: bool = False,
+        max_regeneration_attempts: int = 3,
+        batch_size: int = 1,
+        templates_per_item: int = 1,
+        enable_extra_validation: bool = True,
+    ):
+        super().__init__(
+            models=models,
+            validation_pct=validation_pct,
+            target_count=target_count,
+            save_item=save_item,
+            metrics=metrics,
+            generator_name="GenerateArticleQa",
+            dry_run=dry_run,
+            max_regeneration_attempts=max_regeneration_attempts,
+            batch_size=batch_size,
+            templates_per_item=templates_per_item,
+            enable_extra_validation=enable_extra_validation,
+        )
+        self.data_access = data_access
 
-    def generate_article_qa(self) -> None:
-        print(f"\n=== GENERATING {self.target_count:,} ARTICLE Q&A ===")
+    def get_data_batches(self) -> Iterator[Article]:
+        """Fetch article batches from MTGDataAccess."""
+        # Fetch more than target to account for filtering/validation failures
+        fetch_limit = self.target_count + int(self.target_count * 0.25)
+        articles = self.data_access.get_articles(limit=fetch_limit)
+        
+        # Filter articles with sufficient content
+        good_articles = [a for a in articles if len(clean_html(a.content or "")) > 300]
+        
+        # Yield one article at a time
+        for article in good_articles:
+            yield article
 
-        articles: list[dict] = []
-        with console.status("[bold green]Extracting article data...") as status:
-            all_articles = list(
-                self.articles_collection.find(
-                    {"title": {"$exists": True}, "content": {"$exists": True, "$ne": ""}},
-                    {"title": 1, "content": 1},
-                )
-            )
-            good_articles = [a for a in all_articles if len(clean_html(a.get("content", ""))) > 300]
-            random.shuffle(good_articles)
-            articles = good_articles[: self.target_count + int(self.target_count * 0.25)]
-            status.update(f"[bold green]Extracted {len(articles):,} articles")
+    def build_prompt(self, template: TemplateConfig, data_batch: Article) -> str:
+        """Build the LLM prompt for an article."""
+        article = data_batch
+        content = clean_html(article.content or "")[:2000]
+        return build_article_qa_prompt(article.title, content)
 
-        print(f"  → Processing {len(articles):,} articles...")
+    def get_source_category(self) -> str:
+        return "article_qa"
 
-        i: int = 0
-        for article in articles:
-            if i >= self.target_count:
-                break
+    def get_source_data(self, data_batch: Article) -> list:
+        """Extract source data references for the generated document."""
+        return [data_batch.title]
 
-            title = article.get("title", "")
-            content = clean_html(article.get("content", ""))[:2000]
+    def build_context(self, template: TemplateConfig, data_batch: Article) -> str:
+        """Build validation context for the generated Q&A."""
+        article = data_batch
+        content = clean_html(article.content or "")[:500]
+        return f"""Category: {self.get_source_category()}
+Template: {template.template_id}
 
-            if not title or not content:
-                continue
-
-            if (i + 1) % 100 == 0:
-                print(f"    Generated {i:,}/{self.target_count:,}...")
-
-            prompt = build_article_qa_prompt(title, content)
-
-            try:
-                query_model = QueryModel()
-                response = query_model.query(self.models[ModelType.GENERATION], prompt, max_tokens=8192)
-                qa_pairs = list(
-                    map(
-                        lambda qa: QuestionAnswer(qa["question"], qa["answer"]),
-                        json.loads(response),
-                    )
-                )
-
-                qa_context = f"Article: {title}\n{content[:500]}"
-
-                is_valid, doc = validate_and_loop_with_suggested_fix(
-                    query_model=query_model,
-                    models=self.models,
-                    qa_pairs=qa_pairs,
-                    validation_pct=self.validation_pct,
-                    enable_extra_validation=True,
-                    build_context=lambda: qa_context,
-                    source_category="article_qa",
-                    source_data=[title],
-                    source_template=None,
-                    metrics=self.metrics,
-                )
-
-                if is_valid and doc:
-                    self.save_item(doc)
-
-            except Exception as e:
-                print(f"  ✗ Error for article '{title[:50]}': {type(e).__name__}: {e}")
-                continue
-
-            i = i + 1
+Article: {article.title}
+Content preview: {content}"""

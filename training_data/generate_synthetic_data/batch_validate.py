@@ -66,7 +66,7 @@ def parse_model_string(model_str: str) -> Model:
     return Model(name=name, type=ModelType.VALIDATION, provider=provider_enum, provider_url=url)
 
 
-def update_doc(collection, doc, is_valid, score, reason, suggested_fix):
+def update_doc(collection, doc, is_valid, score, reason, suggested_fix, validation_model=None):
     """Update MongoDB document with validation results."""
     update_fields = {
         "validated": is_valid,
@@ -74,6 +74,7 @@ def update_doc(collection, doc, is_valid, score, reason, suggested_fix):
         "validation_score": score if score is not None else 0,
         "validation_reason": reason if reason else None,
         "suggested_fix": suggested_fix if suggested_fix and not is_valid else None,
+        "validation_model": validation_model,
         "validated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -173,7 +174,7 @@ def main():
                 accepted = is_valid and score is not None and score >= args.min_score
 
                 if accepted:
-                    update_doc(collection, doc, True, score, reason, None)
+                    update_doc(collection, doc, True, score, reason, None, validation_model.name)
                     stats["passed"] += 1
                     progress.update(task, description=f"[green]✓ {score}/10[/green] {question[:50]}...")
                 else:
@@ -182,7 +183,7 @@ def main():
                         stats["deleted"] += 1
                         progress.update(task, description=f"[red]✗ DELETED[/red] {question[:50]}...")
                     else:
-                        update_doc(collection, doc, False, score, reason, suggested_fix)
+                        update_doc(collection, doc, False, score, reason, suggested_fix, validation_model.name)
                         stats["failed"] += 1
                         progress.update(task, description=f"[red]✗ {score}/10[/red] {question[:50]}...")
 

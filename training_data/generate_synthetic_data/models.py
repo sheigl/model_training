@@ -1,18 +1,128 @@
+"""Legacy models — kept for backward compatibility.
+
+New code should use the Pydantic v2 domain models from `domain_models`.
+This module re-exports them alongside the legacy classes so existing imports
+continue to work without modification.
+"""
+
 from enum import Enum
 from datetime import datetime
 import json
 import uuid
 
 
+# Re-export all Pydantic v2 domain models (backward compat layer).
+# New code should import from `domain_models` directly; these aliases keep
+# existing `from models import Card, Combo, …` statements working.
+try:
+    from .domain_models import (  # noqa: F401
+        MongoModel,
+        CardFace,
+        Card as PydanticCard,
+        CardWithMetadata,
+        PriceData,
+        Ruling,
+        Legality,
+        CardLegalities,
+        ComboCard,
+        ComboProduces,
+        Combo,
+        ComboWithCards,
+        Commander,
+        CommanderWithTags,
+        Archetype,
+        Article,
+        GuideChapter,
+        Guide,
+        GameState,
+        Rule,
+        GlossaryTerm,
+        Keyword,
+    )
+
+    # Re-export all domain models for backward compatibility
+    Card = PydanticCard
+    # Direct module-level assignments
+    MongoModel = MongoModel
+    CardFace = CardFace
+    CardWithMetadata = CardWithMetadata
+    PriceData = PriceData
+    Ruling = Ruling
+    Legality = Legality
+    CardLegalities = CardLegalities
+    ComboCard = ComboCard
+    ComboProduces = ComboProduces
+    Combo = Combo
+    ComboWithCards = ComboWithCards
+    Commander = Commander
+    CommanderWithTags = CommanderWithTags
+    Archetype = Archetype
+    Article = Article
+    GuideChapter = GuideChapter
+    Guide = Guide
+    GameState = GameState
+    Rule = Rule
+    GlossaryTerm = GlossaryTerm
+    Keyword = Keyword
+
+    __all__ = [
+        "MongoModel",
+        "CardFace",
+        "Card",
+        "CardWithMetadata",
+        "PriceData",
+        "Ruling",
+        "Legality",
+        "CardLegalities",
+        "ComboCard",
+        "ComboProduces",
+        "Combo",
+        "ComboWithCards",
+        "Commander",
+        "CommanderWithTags",
+        "Archetype",
+        "Article",
+        "GuideChapter",
+        "Guide",
+        "GameState",
+        "Rule",
+        "GlossaryTerm",
+        "Keyword",
+        # Legacy models
+        "QuestionAnswer",
+        "QuestionAnswerEnhanced",
+        "ValidationMetrics",
+        "ModelType",
+        "ModelProvider",
+        "Model",
+        "Requirement",
+        "ProjectedCombo",
+    ]
+except ImportError:
+    # Fallback if domain_models not available (shouldn't happen in normal use)
+    Card = None  # type: ignore
+    __all__ = [
+        "QuestionAnswer",
+        "QuestionAnswerEnhanced",
+        "ValidationMetrics",
+        "ModelType",
+        "ModelProvider",
+        "Model",
+        "Requirement",
+        "ProjectedCombo",
+    ]
+
+
 class QuestionAnswer:
     def __init__(self, question: str, answer: str):
         self.question = question
         self.answer = answer
-        
+
+
 class QuestionAnswerEnhanced(QuestionAnswer):
     def __init__(self, question: str, answer: str):
         super().__init__(question, answer)
-        
+
         self.category: str | None = None
         self.source_data: list | None = None
         self.validated: bool = False
@@ -22,11 +132,11 @@ class QuestionAnswerEnhanced(QuestionAnswer):
         self.content_hash: str | None = None
         self.generated_at: datetime | None = None
         self.version: int = 0
-        self.source_template : str | None = None
+        self.source_template: str | None = None
         self.generation_model: str | None = None
         self.validation_model: str | None = None
         self.run_id: str | None = None
-        
+
 
 class ValidationMetrics:
     """Collects success/failure metrics for Q&A pair validation.
@@ -267,14 +377,17 @@ class ValidationMetrics:
             "by_template": _build_substats(self.template_stats),
         }
 
+
 class ModelType(Enum):
     GENERATION = "generation"
     VALIDATION = "validation"
+
 
 class ModelProvider(Enum):
     OLLAMA = "ollama"
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+
 
 class Model:
     def __init__(self, name: str, type: ModelType, api_key: str | None = None):
@@ -283,7 +396,7 @@ class Model:
         self.provider = self._parse_provider(name)
         self.provider_url = self._parse_provider_host(name)
         self.api_key = api_key or self._parse_api_key(name)
-    
+
     def _parse_provider(self, model_name: str) -> ModelProvider:
         if "anthropic" in model_name:
             return ModelProvider.ANTHROPIC
@@ -291,7 +404,7 @@ class Model:
             return ModelProvider.OPENAI
         else:
             return ModelProvider.OLLAMA
-    
+
     def _parse_model_name(self, model_name: str):
         if "," not in model_name:
             return model_name
@@ -300,7 +413,7 @@ class Model:
         # host,provider_hint,model -> parts[2]
         # host,provider_hint,model,api_key -> parts[2]
         return parts[2] if len(parts) >= 3 else parts[1]
-        
+
     def _parse_provider_host(self, model_name: str) -> str | None:
         if "," in model_name:
             parts = model_name.split(',')
@@ -314,7 +427,8 @@ class Model:
             if len(parts) >= 4:
                 return parts[3]
         return None
-        
+
+
 class Requirement:
     def __init__(self, name: str, scryfall_query: str, zone_locations: list[str]):
         self.name = name
@@ -325,15 +439,16 @@ class Requirement:
         dictionary = self.__dict__
         return dictionary
 
+
 class Card:
-    def __init__(self, 
-                 name: str, 
-                 type: str, 
-                 mana_cost: str, 
-                 text: str, 
-                 subtypes: list[str], 
-                 supertypes: list[str], 
-                 color_identity: list[str], 
+    def __init__(self,
+                 name: str,
+                 type: str,
+                 mana_cost: str,
+                 text: str,
+                 subtypes: list[str],
+                 supertypes: list[str],
+                 color_identity: list[str],
                  zone_locations: list[str]):
         self.name = name
         self.type = type
@@ -348,13 +463,14 @@ class Card:
         dictionary = self.__dict__
         return dictionary
 
+
 class ProjectedCombo:
-    def __init__(self, 
-                 name: str, 
-                 description: str, 
-                 cards_in_combo: list[Card], 
-                 features: list[str], 
-                 requirements: list[Requirement], 
+    def __init__(self,
+                 name: str,
+                 description: str,
+                 cards_in_combo: list[Card],
+                 features: list[str],
+                 requirements: list[Requirement],
                  notes: str):
         self.name = name
         self.description = description

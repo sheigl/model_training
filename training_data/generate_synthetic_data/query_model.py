@@ -5,8 +5,8 @@ from typing import Iterator
 import ollama
 import json
 import re
-from constants import MTG_NOTATION_LEGEND, SYSTEM_MESSAGE, VALIDATION_CHECKLIST, VALIDATION_SCORING_GUIDE
-from models import Model, ModelProvider
+from .constants import MTG_NOTATION_LEGEND, SYSTEM_MESSAGE, VALIDATION_CHECKLIST, VALIDATION_SCORING_GUIDE
+from .models import Model, ModelProvider
 from anthropic import Anthropic, Stream
 from openai import OpenAI
 import time
@@ -19,7 +19,7 @@ class QueryModel():
     def __init__(self):
         self.anthropic_client: Anthropic | None = None
 
-    def query(self, model: Model, prompt: str, max_tokens=8192):
+    def query(self, model: Model, prompt: str, max_tokens=8192, purpose: str = ""):
         """Query Ollama API"""
         start = time.time()
         print(f"\n{'─'*60}")
@@ -30,10 +30,11 @@ class QueryModel():
         
         try:
             if model.provider == ModelProvider.ANTHROPIC:
-                print(f"  → Using Anthropic API for model {model.name}")
                 anthropic_key = model.api_key or os.getenv("ANTHROPIC_KEY")
                 self.anthropic_client = Anthropic(api_key=anthropic_key) if not self.anthropic_client else self.anthropic_client
-            
+
+            purpose_label = f" [{purpose}]" if purpose else ""
+            print(f"  → MODEL{purpose_label}: {model.name} ({model.provider.value}, host={model.provider_url})")
             print(f"  → RESPONSE:")
             print(f"{'─'*60}")
             
@@ -144,7 +145,7 @@ class QueryModel():
         validation_prompt = self.__build_card_validation_prompt(card1, card2, question, answer)
 
         try:
-            response = self.query(model, validation_prompt)
+            response = self.query(model, validation_prompt, purpose="VALIDATION")
             
             # Parse JSON response - handle common formatting issues
             response = response.replace("```json", "").replace("```", "").strip()
@@ -230,7 +231,7 @@ class QueryModel():
         prompt = self.__build_qa_validation_prompt(question, answer, context, category, enable_extra_validation)
 
         try:
-            response = self.query(validation_model, prompt)
+            response = self.query(validation_model, prompt, purpose="VALIDATION")
             response = response.replace("```json", "").replace("```", "").strip()
             if not response.startswith('{'):
                 start = response.find('{')
@@ -289,7 +290,7 @@ Output ONLY a JSON object:
 Output ONLY valid JSON, no other text."""
 
         try:
-            response = self.query(generation_model, prompt)
+            response = self.query(generation_model, prompt, purpose="REGENERATION")
             response = response.replace("```json", "").replace("```", "").strip()
             if not response.startswith('{'):
                 start = response.find('{')
