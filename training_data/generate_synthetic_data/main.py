@@ -482,6 +482,7 @@ def main():
 
     if args.commander_building > 0:
         GenerateCommanderBuilding(
+            data_access=data_access,
             models=models,
             validation_pct=args.validation_pct,
             target_count=args.commander_building,

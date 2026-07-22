@@ -1,5 +1,6 @@
 
 import os
+import sys
 import time
 from typing import Iterator
 import ollama
@@ -9,7 +10,6 @@ from .constants import MTG_NOTATION_LEGEND, SYSTEM_MESSAGE, VALIDATION_CHECKLIST
 from .models import Model, ModelProvider
 from anthropic import Anthropic, Stream
 from openai import OpenAI
-import time
 
 # =============================================================================
 # MODEL QUERYING
@@ -61,7 +61,8 @@ class QueryModel():
                                 response_content += new_text
                                 
                                 # Print ONLY the new text (not the event object)
-                                print(new_text, end="", flush=True)
+                                sys.stderr.write(new_text)
+                                sys.stderr.flush()
             elif model.provider == ModelProvider.OPENAI:
                 openai_key = model.api_key or os.getenv("OPENAI_API_KEY") or "none"
                 client = OpenAI(base_url=model.provider_url, api_key=openai_key)
@@ -87,11 +88,13 @@ class QueryModel():
                     if chunk.choices:
                         if (hasattr(chunk.choices[0].delta, "reasoning_content") and chunk.choices[0].delta.reasoning_content is not None): # type: ignore
                             content_chunk = chunk.choices[0].delta.reasoning_content # type: ignore
-                            print(content_chunk, end='', flush=True)
+                            sys.stderr.write(content_chunk)
+                            sys.stderr.flush()
                             #thinking_content += content_chunk
                         if chunk.choices[0].delta.content is not None: # type: ignore
                             content_chunk = chunk.choices[0].delta.content
-                            print(content_chunk, end='', flush=True)
+                            sys.stderr.write(content_chunk)
+                            sys.stderr.flush()
                             response_content += content_chunk
                 
             else:
@@ -115,7 +118,8 @@ class QueryModel():
                 for chunk in stream:
                     if 'message' in chunk and 'content' in chunk['message']:
                         content_chunk = chunk['message']['content']
-                        print(content_chunk, end='', flush=True)
+                        sys.stderr.write(content_chunk)
+                        sys.stderr.flush()
                         response_content += content_chunk
             
             print(f"{'─'*60}")

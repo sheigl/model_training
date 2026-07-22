@@ -397,6 +397,7 @@ class MTGDataAccess:
         This method translates our generator filter syntax to valid queries.
 
         Supported filter keys:
+            - name: exact name or {$in: [...]} filter (simple string field)
             - text_regex: regex on 'text' field
             - oracleText: backward-compat alias for text regex
             - colors / colorIdentity: filter by color identity (JSON string field)
@@ -404,6 +405,11 @@ class MTGDataAccess:
             - commander_legal: skipped (legalities in separate collection)
         """
         and_parts: list[dict] = []
+
+        # --- Name filter (simple string field, pass through directly) ---
+        name_filter = filters.get("name")
+        if name_filter:
+            and_parts.append({"name": name_filter})
 
         # --- Text filter ---
         text_regex = None
@@ -508,7 +514,7 @@ class MTGDataAccess:
                 "colors": 1, "colorIdentity": 1,
                 "subtypes": 1, "supertypes": 1, "keywords": 1,
                 "layout": 1, "side": 1, "frame": 1, "frameEffects": 1,
-                "edhrecRank": 1, "edhrecSaltiness": 1, "rarity": 1, "producedMana": 1,
+                "edhrecRank": 1, "edhrecSaltiness": 1, "edhrecTags": 1, "rarity": 1, "producedMana": 1,
                 "prices": {
                     "$cond": {
                         "if": {"$ne": ["$prices", None]},
@@ -551,7 +557,7 @@ class MTGDataAccess:
                 "colors": 1, "colorIdentity": 1,
                 "subtypes": 1, "supertypes": 1, "keywords": 1,
                 "layout": 1, "side": 1, "rarity": 1, "producedMana": 1,
-                "edhrecRank": 1, "edhrecSaltiness": 1,
+                "edhrecRank": 1, "edhrecSaltiness": 1, "edhrecTags": 1,
             }})
 
         if skip > 0:
@@ -967,6 +973,15 @@ class MTGDataAccess:
         pipeline = [
             {"$sample": {"size": limit}},
             {"$sort": {"publishedDate": -1}},
+            {"$project": {
+                "title": 1,
+                "content": 1,
+                "excerpt": 1,
+                "tags": {"$map": {"input": "$tags", "as": "t", "in": "$$t.name"}},
+                "author": "$author.name",
+                "publishedDate": 1,
+                "url": 1,
+            }},
         ]
         result = [Article(**doc) for doc in articles_coll.aggregate(pipeline)]
         self._cache.set(cache_key, result)
@@ -984,7 +999,14 @@ class MTGDataAccess:
         if guides_coll is None:
             return []
 
-        pipeline = [{"$sample": {"size": limit}}]
+        pipeline = [
+            {"$sample": {"size": limit}},
+            {"$project": {
+                "title": 1,
+                "chapters": 1,
+                "tags": {"$map": {"input": "$tags", "as": "t", "in": "$$t.name"}},
+            }},
+        ]
         result = [Guide(**doc) for doc in guides_coll.aggregate(pipeline)]
         self._cache.set(cache_key, result)
         return result

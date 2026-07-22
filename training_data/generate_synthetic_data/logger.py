@@ -18,5 +18,4 @@ logger = logging.getLogger("mtg")
 
 def print(*args, **kwargs):
     msg = " ".join(str(a) for a in args)
-    echo(msg)
-    #logger.info(msg)
+    echo(msg, **kwargs)
