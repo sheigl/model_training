@@ -1,5 +1,43 @@
 # Changelog
 
+### Feature: Generation Trace Logging for Synthetic Data — 2026-07-21
+
+Added comprehensive LLM interaction tracing to capture the full lifecycle of every generated Q&A item. This enables debugging, analysis, and optimization of the generation/validation pipeline.
+
+**Core Architecture:**
+- **`GenerationTrace` dataclass** (`models.py`): Captures complete LLM interaction traces per Q&A item — generation prompt/response/latency, validation rounds with scores/reasons/prompts, regeneration attempts, and final outcome
+- **`trace_round` / `trace_regeneration` params** (`query_model.py`): Optional dicts populated with full interaction data during validation and regeneration
+- **`trace` param** on `validate_and_loop_with_suggested_fix()` (`common.py`): Accumulates `round_data` across validation iterations
+- **`trace_callback` param** on `BaseGenerator.__init__()` (`base_generator.py`): Creates `GenerationTrace` per template iteration, fires callback on first successful save
+
+**CLI & Storage:**
+- `--log-traces` (default: on) / `--no-log-traces` CLI flags in `main.py`
+- Traces batch-flushed to `synthetic_metrics.generation_traces` collection (batch size: 50)
+- MongoDB compound index: `(run_id, category, final_outcome)` + single index on `item_id`
+- `final_outcome` values: `"accepted_first_attempt"`, `"accepted_after_fix"`, `"rejected"`, `"skipped"`
+
+**Files Modified:**
+- `models.py` — Added `GenerationTrace` dataclass
+- `query_model.py` — Added `_last_elapsed_ms` tracking, `trace_round`/`trace_regeneration` params
+- `common.py` — Added `trace` param, round accumulation logic
+- `base_generator.py` — Added `trace_callback`, trace creation and callback wiring
+- `main.py` — Added CLI flags, `generation_traces` collection, `save_trace()`/`flush_traces()`, wired all 27 generators
+
+### Fix: Code review issues in generation trace logging — 2026-07-21
+
+- **common.py**: Fixed trace data loss when regeneration fails — `round_data` is now appended to `trace.validation_rounds` before the `break` on regeneration failure; fixed `final_outcome` to report "skipped" when validation was not performed
+- **base_generator.py**: Eliminated redundant double-parse of generation response (was parsing JSON twice per call); fixed trace callback firing for every Q&A pair in a template (now fires once per template, preventing accumulating trace corruption); moved `datetime` and `uuid` imports to module level
+- **query_model.py**: Fixed stale `_last_elapsed_ms` on query failure — the except block now updates `_last_elapsed_ms` before re-raising
+
+### Model Output Trace Logging for Synthetic Data Generation — 2026-07-21
+
+- **models.py**: Added `GenerationTrace` dataclass capturing full LLM interaction traces per Q&A item — includes generation prompt/response, latency, validation rounds with scores/prompts/responses, and final outcome (accepted_first_attempt/accepted_after_fix/rejected)
+- **query_model.py**: Added `_last_elapsed_ms` timing to `QueryModel`, plus optional `trace_round` parameter on `validate_qa()` and `trace_regeneration` parameter on `regenerate_answer()` that populate trace dicts on success and failure
+- **common.py**: `validate_and_loop_with_suggested_fix()` now accepts optional `trace: GenerationTrace` parameter that accumulates validation round details and computes final outcome
+- **base_generator.py**: Added `trace_callback` parameter to `BaseGenerator.__init__()`, creates `GenerationTrace` per template iteration, populates generation details, passes trace through validation, fires callback after save
+- **main.py**: Added `--log-traces`/`--no-log-traces` CLI flags (default: on), MongoDB `generation_traces` collection with indexes, batched trace flushing (50 per batch), trace callback wired to all 27 generator instantiations
+- **test_base_generator.py**: Updated `MockQueryModel` signatures to accept new optional `trace_round` and `trace_regeneration` parameters
+
 ### Feature: Convert 5 EDHREC-grounded generators to BaseGenerator + MTGDataAccess pattern (Phase 4 complete) — 2026-07-21
 
 - **data_access.py**: Added 3 new methods for Phase 4 data access:

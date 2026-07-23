@@ -272,6 +272,7 @@ class GenerateComparisonQuestions(BaseGenerator[tuple[CardWithMetadata, CardWith
         batch_size: int = 1,
         templates_per_item: int = 1,
         enable_extra_validation: bool = True,
+        **kwargs,
     ):
         super().__init__(
             models=models,
@@ -285,6 +286,7 @@ class GenerateComparisonQuestions(BaseGenerator[tuple[CardWithMetadata, CardWith
             batch_size=batch_size,
             templates_per_item=templates_per_item,
             enable_extra_validation=enable_extra_validation,
+            **kwargs,
         )
         self.data_access = data_access
         self._card_pairs: list[tuple[CardWithMetadata, CardWithMetadata]] = []

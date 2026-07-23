@@ -35,3 +35,22 @@ All 27 synthetic data generators have been converted from old pymongo collection
 ### Documentation
 - CHANGELOG.md: Updated with Phase 3 and Phase 4 entries
 - docs/ARCHITECTURE.md: Updated to reflect all 27 generators migrated, new data_access methods documented
+
+---
+
+# Pipeline Status — Generation Trace Logging
+
+## Current Feature: Model Output Trace Logging
+## Last Step Completed: Fixed trace callback logic — now fires for ALL outcomes (accepted, rejected, generation_error)
+## Next Action: Ready for production testing
+## Subagent Result Summary: Trace callback moved outside if(is_valid) block, added generation_error final_outcome for JSON parse and exception errors, added debug print on trace queue
+
+| Feature | Discovery | Technical Planning | Implement | Code Review | Test | Document |
+|---------|----------|-----------|-------------|------|----------|------|
+| Generation Trace Logging | ✅ Complete (inline) | ✅ Complete (inline) | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Complete |
+
+### Design Decisions (approved by user)
+- **Storage**: Separate collection `synthetic_metrics.generation_traces` (not embedded in Q&A docs)
+- **Prompt capture**: Full prompt text stored
+- **Mode**: CLI flag `--log-traces` / `--no-log-traces`, enabled by default
+- **Schema**: GenerationTrace dataclass with generation + validation_rounds array + final_outcome

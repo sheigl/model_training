@@ -70,7 +70,7 @@ import argparse
 import time
 import ollama
 from .common import *
-from .models import ValidationMetrics, QuestionAnswerEnhanced
+from .models import ValidationMetrics, QuestionAnswerEnhanced, GenerationTrace
 from .data_access import MTGDataAccess
 
 # =============================================================================
@@ -110,9 +110,10 @@ def get_mongo_collections(uri, username, password):
 
     # Metrics collection (separate DB so concurrent generators don't collide)
     metrics_collection = client['synthetic_metrics']['generator_runs']
+    generation_traces = client['synthetic_metrics']['generation_traces']
 
     return (cards, combos, synthetic, commanders, rules, glossary, articles, guides, 
-            game_changers, top_cards, archetypes, metrics_collection)
+            game_changers, top_cards, archetypes, metrics_collection, generation_traces)
 
 
 def save_to_mongo(synthetic_collection, examples: list[QuestionAnswerEnhanced], batch_size=500):
@@ -231,6 +232,10 @@ def main():
     parser.add_argument('--validation-pct', type=float, default=1, help='Set the percentage of QA pairs to validate')
     parser.add_argument("--dry-run", action="store_true", help="Run in dry-run mode (no MongoDB writes)")
     parser.add_argument('--metrics-path', type=str, default=None, help='Path to write validation metrics JSON file')
+    parser.add_argument('--log-traces', action='store_true', default=True,
+                        help='Log full generation/validation traces (default: on)')
+    parser.add_argument('--no-log-traces', action='store_false', dest='log_traces',
+                        help='Disable trace logging')
 
     args = parser.parse_args()
     
@@ -314,7 +319,7 @@ def main():
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
     (cards, combos, synthetic, commanders, rules, glossary, articles, guides, 
-     game_changers, top_cards, archetypes, metrics_collection) = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
+     game_changers, top_cards, archetypes, metrics_collection, generation_traces) = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
     print("  ✓ Connected")
 
     # Create single MTGDataAccess instance for new generators
@@ -325,6 +330,16 @@ def main():
     )
     data_access.connect()
     print("  ✓ MTGDataAccess connected")
+
+    # Create trace indexes
+    try:
+        generation_traces.create_index(
+            [("run_id", 1), ("category", 1), ("final_outcome", 1)],
+            background=True
+        )
+        generation_traces.create_index("item_id", background=True)
+    except Exception:
+        pass
 
     # Unique run ID shared by all generators in this process
     run_id = str(uuid.uuid4())
@@ -347,6 +362,22 @@ def main():
         save_to_mongo(synthetic, [doc])
         all_documents.append(doc.__dict__)
 
+    from dataclasses import asdict
+    traces_buffer: list[dict] = []
+    TRACE_BATCH_SIZE = 50
+
+    def save_trace(trace: 'GenerationTrace') -> None:
+        traces_buffer.append(asdict(trace))
+        print(f"  📝 Trace queued ({trace.final_outcome}) — {len(traces_buffer)} buffered")
+        if len(traces_buffer) >= TRACE_BATCH_SIZE:
+            flush_traces()
+
+    def flush_traces():
+        if traces_buffer:
+            generation_traces.insert_many(traces_buffer, ordered=False)
+            print(f"  📝 Flushed {len(traces_buffer)} traces to MongoDB")
+            traces_buffer.clear()
+
     # Generate all synthetic data
 
     # Original formats (old pattern - pass collections directly)
@@ -357,7 +388,8 @@ def main():
             validation_pct=args.validation_pct,
             target_count=args.combo_queries,
             save_item=save_item,
-            metrics=make_metrics("GenerateComboQueries")
+            metrics=make_metrics("GenerateComboQueries"),
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.card_search > 0:
@@ -368,7 +400,8 @@ def main():
             target_count=args.card_search,
             save_item=save_item,
             metrics=make_metrics("GenerateCardSearchQueries"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     if args.commander > 0:
@@ -379,6 +412,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateCommanderKnowledge"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     if args.multi_card > 0:
@@ -389,7 +423,8 @@ def main():
             target_count=args.multi_card,
             save_item=save_item,
             metrics=make_metrics("GenerateMultiCardUsage"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     if args.comparison > 0:
@@ -400,7 +435,8 @@ def main():
             target_count=args.comparison,
             save_item=save_item,
             metrics=make_metrics("GenerateComparisonQuestions"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     if args.reverse_lookup > 0:
@@ -411,7 +447,8 @@ def main():
             target_count=args.reverse_lookup,
             save_item=save_item,
             metrics=make_metrics("GenerateReverseLookupQuestions"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     if args.synergy > 0:
@@ -422,7 +459,8 @@ def main():
             target_count=args.synergy,
             save_item=save_item,
             metrics=make_metrics("GenerateSynergyQuestions"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     if args.budget > 0:
@@ -433,7 +471,8 @@ def main():
             target_count=args.budget,
             save_item=save_item,
             metrics=make_metrics("GenerateBudgetAlternatives"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     if args.color_identity > 0:
@@ -444,7 +483,8 @@ def main():
             target_count=args.color_identity,
             save_item=save_item,
             metrics=make_metrics("GenerateColorIdentityQuestions"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     if args.guidelines > 0:
@@ -456,7 +496,8 @@ def main():
             target_count=args.guidelines,
             save_item=save_item,
             metrics=make_metrics("GenerateQuickGuidelines"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     if args.terminology > 0:
@@ -467,6 +508,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateTerminologyQuestions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     # Phase 2: Strategy/Theory formats
@@ -478,6 +520,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateDeckbuildingTheory"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.commander_building > 0:
@@ -489,6 +532,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateCommanderBuilding"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.rules_scenarios > 0:
@@ -499,6 +543,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateRulesScenarios"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.archetypes > 0:
@@ -509,6 +554,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateArchetypes"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.game_theory > 0:
@@ -519,6 +565,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateGameTheory"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.meta_knowledge > 0:
@@ -529,6 +576,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateMetaKnowledge"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     # Phase 3: Rules-grounded formats (BaseGenerator + MTGDataAccess pattern)
@@ -541,6 +589,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateRuleExplanations"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.rule_interactions > 0:
@@ -552,6 +601,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateRuleInteractions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.glossary_examples > 0:
@@ -563,6 +613,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateGlossaryWithExamples"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.rule_edge_cases > 0:
@@ -574,6 +625,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateRuleEdgeCases"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.rule_why > 0:
@@ -585,6 +637,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateRuleWhyQuestions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     # Phase 4: EDHREC-grounded formats
@@ -595,7 +648,8 @@ def main():
             validation_pct=args.validation_pct,
             target_count=args.article_qa,
             save_item=save_item,
-            metrics=make_metrics("GenerateArticleQa")
+            metrics=make_metrics("GenerateArticleQa"),
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.guide_qa > 0:
@@ -606,7 +660,8 @@ def main():
             target_count=args.guide_qa,
             save_item=save_item,
             metrics=make_metrics("GenerateGuideQa"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.staple_analysis > 0:
@@ -617,7 +672,8 @@ def main():
             target_count=args.staple_analysis,
             save_item=save_item,
             metrics=make_metrics("GenerateStapleAnalysis"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.color_staples > 0:
@@ -628,7 +684,8 @@ def main():
             target_count=args.color_staples,
             save_item=save_item,
             metrics=make_metrics("GenerateColorStaples"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
 
     if args.salt_questions > 0:
@@ -639,7 +696,8 @@ def main():
             target_count=args.salt_questions,
             save_item=save_item,
             metrics=make_metrics("GenerateSaltQuestions"),
-            dry_run=args.dry_run if hasattr(args, 'dry_run') else False
+            dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
+            trace_callback=save_trace if args.log_traces else None,
         ).generate()
     
     # Summary
@@ -696,6 +754,11 @@ def main():
 
     print(f"\n✅ Ready to extract!")
     print("="*80)
+
+    # Flush remaining traces
+    if args.log_traces:
+        flush_traces()
+        print(f"\n📝 Generation traces saved to synthetic_metrics.generation_traces")
 
     # Clean up
     data_access.close()

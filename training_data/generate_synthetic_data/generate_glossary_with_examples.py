@@ -32,6 +32,7 @@ class GenerateGlossaryWithExamples(BaseGenerator[GlossaryTerm]):
         save_item: Callable[[QuestionAnswerEnhanced], None],
         metrics: ValidationMetrics | None = None,
         dry_run: bool = False,
+        **kwargs,
     ) -> None:
         super().__init__(
             models=models,
@@ -41,6 +42,7 @@ class GenerateGlossaryWithExamples(BaseGenerator[GlossaryTerm]):
             metrics=metrics,
             generator_name="GenerateGlossaryWithExamples",
             dry_run=dry_run,
+            **kwargs,
         )
         self.data_access = data_access
 

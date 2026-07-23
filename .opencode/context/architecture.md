@@ -59,6 +59,14 @@ training_data/generate_synthetic_data/
 - `QueryModel.regenerate_answer()` - LLM-based answer correction
 - Metrics tracking via `ValidationMetrics`
 
+### 5. Trace Logging (Generation Traces)
+- **Data model**: `GenerationTrace` dataclass in models.py — captures full LLM interaction per Q&A item
+- **Storage**: MongoDB collection `synthetic_metrics.generation_traces` (separate from Q&A docs)
+- **Flow**: BaseGenerator creates trace → populates generation details → passes to validate_and_loop → accumulates validation rounds → fires trace_callback → batched flush to MongoDB
+- **CLI control**: `--log-traces` (default on) / `--no-log-traces` to disable
+- **Indexes**: Compound (run_id, category, final_outcome) + item_id for querying
+- **Batch size**: 50 traces per MongoDB insert for performance
+
 ## Generator Categories
 
 ### Category A: Data-Driven Generators (use MTGDataAccess)
@@ -134,6 +142,14 @@ Note: `GenerateRuleInteractions` uses a custom inline prompt builder in its `bui
 data_access = MTGDataAccess(uri, user, pass)
 data_access.connect()
 
+# Trace infrastructure
+traces_buffer = []
+def save_trace(trace):
+    traces_buffer.append(asdict(trace))
+    if len(traces_buffer) >= 50:
+        generation_traces.insert_many(traces_buffer, ordered=False)
+        traces_buffer.clear()
+
 # Category A generators:
 GeneratorName(
     data_access=data_access,
@@ -142,6 +158,7 @@ GeneratorName(
     target_count=...,
     save_item=save_item,
     metrics=make_metrics("GeneratorName"),
+    trace_callback=save_trace if args.log_traces else None,
 ).generate()
 
 # Category B generators (no data_access needed):
@@ -152,7 +169,11 @@ GeneratorName(
     save_item=save_item,
     metrics=make_metrics("GeneratorName"),
     dry_run=args.dry_run,
+    trace_callback=save_trace if args.log_traces else None,
 ).generate()
 
+# Flush remaining traces
+if args.log_traces:
+    generation_traces.insert_many(traces_buffer, ordered=False)
 data_access.close()
 ```

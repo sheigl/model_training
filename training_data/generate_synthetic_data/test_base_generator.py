@@ -45,13 +45,13 @@ class MockQueryModel(QueryModel):
             return self.query_responses.pop(0)
         return json.dumps([{"question": "Test question?", "answer": "Test answer with sufficient length to pass validation."}])
 
-    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True):
+    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True, trace_round: dict | None = None):
         self.validate_call_count += 1
         if self.validate_responses:
             return self.validate_responses.pop(0)
         return True, "OK", 8.0
 
-    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "") -> str | None:
+    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "", trace_regeneration: dict | None = None) -> str | None:
         self.regenerate_call_count += 1
         if self.regenerate_responses:
             return self.regenerate_responses.pop(0)

@@ -144,6 +144,7 @@ At least one question must be from the perspective of the OPPONENT asking what j
         batch_size: int = 1,
         templates_per_item: int = 2,
         enable_extra_validation: bool = True,
+        **kwargs,
     ):
         super().__init__(
             models=models,
@@ -157,6 +158,7 @@ At least one question must be from the perspective of the OPPONENT asking what j
             batch_size=batch_size,
             templates_per_item=templates_per_item,
             enable_extra_validation=enable_extra_validation,
+            **kwargs,
         )
         self.data_access = data_access
 

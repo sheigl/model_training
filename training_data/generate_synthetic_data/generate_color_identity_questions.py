@@ -236,6 +236,7 @@ class GenerateColorIdentityQuestions(BaseGenerator[ColorIdentityContext]):
         batch_size: int = 1,
         templates_per_item: int = 1,
         enable_extra_validation: bool = True,
+        **kwargs,
     ):
         """Initialize the generator.
 
@@ -271,6 +272,7 @@ class GenerateColorIdentityQuestions(BaseGenerator[ColorIdentityContext]):
             batch_size=batch_size,
             templates_per_item=templates_per_item,
             enable_extra_validation=enable_extra_validation,
+            **kwargs,
         )
 
     def get_source_category(self) -> str:

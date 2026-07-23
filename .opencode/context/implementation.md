@@ -1,3 +1,84 @@
+# Implementation Summary
+
+# Implementation Summary: Fix Code Review Issues in Generation Trace Logging (Jul 21, 2026)
+
+## Changes Made
+
+### 1. `common.py` — Trace data loss + final_outcome fix
+- **Fix 1 (Critical)**: When `new_answer is None` (regeneration fails), `round_data` was NOT being appended to `trace.validation_rounds` before the `break`. Now appends round_data (containing both failed validation and failed regeneration data) before breaking.
+- **Fix 6 (Minor)**: `final_outcome` was misleading for skipped validation — when `should_validate` is False, it now reports "skipped" instead of being computed from `is_valid` which is stale from a previous loop or uninitialized.
+
+### 2. `base_generator.py` — Double-parse + callback + imports
+- **Fix 2 (Critical)**: Eliminated redundant double-parse of generation response. `_parse_generation_response()` was called once purely for the `trace.generation_parsed_ok` flag (result discarded), then called again for the actual parse. Now parses once, captures the result, and derives the trace flag from it.
+- **Fix 3 (Major)**: Trace callback was firing for every successful Q&A pair in the qa_pairs loop. If a template generates 3 Q&A pairs, the callback fired 3 times with the same mutable trace object that had accumulating `validation_rounds`. Now fires once and sets `trace = None` to prevent repeated firing.
+- **Fix 4 (Major)**: `from datetime import datetime` and `import uuid` were imported inside the for loop body. Moved to module-level imports alongside existing imports.
+
+### 3. `query_model.py` — Stale elapsed time on failure
+- **Fix 5 (Minor)**: `self._last_elapsed_ms` was not updated when `query()` raised an exception. Added `self._last_elapsed_ms = int((end - start) * 1000)` to the except block before re-raising.
+
+## Testing
+- 201 tests pass, 18 pre-existing failures (MockQueryModel missing `purpose` kwarg, stale pipeline assertions, missing MongoDB)
+- Zero regressions introduced by these fixes
+
+---
+
+# Implementation Summary: Model Output Trace Logging (Jul 21, 2026)
+
+## Changes Made
+
+### 1. `models.py` — Added `GenerationTrace` dataclass
+- New dataclass capturing full LLM interaction traces per Q&A item
+- Fields: item_id (UUID), run_id, category, source_template, generator_name, models, timestamps
+- Generation section: prompt, response, parsed_ok, latency_ms
+- Validation rounds: list of dicts with round#, prompt, response, score, errors, verification_checklist, regeneration details
+- Final outcome: pending / accepted_first_attempt / accepted_after_fix / rejected
+- Added to `__all__` in both try/except branches
+
+### 2. `query_model.py` — Added trace instrumentation
+- `__init__()`: Added `self._last_elapsed_ms = 0` for timing capture
+- `query()`: After `end = time.time()`, stores `self._last_elapsed_ms = int((end - start) * 1000)`
+- `validate_qa()`: New optional `trace_round: dict | None = None` parameter; populates dict with prompt, response, score, errors, latency on success/failure
+- `regenerate_answer()`: New optional `trace_regeneration: dict | None = None` parameter; populates dict with prompt, response, parsed_ok, new_answer, latency on success/failure
+
+### 3. `common.py` — Trace accumulation in validation loop
+- Added `from __future__ import annotations` at top
+- `validate_and_loop_with_suggested_fix()`: New optional `trace: GenerationTrace | None = None` parameter
+- Initializes `round_num = 0` before loop, creates `round_data = {"round": round_num}` per iteration
+- Passes `trace_round=round_data` to `validate_qa()` and `trace_regeneration=regen_data` to `regenerate_answer()`
+- Appends `round_data` to `trace.validation_rounds` before continue/break
+- After loop: computes `trace.total_rounds`, `trace.final_score`, `trace.final_outcome`
+
+### 4. `base_generator.py` — Trace creation and callback wiring
+- Added `trace_callback: Callable[[GenerationTrace], None] | None = None` parameter to `__init__()`
+- `_process_item()`: Creates `GenerationTrace` per template iteration (when callback exists), populates generation_prompt/response/latency/parsed_ok after query, passes `trace=trace` to `validate_answer()`, fires callback after successful save
+- `validate_answer()`: New optional `trace` parameter, passes through to `validate_and_loop_with_suggested_fix()`
+
+### 5. `main.py` — CLI flags and MongoDB writer
+- Added `--log-traces` / `--no-log-traces` CLI flags (default: enabled)
+- Added `generation_traces` collection from `synthetic_metrics` DB
+- Added MongoDB indexes: compound (run_id, category, final_outcome) and item_id
+- Added `save_trace()` / `flush_traces()` with 50-doc batch buffer
+- Wired `trace_callback=save_trace if args.log_traces else None` to all 27 generator instantiations
+- Flush remaining traces before `data_access.close()`
+
+### 6. `test_base_generator.py` — Mock signature updates
+- Updated `MockQueryModel.validate_qa()` to accept `trace_round: dict | None = None`
+- Updated `MockQueryModel.regenerate_answer()` to accept `trace_regeneration: dict | None = None`
+- Prevents TypeError when `validate_and_loop_with_suggested_fix` passes new keyword args
+
+## Key Design Decisions
+- **Optional by default**: All new parameters default to `None`, so existing code works unchanged
+- **Separate MongoDB collection**: Traces stored in `synthetic_metrics.generation_traces`, not embedded in Q&A docs
+- **CLI flag**: `--log-traces` enabled by default, `--no-log-traces` to disable
+- **Batch flushing**: 50 traces per batch to MongoDB for performance
+
+## Testing
+- All syntax checks pass for all 6 modified files
+- Integration tests verify: GenerationTrace dataclass, _last_elapsed_ms timing, trace_callback wiring, trace accumulation in validation loop (accepted_first_attempt, accepted_after_fix, rejected), backward compatibility (no trace_callback)
+- No regressions in existing test infrastructure (conftest mock pattern unchanged)
+
+---
+
 # Implementation Summary: Convert 5 Rules-Grounded Generators to BaseGenerator + MTGDataAccess (Jul 20, 2026)
 
 ## Changes Made

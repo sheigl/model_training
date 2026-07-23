@@ -272,6 +272,7 @@ Output JSON array with question/answer pairs. Keep answers 3-6 sentences with Co
         batch_size: int = 1,
         templates_per_item: int = 1,
         enable_extra_validation: bool = True,
+        **kwargs,
     ):
         super().__init__(
             models=models,
@@ -285,6 +286,7 @@ Output JSON array with question/answer pairs. Keep answers 3-6 sentences with Co
             batch_size=batch_size,
             templates_per_item=templates_per_item,
             enable_extra_validation=enable_extra_validation,
+            **kwargs,
         )
         self.data_access = data_access
         self._commander_cache: dict[str, list[CommanderWithTags]] = {}

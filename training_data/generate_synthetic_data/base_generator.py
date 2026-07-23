@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable, ClassVar, Generic, Iterator, TypeVar
 import random
 import time
 import json
+import uuid
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
@@ -22,7 +24,7 @@ from .common import (
     QuestionAnswer,
     QuestionAnswerEnhanced,
 )
-from .models import ValidationMetrics, ModelType, Model
+from .models import ValidationMetrics, ModelType, Model, GenerationTrace
 from .query_model import QueryModel
 
 
@@ -74,6 +76,7 @@ class BaseGenerator(ABC, Generic[T]):
         batch_size: int = 1,
         templates_per_item: int = 1,
         enable_extra_validation: bool = True,
+        trace_callback: Callable[[GenerationTrace], None] | None = None,
     ):
         """Initialize the base generator.
 
@@ -100,6 +103,7 @@ class BaseGenerator(ABC, Generic[T]):
         self.batch_size = batch_size
         self.templates_per_item = templates_per_item
         self.enable_extra_validation = enable_extra_validation
+        self._trace_callback = trace_callback
 
         self._query_model = QueryModel()
         self.generated_count = 0
@@ -224,6 +228,7 @@ class BaseGenerator(ABC, Generic[T]):
         template: TemplateConfig,
         data_batch: T,
         source_data: list[Any],
+        trace: GenerationTrace | None = None,
     ) -> tuple[bool, QuestionAnswerEnhanced | None]:
         """Run validation pipeline with regeneration loop.
 
@@ -249,6 +254,7 @@ class BaseGenerator(ABC, Generic[T]):
             source_data=source_data,
             source_template=template.template_id,
             metrics=self.metrics,
+            trace=trace,
         )
 
         return is_valid, doc
@@ -291,6 +297,19 @@ class BaseGenerator(ABC, Generic[T]):
             if self.generated_count >= self.target_count:
                 break
 
+            trace = None
+            if self._trace_callback:
+                trace = GenerationTrace(
+                    item_id=str(uuid.uuid4()),
+                    run_id=self.metrics.run_id if self.metrics else "",
+                    category=self.get_source_category(),
+                    source_template=template.template_id,
+                    generator_name=self._generator_name,
+                    generation_model=self.generation_model.name,
+                    validation_model=self.validation_model.name,
+                    created_at=datetime.utcnow().isoformat() + "Z",
+                )
+
             try:
                 # Build prompt and generate
                 prompt = self.build_prompt(template, data_batch)
@@ -302,7 +321,22 @@ class BaseGenerator(ABC, Generic[T]):
                 )
 
                 # Parse JSON response
-                qa_pairs = self._parse_generation_response(response)
+                try:
+                    qa_pairs = self._parse_generation_response(response)
+                    if trace:
+                        trace.generation_parsed_ok = True
+                except json.JSONDecodeError:
+                    if trace:
+                        trace.generation_prompt = prompt
+                        trace.generation_response = response
+                        trace.generation_latency_ms = self._query_model._last_elapsed_ms
+                        trace.generation_parsed_ok = False
+                    raise  # Re-raise to be caught by the outer handler
+
+                if trace:
+                    trace.generation_prompt = prompt
+                    trace.generation_response = response
+                    trace.generation_latency_ms = self._query_model._last_elapsed_ms
 
                 # Validate each Q&A pair
                 source_data = self.get_source_data(data_batch)
@@ -312,7 +346,7 @@ class BaseGenerator(ABC, Generic[T]):
                         break
 
                     is_valid, doc = self.validate_answer(
-                        qa, template, data_batch, source_data
+                        qa, template, data_batch, source_data, trace=trace
                     )
 
                     if is_valid and doc:
@@ -320,14 +354,30 @@ class BaseGenerator(ABC, Generic[T]):
                             self.save_item(doc)
                         self.generated_count += 1
 
+                # Fire trace callback after all QA pairs are processed
+                # (regardless of pass/fail) so we always capture generation traces
+                if trace and self._trace_callback:
+                    self._trace_callback(trace)
+                    trace = None  # Prevent callback from firing again for this template
+
             except json.JSONDecodeError as e:
                 console.print(f"[red]  ✗ JSON parse error: {e}[/red]")
                 if self.metrics:
                     self.metrics.record_candidate(self.get_source_category(), template.template_id)
+                # Save trace for failed generation (JSON parse error)
+                if trace and self._trace_callback:
+                    trace.final_outcome = "generation_error"
+                    self._trace_callback(trace)
+                    trace = None
             except Exception as e:
                 console.print(f"[red]  ✗ Error generating: {type(e).__name__}: {e}[/red]")
                 if self.metrics:
                     self.metrics.record_candidate(self.get_source_category(), template.template_id)
+                # Save trace for failed generation (other error)
+                if trace and self._trace_callback:
+                    trace.final_outcome = "generation_error"
+                    self._trace_callback(trace)
+                    trace = None
                 continue
 
     def generate(self) -> None:

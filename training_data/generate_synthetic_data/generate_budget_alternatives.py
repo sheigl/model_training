@@ -170,6 +170,7 @@ class GenerateBudgetAlternatives(BaseGenerator[BudgetContext]):
         save_item: Any,
         metrics: ValidationMetrics | None = None,
         dry_run: bool = False,
+        **kwargs,
     ) -> None:
         super().__init__(
             models=models,
@@ -179,6 +180,7 @@ class GenerateBudgetAlternatives(BaseGenerator[BudgetContext]):
             metrics=metrics,
             generator_name="GenerateBudgetAlternatives",
             dry_run=dry_run,
+            **kwargs,
         )
         self.data_access = data_access
 

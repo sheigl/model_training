@@ -46,6 +46,9 @@ python -m training_data.generate_synthetic_data.main --terminology 200
 
 # Dry run (no MongoDB writes)
 python -m training_data.generate_synthetic_data.main --archetypes 100 --dry-run
+
+# Disable generation trace logging (traces are on by default)
+python -m training_data.generate_synthetic_data.main --all --no-log-traces
 ```
 
 ### Data Extraction
@@ -71,6 +74,20 @@ pytest tests/ training_data/generate_synthetic_data/test_*.py
 # Specific test file
 pytest tests/test_generate_meta_knowledge.py -v
 ```
+
+## Generation Trace Logging
+
+Generation traces capture the full LLM interaction lifecycle for debugging and analysis. Traces are stored in `synthetic_metrics.generation_traces` with full prompt/response text, validation scores, and final outcomes.
+
+```bash
+# Traces are enabled by default
+python -m training_data.generate_synthetic_data.main --all
+
+# Disable trace logging if not needed
+python -m training_data.generate_synthetic_data.main --all --no-log-traces
+```
+
+See `docs/ARCHITECTURE.md` for the trace schema and design details.
 
 ## Project Structure
 

@@ -33,6 +33,7 @@ class GenerateRuleEdgeCases(BaseGenerator[Rule]):
         save_item: Callable[[QuestionAnswerEnhanced], None],
         metrics: ValidationMetrics | None = None,
         dry_run: bool = False,
+        **kwargs,
     ) -> None:
         super().__init__(
             models=models,
@@ -42,6 +43,7 @@ class GenerateRuleEdgeCases(BaseGenerator[Rule]):
             metrics=metrics,
             generator_name="GenerateRuleEdgeCases",
             dry_run=dry_run,
+            **kwargs,
         )
         self.data_access = data_access
 

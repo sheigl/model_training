@@ -97,6 +97,7 @@ class GenerateRuleInteractions(BaseGenerator[ProjectedRulePair]):
         save_item: Callable[[QuestionAnswerEnhanced], None],
         metrics: ValidationMetrics | None = None,
         dry_run: bool = False,
+        **kwargs,
     ) -> None:
         super().__init__(
             models=models,
@@ -106,7 +107,8 @@ class GenerateRuleInteractions(BaseGenerator[ProjectedRulePair]):
             metrics=metrics,
             generator_name="GenerateRuleInteractions",
             dry_run=dry_run,
-            templates_per_item=2,  # 2 templates per pair like old pattern
+            templates_per_item=2,
+            **kwargs,
         )
         self.data_access = data_access
 

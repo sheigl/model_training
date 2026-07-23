@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import random
 import re
 from typing import Any, Callable
 from dataclasses import dataclass
 
 from .query_model import QueryModel
-from .models import Card, Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics
+from .models import Card, Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics, GenerationTrace
 from .constants import *
 
 
@@ -871,7 +873,8 @@ def validate_and_loop_with_suggested_fix(
     source_category: str,
     source_data: list,
     source_template: str | None,
-    metrics: ValidationMetrics | None = None) -> tuple[bool, QuestionAnswerEnhanced | None]:
+    metrics: ValidationMetrics | None = None,
+    trace: GenerationTrace | None = None) -> tuple[bool, QuestionAnswerEnhanced | None]:
     for enumerated_i, qa in enumerate(qa_pairs):
 
         if metrics:
@@ -886,6 +889,7 @@ def validate_and_loop_with_suggested_fix(
             metrics.record_skip(source_category, source_template)
 
         iteration = 0
+        round_num = 0
         is_valid: bool = True
         reason: str | None = None
         score: float | None = None
@@ -896,18 +900,21 @@ def validate_and_loop_with_suggested_fix(
 
             qa_context = build_context()
 
+            round_data = {"round": round_num}
             is_valid, reason, score = query_model.validate_qa(
                 validation_model=models[ModelType.VALIDATION],
                 question=qa.question,
                 answer=qa.answer,
                 context=qa_context,
                 category=source_category,
-                enable_extra_validation=enable_extra_validation
+                enable_extra_validation=enable_extra_validation,
+                trace_round=round_data,
             )
 
             if not is_valid:
                 print(f"    ✗ REJECTED [attempt {iteration + 1}/3] (score: {score}/10, {reason}): {qa.question[:80]}")
                 print(f"    → Passing back to generation model for correction...")
+                regen_data = {}
                 new_answer = query_model.regenerate_answer(
                     generation_model=models[ModelType.GENERATION],
                     question=qa.question,
@@ -915,22 +922,43 @@ def validate_and_loop_with_suggested_fix(
                     reason=reason,
                     score=score,
                     context=qa_context,
-                    category=source_category
+                    category=source_category,
+                    trace_regeneration=regen_data,
                 )
+                round_data["regeneration"] = regen_data
                 if new_answer:
                     qa.answer = new_answer
                 else:
                     print(f"    ✗ Regeneration failed, moving on.")
+                    if trace is not None:
+                        trace.validation_rounds.append(round_data)
                     break
                 iteration += 1
                 if metrics:
                     metrics.record_fix_attempt(source_category, source_template)
                 if iteration >= 3:
                     print(f"    ✗ REJECTED after 3 regeneration attempts, moving on.")
+                    if trace is not None:
+                        trace.validation_rounds.append(round_data)
                     break
+                round_num += 1
+                if trace is not None:
+                    trace.validation_rounds.append(round_data)
                 continue
             else:
+                if trace is not None:
+                    trace.validation_rounds.append(round_data)
                 break
+
+        if trace is not None:
+            trace.total_rounds = round_num + 1 if should_validate else 0
+            trace.final_score = score
+            if not should_validate:
+                trace.final_outcome = "skipped"
+            elif is_valid:
+                trace.final_outcome = "accepted_first_attempt" if round_num == 0 else "accepted_after_fix"
+            else:
+                trace.final_outcome = "rejected"
 
         if is_valid:
             attempt_label = " (first attempt)" if iteration == 0 else f" (after {iteration} fix)"

@@ -175,6 +175,75 @@ MongoDB (source data)
 
 Metrics are stored in `synthetic_metrics.generator_runs` with a shared `run_id` per process.
 
+### Generation Trace Logging
+
+Every Q&A item generated can have a full LLM interaction trace stored in `synthetic_metrics.generation_traces`. This captures the complete lifecycle — from prompt construction through validation rounds to final outcome — enabling debugging, analysis, and optimization of the generation pipeline.
+
+**Trace per template iteration**: One `GenerationTrace` document is created per template iteration (not per Q&A pair). A single template call may produce multiple Q&A items, all sharing the same trace.
+
+**Trace lifecycle:**
+1. `BaseGenerator.generate()` creates a `GenerationTrace` at the start of each template iteration
+2. Generation prompt/response and latency are populated after LLM call
+3. `validate_and_loop_with_suggested_fix()` accumulates validation rounds via the `trace` parameter
+4. Each validation round appends a `round_data` dict with score, prompt, response, errors, etc.
+5. If regeneration occurs, the `regeneration` sub-dict captures the regeneration prompt/response
+6. On first successful save, `trace_callback` fires with the completed trace
+7. Traces are batch-flushed to MongoDB (50 per batch)
+
+**CLI flags:**
+- `--log-traces` (default: enabled) — Enable trace logging
+- `--no-log-traces` — Disable trace logging entirely
+
+**MongoDB schema** (`synthetic_metrics.generation_traces`):
+```json
+{
+  "_id": "uuid",
+  "run_id": "uuid",
+  "item_id": "uuid",
+  "category": "combo_query",
+  "source_template": "how_does_it_work",
+  "generator_name": "GenerateComboQueries",
+  "generation_model": "qwen3.6:27b",
+  "validation_model": "qwen3.6:27b",
+  "created_at": "ISO timestamp",
+  "generation": {
+    "prompt": "full prompt text...",
+    "response": "raw model response...",
+    "parsed_ok": true,
+    "latency_ms": 4200
+  },
+  "validation_rounds": [
+    {
+      "round": 0,
+      "prompt": "validation prompt...",
+      "response": "raw validation JSON...",
+      "parsed_ok": true,
+      "score": 6.5,
+      "is_acceptable": false,
+      "errors": "...",
+      "missing_info": "...",
+      "reason": "...",
+      "verification_checklist": [...],
+      "latency_ms": 2100,
+      "regeneration": null
+    }
+  ],
+  "final_outcome": "accepted_after_fix",
+  "total_rounds": 2,
+  "final_score": 8.0
+}
+```
+
+**Final outcome values:**
+- `"accepted_first_attempt"` — Q&A passed validation on first try
+- `"accepted_after_fix"` — Q&A required regeneration but eventually passed
+- `"rejected"` — Q&A failed after all regeneration attempts
+- `"skipped"` — Validation was not performed (validation_pct=0)
+
+**Indexes:**
+- Compound: `(run_id, category, final_outcome)` — For filtering traces by run, category, and outcome
+- Single: `item_id` — For looking up traces by Q&A item
+
 ## Key Design Decisions
 
 1. **Unified BaseGenerator[T] pattern**: All 27 generators extend `BaseGenerator[T]`, providing invariant generation loop, validation pipeline, and metrics tracking. Topic-based generators use `T=str`; data-backed generators use typed dataclasses or tuples.
@@ -188,3 +257,5 @@ Metrics are stored in `synthetic_metrics.generator_runs` with a shared `run_id` 
 5. **Weighted template selection**: Allows balancing output diversity without complex routing logic.
 
 6. **Typed data batches**: Data-backed generators use typed generics (`BaseGenerator[Rule]`, `BaseGenerator[ProjectedRulePair]`, etc.) enabling type-safe prompt building and validation context construction.
+
+7. **Generation traces stored separately**: Traces live in `synthetic_metrics.generation_traces` (not embedded in Q&A docs). Full prompt text is captured (not just hashes). Traces are batch-flushed (50 per batch) to minimize MongoDB write overhead. Traces are per template iteration, not per Q&A pair.

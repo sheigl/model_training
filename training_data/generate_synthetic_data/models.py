@@ -5,8 +5,11 @@ This module re-exports them alongside the legacy classes so existing imports
 continue to work without modification.
 """
 
+from __future__ import annotations
+
 from enum import Enum
 from datetime import datetime
+from dataclasses import dataclass, field
 import json
 import uuid
 
@@ -91,6 +94,7 @@ try:
         # Legacy models
         "QuestionAnswer",
         "QuestionAnswerEnhanced",
+        "GenerationTrace",
         "ValidationMetrics",
         "ModelType",
         "ModelProvider",
@@ -104,6 +108,7 @@ except ImportError:
     __all__ = [
         "QuestionAnswer",
         "QuestionAnswerEnhanced",
+        "GenerationTrace",
         "ValidationMetrics",
         "ModelType",
         "ModelProvider",
@@ -136,6 +141,37 @@ class QuestionAnswerEnhanced(QuestionAnswer):
         self.generation_model: str | None = None
         self.validation_model: str | None = None
         self.run_id: str | None = None
+
+
+@dataclass
+class GenerationTrace:
+    """Captures the full LLM interaction trace for a single Q&A item."""
+    item_id: str                    # UUID, unique per Q&A item
+    run_id: str                     # shared across all generators in a run
+    category: str = ""
+    source_template: str | None = None
+    generator_name: str = ""
+    generation_model: str = ""
+    validation_model: str = ""
+    created_at: str = ""            # ISO timestamp
+
+    # Generation
+    generation_prompt: str = ""
+    generation_response: str = ""
+    generation_parsed_ok: bool = True
+    generation_latency_ms: int = 0
+
+    # Validation rounds — list of dicts, each with:
+    #   round: int, prompt: str, response: str, parsed_ok: bool,
+    #   score: float|None, is_acceptable: bool, errors: str, missing_info: str,
+    #   reason: str, verification_checklist: list|None, latency_ms: int,
+    #   regeneration: dict|None (if a regeneration happened before this round)
+    validation_rounds: list = field(default_factory=list)
+
+    # Final outcome
+    final_outcome: str = "pending"   # "accepted_first_attempt" | "accepted_after_fix" | "rejected"
+    total_rounds: int = 0
+    final_score: float | None = None
 
 
 class ValidationMetrics:

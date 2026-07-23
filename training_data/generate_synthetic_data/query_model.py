@@ -18,6 +18,7 @@ from openai import OpenAI
 class QueryModel():
     def __init__(self):
         self.anthropic_client: Anthropic | None = None
+        self._last_elapsed_ms = 0
 
     def query(self, model: Model, prompt: str, max_tokens=8192, purpose: str = ""):
         """Query Ollama API"""
@@ -124,12 +125,14 @@ class QueryModel():
             
             print(f"{'─'*60}")
             end = time.time()
+            self._last_elapsed_ms = int((end - start) * 1000)
             print(f"  ✓ Response generated in {end - start:.2f} seconds")
             response_content = re.sub(r'<think>.*?</think>', '', response_content, flags=re.DOTALL).strip()
             response_content = response_content.replace("```json", "").replace("```", "").strip()
             return response_content
         except Exception as e:
             end = time.time()
+            self._last_elapsed_ms = int((end - start) * 1000)
             print(f"  ✗ Error querying model: {type(e).__name__}: {e} (after {end - start:.2f} seconds)")
             raise e
 
@@ -222,7 +225,7 @@ class QueryModel():
             return False, f"Validation error: {str(e)}", 0
 
 
-    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> tuple[bool, str | None, float | None]:
+    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True, trace_round: dict | None = None) -> tuple[bool, str | None, float | None]:
         """
         Generic Q&A validator — calls the model to score any question/answer pair.
 
@@ -254,16 +257,44 @@ class QueryModel():
                 is_acceptable = False
                 score = min(score, 4)
 
+            if trace_round is not None:
+                trace_round.update({
+                    "prompt": prompt,
+                    "response": response,  # raw response before JSON extraction
+                    "parsed_ok": True,
+                    "score": score,
+                    "is_acceptable": is_acceptable and score >= 7,
+                    "errors": errors,
+                    "missing_info": result.get('missing_info', ''),
+                    "reason": reason,
+                    "verification_checklist": result.get('verification_checklist', None),
+                    "latency_ms": self._last_elapsed_ms,
+                })
+
             return is_acceptable and score >= 7, reason, score
 
         except json.JSONDecodeError as e:
             print(f"    ⚠️  Validation JSON parse failed: {e}")
+            if trace_round is not None:
+                trace_round.update({
+                    "prompt": prompt, "response": response, "parsed_ok": False,
+                    "score": 0, "is_acceptable": False, "errors": str(e),
+                    "missing_info": "", "reason": f"Validation parse failed: {e}",
+                    "verification_checklist": None, "latency_ms": self._last_elapsed_ms,
+                })
             return False, f"Validation parse failed: {str(e)}", 0
         except Exception as e:
             print(f"    ⚠️  Validation error: {e}")
+            if trace_round is not None:
+                trace_round.update({
+                    "prompt": prompt, "response": "", "parsed_ok": False,
+                    "score": 0, "is_acceptable": False, "errors": str(e),
+                    "missing_info": "", "reason": f"Validation error: {e}",
+                    "verification_checklist": None, "latency_ms": self._last_elapsed_ms,
+                })
             return False, f"Validation error: {str(e)}", 0
 
-    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "") -> str | None:
+    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "", trace_regeneration: dict | None = None) -> str | None:
         """
         Ask the generation model to produce a corrected answer based on validation feedback.
         Returns the new answer string, or None if regeneration failed.
@@ -305,15 +336,41 @@ Output ONLY valid JSON, no other text."""
             result = json.loads(response)
             new_answer = result.get('answer', '').strip()
             if new_answer:
+                if trace_regeneration is not None:
+                    trace_regeneration.update({
+                        "prompt": prompt,
+                        "response": response,
+                        "parsed_ok": True,
+                        "new_answer": new_answer,
+                        "latency_ms": self._last_elapsed_ms,
+                    })
                 return new_answer
             else:
                 print("    ⚠️  Regeneration returned empty answer.")
+                if trace_regeneration is not None:
+                    trace_regeneration.update({
+                        "prompt": prompt,
+                        "response": response,
+                        "parsed_ok": True,
+                        "new_answer": None,
+                        "latency_ms": self._last_elapsed_ms,
+                    })
                 return None
         except json.JSONDecodeError as e:
             print(f"    ⚠️  Regeneration JSON parse failed: {e}")
+            if trace_regeneration is not None:
+                trace_regeneration.update({
+                    "prompt": prompt, "response": response, "parsed_ok": False,
+                    "new_answer": None, "latency_ms": self._last_elapsed_ms,
+                })
             return None
         except Exception as e:
             print(f"    ⚠️  Regeneration error: {e}")
+            if trace_regeneration is not None:
+                trace_regeneration.update({
+                    "prompt": prompt, "response": "", "parsed_ok": False,
+                    "new_answer": None, "latency_ms": self._last_elapsed_ms,
+                })
             return None
 
     def __build_qa_validation_prompt(self, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True) -> str:

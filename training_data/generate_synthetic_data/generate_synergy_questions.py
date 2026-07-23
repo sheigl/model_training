@@ -235,6 +235,7 @@ class GenerateSynergyQuestions(BaseGenerator[SynergyDataBatch]):
         batch_size: int = 1,
         templates_per_item: int = 1,
         enable_extra_validation: bool = True,
+        **kwargs,
     ):
         super().__init__(
             models=models,
@@ -248,6 +249,7 @@ class GenerateSynergyQuestions(BaseGenerator[SynergyDataBatch]):
             batch_size=batch_size,
             templates_per_item=templates_per_item,
             enable_extra_validation=enable_extra_validation,
+            **kwargs,
         )
         self.data_access = data_access
         self._synergy_cache: dict[str, SynergyDataBatch] = {}

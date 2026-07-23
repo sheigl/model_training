@@ -16,10 +16,10 @@ class GenerateMultiCardUsage(BaseGenerator[ComboWithCards]):
 
     def __init__(self, data_access: MTGDataAccess, models: dict[ModelType, Model],
                  validation_pct: float, target_count: int, save_item: Callable[[QuestionAnswerEnhanced], None],
-                 metrics: ValidationMetrics | None = None, dry_run: bool = False):
+                 metrics: ValidationMetrics | None = None, dry_run: bool = False, **kwargs):
         super().__init__(models=models, validation_pct=validation_pct, target_count=target_count,
                          save_item=save_item, metrics=metrics, generator_name="GenerateMultiCardUsage",
-                         dry_run=dry_run)
+                         dry_run=dry_run, **kwargs)
         self.data_access = data_access
     
     def get_data_batches(self) -> Iterator[list[ComboWithCards]]:
