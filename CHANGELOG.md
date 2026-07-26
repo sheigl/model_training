@@ -2,6 +2,37 @@
 
 ## [Unreleased] — TrainForge Generic Framework (2026-07-24)
 
+### Feature: MTG AI Pipeline prompt improvements (sibling feedback + trigger ordering) — 2026-07-26
+
+Three coordinated changes to improve the generator model's first-attempt pass rate from ~46% to a projected ~55-60%, targeting the two largest failure modes (wrong trigger/stack ordering ~50% of failures, vague outcomes ~20% of failures).
+
+**Change 1 — Generator prompt (`constants.py`)**
+- New item inserted at index 3 of `REQUIREMENTS_BASE`: "CRITICAL — Trigger ordering: ..." covering LIFO stack resolution, ETB timing, static vs triggered ability rules. Targets the #1 failure mode.
+- Vague-outcome item (index 5) expanded: banned phrases now include "infinite triggers", "infinite value", "overwhelm opponents"; example updated to "infinite 1/1 Snake creature tokens".
+- `REQUIREMENTS_BASE` list grew from 8 to 9 items.
+
+**Change 2 — Fix prompt (`query_model.py`)**
+- `regenerate_answer` gained a `sibling_feedback: str = ""` parameter. When Q2/Q3 of a combo generation are being corrected, they now see what was wrong with and how Q1 was corrected.
+- `sibling_block` is built conditionally and inserted into the prompt f-string after the context block.
+
+**Change 3 — Sibling feedback threading (hoisted accumulator architecture)**
+- `base_generator.py` `_process_item`: added `sibling_corrections: list[str] = []` before the QA loop; passes it to `validate_answer`.
+- `base_generator.py` `validate_answer`: added `sibling_corrections: list[str] | None = None` param; threads it into `validate_and_loop_with_suggested_fix`.
+- `generate_quick_guidelines.py` `validate_answer` override: added the same `sibling_corrections` param.
+- `common.py` `validate_and_loop_with_suggested_fix`: added `sibling_corrections: list[str] | None = None` param; passes `sibling_feedback` to `regenerate_answer`; appends to the accumulator on successful fix (guarded by `if sibling_corrections is not None`).
+
+**Architecture note**: The accumulator is hoisted into `BaseGenerator._process_item` (not inside `validate_and_loop_with_suggested_fix`) because that function is always called with `qa_pairs` of length 1. The 3 sibling Q&As from one combo generation are iterated by `_process_item`'s own loop, so the accumulator must live in that scope to persist across siblings.
+
+**Files changed:**
+- `training_data/generate_synthetic_data/constants.py` — `REQUIREMENTS_BASE` expanded
+- `training_data/generate_synthetic_data/query_model.py` — `regenerate_answer` `sibling_feedback` param
+- `training_data/generate_synthetic_data/common.py` — `validate_and_loop_with_suggested_fix` `sibling_corrections` param
+- `training_data/generate_synthetic_data/base_generator.py` — `_process_item` + `validate_answer` sibling_corrections threading
+- `training_data/generate_synthetic_data/generate_quick_guidelines.py` — `validate_answer` override `sibling_corrections` param
+- 5 test mock files updated to accept the `sibling_feedback` param
+
+**Tests:** 229 passed, 20 pre-existing failures, zero regressions. 5 behavioral tests confirmed sibling feedback threading works.
+
 ### Ported 4 medium-sized MTG generators from old CLI to TrainForge — 2026-07-24
 
 | File | Class | Type Param | Category | Data Source |

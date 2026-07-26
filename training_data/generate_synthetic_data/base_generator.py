@@ -229,6 +229,7 @@ class BaseGenerator(ABC, Generic[T]):
         data_batch: T,
         source_data: list[Any],
         trace: GenerationTrace | None = None,
+        sibling_corrections: list[str] | None = None,
     ) -> tuple[bool, QuestionAnswerEnhanced | None]:
         """Run validation pipeline with regeneration loop.
 
@@ -255,6 +256,7 @@ class BaseGenerator(ABC, Generic[T]):
             source_template=template.template_id,
             metrics=self.metrics,
             trace=trace,
+            sibling_corrections=sibling_corrections,
         )
 
         return is_valid, doc
@@ -341,12 +343,15 @@ class BaseGenerator(ABC, Generic[T]):
                 # Validate each Q&A pair
                 source_data = self.get_source_data(data_batch)
 
+                sibling_corrections: list[str] = []
+
                 for qa in qa_pairs:
                     if self.generated_count >= self.target_count:
                         break
 
                     is_valid, doc = self.validate_answer(
-                        qa, template, data_batch, source_data, trace=trace
+                        qa, template, data_batch, source_data, trace=trace,
+                        sibling_corrections=sibling_corrections,
                     )
 
                     if is_valid and doc:

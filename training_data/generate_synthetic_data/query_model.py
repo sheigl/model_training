@@ -294,14 +294,21 @@ class QueryModel():
                 })
             return False, f"Validation error: {str(e)}", 0
 
-    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "", trace_regeneration: dict | None = None) -> str | None:
+    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "", sibling_feedback: str = "", trace_regeneration: dict | None = None) -> str | None:
         """
         Ask the generation model to produce a corrected answer based on validation feedback.
         Returns the new answer string, or None if regeneration failed.
+        sibling_feedback: optional context from corrections already applied to sibling Q&As
+        in the same batch (e.g. "Q1 was rejected for wrong trigger order — apply same fix here").
         """
         context_block = (
             f"\nSource material the answer should be grounded in:\n{context}\n"
             if context else ""
+        )
+
+        sibling_block = (
+            f"\nIMPORTANT — corrections already applied to other answers in this batch:\n{sibling_feedback}\nApply the same corrections to your answer.\n"
+            if sibling_feedback else ""
         )
 
         prompt = f"""{SYSTEM_MESSAGE}
@@ -313,7 +320,7 @@ Question: {question}
 Previous answer: {old_answer}
 
 Validation feedback: {reason} (Score: {score}/10)
-Category: {category or 'general'}{context_block}
+Category: {category or 'general'}{context_block}{sibling_block}
 
 Please provide a corrected answer that addresses the validation feedback. Be concise, accurate, and directly answer the question.
 

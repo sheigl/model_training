@@ -112,6 +112,7 @@ class MockQueryModel(QueryModel):
         score: float | None,
         context: str = "",
         category: str = "",
+        sibling_feedback: str = "",
         trace_regeneration: dict | None = None,
     ) -> str | None:
         self.regenerate_call_count += 1

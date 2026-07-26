@@ -58,7 +58,7 @@ class MockQueryModel(QueryModel):
             return self.validate_responses.pop(0)
         return True, "OK", 8.0
 
-    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "") -> str | None:
+    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "", sibling_feedback: str = "") -> str | None:
         self.regenerate_call_count += 1
         if self.regenerate_responses:
             return self.regenerate_responses.pop(0)

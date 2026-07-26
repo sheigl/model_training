@@ -494,6 +494,7 @@ KEY TERMS:
         template: TemplateConfig,
         data_batch: dict,
         source_data: list[Any],
+        sibling_corrections: list[str] | None = None,
     ) -> tuple[bool, QuestionAnswerEnhanced | None]:
         """Run validation pipeline with regeneration loop."""
         return validate_and_loop_with_suggested_fix(
@@ -507,4 +508,5 @@ KEY TERMS:
             source_data=source_data,
             source_template=template.template_id,
             metrics=self.metrics,
+            sibling_corrections=sibling_corrections,
         )

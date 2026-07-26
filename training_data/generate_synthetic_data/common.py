@@ -874,7 +874,8 @@ def validate_and_loop_with_suggested_fix(
     source_data: list,
     source_template: str | None,
     metrics: ValidationMetrics | None = None,
-    trace: GenerationTrace | None = None) -> tuple[bool, QuestionAnswerEnhanced | None]:
+    trace: GenerationTrace | None = None,
+    sibling_corrections: list[str] | None = None) -> tuple[bool, QuestionAnswerEnhanced | None]:
     for enumerated_i, qa in enumerate(qa_pairs):
 
         if metrics:
@@ -923,10 +924,17 @@ def validate_and_loop_with_suggested_fix(
                     score=score,
                     context=qa_context,
                     category=source_category,
+                    sibling_feedback="\n".join(sibling_corrections) if sibling_corrections else "",
                     trace_regeneration=regen_data,
                 )
                 round_data["regeneration"] = regen_data
                 if new_answer:
+                    if sibling_corrections is not None:
+                        sibling_corrections.append(
+                            f"Q{enumerated_i + 1} was rejected for: {reason}. "
+                            f"The corrected answer now fixes that issue. "
+                            f"Apply the same fix to any similar errors in your answer."
+                        )
                     qa.answer = new_answer
                 else:
                     print(f"    ✗ Regeneration failed, moving on.")

@@ -1,23 +1,20 @@
-# Pipeline Status — ALL 27 MTG GENERATORS PORTED ✅
+# Pipeline Status
 
-## Complete: 27 generators registered in MTGDomain
+## Current Feature: MTG AI Pipeline — Three Prompt Improvements
+## Last Step Completed: Document updated CHANGELOG.md and docs/ARCHITECTURE.md
+## Next Action: Complete — all pipeline steps done
 
-| Batch | Count | Generators |
-|-------|-------|------------|
-| Topic-based | 7 | Archetypes, CommanderKnowledge, DeckbuildingTheory, GameTheory, MetaKnowledge, RulesScenarios, TerminologyQuestions |
-| Data-driven (small) | 9 | ColorStaples, GlossaryWithExamples, GuideQA, MultiCardUsage, RuleEdgeCases, RuleExplanations, RuleWhyQuestions, SaltQuestions, StapleAnalysis |
-| Data-driven (medium) | 4 | BudgetAlternatives, ColorIdentity, ComboQueries, QuickGuidelines |
-| Data-driven (large) | 5 | CardSearchQueries, CommanderBuilding, ComparisonQuestions, ReverseLookup, SynergyQuestions |
-| Data-driven (final) | 2 | ArticleQA, RuleInteractions |
+| Feature | Discovery + Planning | Implement | Code Review | Test | Document |
+|---------|----------|-------------|------|----------|----------|
+| Prompt Improvements (trigger ordering, vague outcomes, sibling feedback) | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Complete |
 
-## Test Results: 426 passed, 1 pre-existing failure
-- No regressions from any of the 27 generator ports
-- All lint checks pass
+## Final Summary
 
-## What we built
-- `aggregate()` on MongoDataSource base class
-- 22 domain models in `trainforge/src/trainforge/domains/mtg/models.py`
-- Enriched MTGDataAccess with 25+ methods (caching, retry, pipelines)
-- 27 generator classes, each following the Template Method pattern
-- All generators registered in `MTGDomain.get_generators()`
-- Templates loaded from YAML (`templates.yaml` covers all 27 categories)
+All three prompt improvements implemented, reviewed, tested, and documented:
+
+1. **Trigger ordering** (`constants.py`): New `REQUIREMENTS_BASE` item at index 3 with LIFO/ETB/static-ability rules. Targets #1 failure mode (~50% of rejections).
+2. **Vague outcome language** (`constants.py`): Expanded banned phrases at index 5. Targets ~20% of rejections.
+3. **Sibling feedback** (`query_model.py`, `common.py`, `base_generator.py`, `generate_quick_guidelines.py`): Hoisted accumulator architecture — Q2/Q3 see Q1's corrections during regeneration.
+
+### Test results: 229 passed, 20 pre-existing failures, 0 regressions, 5 behavioral tests pass
+### Documentation: CHANGELOG.md + docs/ARCHITECTURE.md updated

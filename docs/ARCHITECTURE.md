@@ -134,6 +134,25 @@ Template selection is weighted random, allowing generators to balance between di
 4. **Hard Reject**: Universal rules (no markdown, no rule numbers, minimum length) plus template-specific rules
 5. **Retry**: Up to `max_regeneration_attempts` (default 3) before accepting or rejecting
 
+### Sibling Feedback Threading
+
+When a single template iteration produces multiple Q&A pairs (e.g., the 3 sibling Q&As from one combo generation), corrections from earlier siblings are threaded forward to later siblings' regeneration prompts. This lets Q2/Q3 see what was wrong with and how Q1 was corrected, improving fix-attempt quality.
+
+**Threading path:**
+1. `BaseGenerator._process_item` declares `sibling_corrections: list[str] = []` **before** the QA loop and passes it to `validate_answer`
+2. `BaseGenerator.validate_answer` (and the `generate_quick_guidelines.py` override) accept `sibling_corrections: list[str] | None = None` and forward it to `validate_and_loop_with_suggested_fix`
+3. `common.py` `validate_and_loop_with_suggested_fix` accepts `sibling_corrections`, passes `sibling_feedback` (joined corrections) to `regenerate_answer`, and appends the new correction to the accumulator on a successful fix (guarded by `if sibling_corrections is not None`)
+4. `query_model.py` `regenerate_answer` accepts `sibling_feedback: str = ""` and conditionally inserts a `sibling_block` into the prompt f-string after the context block
+
+**Why the accumulator is hoisted into `_process_item`:** `validate_and_loop_with_suggested_fix` is always called with `qa_pairs` of length 1. The 3 sibling Q&As from one combo generation are iterated by `_process_item`'s own loop, so the accumulator must live in that scope to persist across siblings. Placing it inside `validate_and_loop_with_suggested_fix` would reset it on every call.
+
+### Generator Prompt Requirements (`REQUIREMENTS_BASE`)
+
+`constants.py` defines `REQUIREMENTS_BASE`, a list of mandatory rules prepended to every generator prompt. As of 2026-07-26 it contains 9 items, including:
+
+- **Index 3 — "CRITICAL — Trigger ordering"**: LIFO stack resolution, ETB timing, static vs triggered ability rules. Targets the #1 failure mode (~50% of failures were wrong trigger/stack ordering).
+- **Index 5 — Vague-outcome ban list**: Expanded banned phrases ("infinite triggers", "infinite value", "overwhelm opponents") with a concrete example ("infinite 1/1 Snake creature tokens"). Targets ~20% of failures.
+
 ### Data Flow
 
 ```
