@@ -1,5 +1,210 @@
 # Changelog
 
+## [Unreleased] — TrainForge Generic Framework (2026-07-24)
+
+### Ported 4 medium-sized MTG generators from old CLI to TrainForge — 2026-07-24
+
+| File | Class | Type Param | Category | Data Source |
+|------|-------|------------|----------|-------------|
+| `combo_queries.py` | `ComboQueriesGenerator` | `ComboWithCards` | `combo_query` | `get_combos_enriched()` — 4 templates: how_does_it_work, what_do_i_need, why_does_this_work, what_is_the_result |
+| `budget_alternatives.py` | `BudgetAlternativesGenerator` | `tuple[CardWithMetadata, list[CardWithMetadata]]` | `budget` | `get_cards_enriched()` (edhrecRank<500, price>$20) + `get_budget_alternatives()` |
+| `color_identity_questions.py` | `ColorIdentityQuestionsGenerator` | `dict` | `color_identity` | `get_commanders_enriched()` + `get_cards_enriched()` — weighted by popularity, 4 template types (mono/two/three/five-color) |
+| `quick_guidelines.py` | `QuickGuidelinesGenerator` | `dict` | `guidelines` | `get_cards_enriched()` (edhrecRank exists) — derives card role (removal, ramp, card_draw, tutor, counterspell) from oracle text |
+
+- All use enriched `MTGDataAccess` via `self.domain.get_data_source()` for data fetching
+- Templates loaded from `templates.yaml` (categories already defined: `combo_query`, `budget`, `color_identity`, `guidelines`)
+- Each implements `get_data_batches()`, `build_prompt()`, `get_source_category()`, and `build_context()`
+- Template task_instruction formatted with placeholders: `{combo_name}`, `{card_details}`, `{expensive_card_name}`, `{card_name}`, `{role}`, etc.
+- `generators/__init__.py` and `domains/mtg/__init__.py` updated to export and register all 4 generators
+- All 4 files compile clean, 155 core tests pass (0 regressions, 1 pre-existing UI failure)
+
+### Ported 5 large MTG generators from old CLI to TrainForge — 2026-07-24
+
+| File | Class | Type Param | Category | Data Source |
+|------|-------|------------|----------|-------------|
+| `card_search_queries.py` | `GenerateCardSearchQueries` | `CardWithMetadata` | `card_search` | `get_cards_enriched()` with 20 search patterns |
+| `comparison_questions.py` | `GenerateComparisonQuestions` | `tuple[CardWithMetadata, CardWithMetadata]` | `comparison` | `get_cards_enriched()` with 3 pairing strategies |
+| `reverse_lookup_questions.py` | `GenerateReverseLookupQuestions` | `dict` | `reverse_lookup` | `search_cards_text()` with 23 effect patterns |
+| `synergy_questions.py` | `GenerateSynergyQuestions` | `CardWithMetadata` | `synergy` | `get_synergy_partners()` for top-ranked cards |
+| `commander_building.py` | `GenerateCommanderBuilding` | `CommanderWithTags` | `commander_building` | `get_commanders_enriched()` + 12 archetypes |
+
+- All use enriched `MTGDataAccess` via `self.domain.get_data_source()` for data fetching
+- Templates loaded from `templates.yaml` (categories already defined: `card_search`, `comparison`, `reverse_lookup`, `synergy`, `commander_building`)
+- Each implements `get_data_batches()`, `build_prompt()`, `get_source_category()`, and `build_context()`
+- `generators/__init__.py` and `domains/mtg/__init__.py` updated to export and register all 5 generators
+- Lint clean, 302 tests pass (0 regressions, 1 pre-existing UI failure)
+
+### 9 data-driven MTG generators complete — all 16 generators now registered — 2026-07-24
+
+All 9 data-driven generators ported, tested, and registered in `MTGDomain.get_generators()`.
+
+| File | Class | Type | Category | Data Source |
+|------|-------|------|----------|-------------|
+| `staple_analysis.py` | `StapleAnalysisGenerator` | `dict` | `staple_analysis` | `ds.get_game_changers()` |
+| `salt_questions.py` | `SaltQuestionsGenerator` | `list[dict]` | `salt_questions` | `ds.get_salty_cards()` |
+| `color_staples.py` | `ColorStaplesGenerator` | `tuple[str, list[dict]]` | `color_staples` | `ds.get_top_cards_by_color()` |
+| `multi_card_usage.py` | `MultiCardUsageGenerator` | `ComboWithCards` | `multi_card_usage` | `ds.get_combos_enriched()` |
+| `guide_qa.py` | `GuideQAGenerator` | `Guide` | `guide_qa` | `ds.get_guides()` |
+| `glossary_with_examples.py` | `GlossaryWithExamplesGenerator` | `GlossaryTerm` | `glossary_with_examples` | `ds.get_glossary()` |
+| `rule_why_questions.py` | `RuleWhyQuestionsGenerator` | `dict` | `rule_why_questions` | `ds.get_rules()` |
+| `rule_edge_cases.py` | `RuleEdgeCasesGenerator` | `dict` | `rule_edge_cases` | `ds.get_rules()` |
+| `rule_explanations.py` | `RuleExplanationsGenerator` | `dict` | `rule_explanations` | `ds.get_rules()` |
+
+**Generator totals:** 7 topic-based + 9 data-driven = **16 generators** registered.
+**Tests:** 397 total passing, 1 pre-existing failure, lint clean.
+
+### Ported 4 rules/glossary MTG generators from old CLI to TrainForge — 2026-07-24
+
+| File | Class | Type Param | Category | Data Source |
+|------|-------|------------|----------|-------------|
+| `glossary_with_examples.py` | `GlossaryWithExamplesGenerator` | `GlossaryTerm` | `glossary_with_examples` | `get_glossary(limit=200)`, def > 30 chars |
+| `rule_why_questions.py` | `RuleWhyQuestionsGenerator` | `dict` | `rule_why_questions` | `get_rules(limit=500)`, sections 100-199, 400-499, 700-799 |
+| `rule_edge_cases.py` | `RuleEdgeCasesGenerator` | `dict` | `rule_edge_cases` | `get_rules(limit=500)`, sections 701-708, text >= 80 |
+| `rule_explanations.py` | `RuleExplanationsGenerator` | `dict` | `rule_explanations` | `get_rules(limit=500)`, skip 000-005, 900s, text > 50 |
+
+- All use enriched `MTGDataAccess` via `self.domain.get_data_source()` for data fetching
+- Section filtering uses regex extraction from `ruleNumber` field (e.g., `"702.1a"` → `702`)
+- Templates loaded from `templates.yaml` (categories already defined: `glossary_with_examples`, `rule_why_questions`, `rule_edge_cases`, `rule_explanations`)
+- Each implements `get_data_batches()`, `build_prompt()`, `get_source_category()`, and `build_context()`
+- `generators/__init__.py` and `domains/mtg/__init__.py` updated to export and register all 4 generators
+- 38 new unit tests across 4 test files, all passing
+
+### Ported 7 topic-based MTG generators from old CLI to TrainForge — 2026-07-24
+
+| File | Class | Topics | Category |
+|------|-------|--------|----------|
+| `commander_knowledge.py` | `GenerateCommanderKnowledge` | 8 Commander sub-topics | `commander_knowledge` |
+| `terminology_questions.py` | `GenerateTerminologyQuestions` | 20 MTG terminology terms | `terminology` |
+| `deckbuilding_theory.py` | `GenerateDeckbuildingTheory` | 12 deckbuilding topics | `deckbuilding_theory` |
+| `rules_scenarios.py` | `RulesScenariosGenerator` | 15 rules scenarios | `rules_scenarios` |
+| `archetypes.py` | `ArchetypesGenerator` | 10 deck archetypes | `archetypes` |
+| `game_theory.py` | `GameTheoryGenerator` | 10 game theory situations | `game_theory` |
+| `meta_knowledge.py` | `MetaKnowledgeGenerator` | 9 meta knowledge topics | `meta_knowledge` |
+
+- All generators extend `BaseGenerator[str]` with no MongoDB dependencies — data is class-level constant lists (tuples of `(name, description)`)
+- Templates loaded from `templates.yaml` via the domain plugin (no hardcoded strings)
+- Each implements `get_data_batches()`, `build_prompt()`, `get_source_category()`, and `build_context()`
+- `generators/__init__.py` and `domains/mtg/__init__.py` updated to export and register all 7 generators
+- 195 tests pass (0 regressions), lint clean
+
+### Ported 5 data-driven MTG generators from old CLI to TrainForge — 2026-07-24
+
+| File | Class | Type Param | Category | Data Source |
+|------|-------|------------|----------|-------------|
+| `staple_analysis.py` | `StapleAnalysisGenerator` | `dict` | `staple_analysis` | `get_game_changers()` |
+| `salt_questions.py` | `SaltQuestionsGenerator` | `list[dict]` | `salt_questions` | `get_salty_cards()` (batches of 8) |
+| `color_staples.py` | `ColorStaplesGenerator` | `tuple[str, list[dict]]` | `color_staples` | `get_top_cards_by_color()` (6 colors) |
+| `multi_card_usage.py` | `MultiCardUsageGenerator` | `ComboWithCards` | `multi_card_usage` | `get_combos_enriched()` (2+ cards) |
+| `guide_qa.py` | `GuideQAGenerator` | `Guide` | `guide_qa` | `get_guides()` (>300 chars) |
+
+- All use enriched `MTGDataAccess` via `self.domain.get_data_source()` for data fetching
+- Templates loaded from `templates.yaml` (categories already defined: `staple_analysis`, `salt_questions`, `color_staples`, `multi_card_usage`, `guide_qa`)
+- Each implements `get_data_batches()`, `build_prompt()`, `get_source_category()`, and `build_context()`
+- `generators/__init__.py` exports all 5 new classes
+- Fixed f-string syntax error in existing `staple_analysis.py` (unterminated string on line 104)
+- 195 core tests pass (0 regressions), lint clean
+
+### Story 11: Enrich TrainForge MTGDataAccess with typed joins — 2026-07-23
+
+### Story 11: Enrich TrainForge MTGDataAccess with typed joins — 2026-07-23
+
+**Completed components:**
+
+- **`aggregate()` abstract method** added to `DataSource` ABC and implemented on `MongoDataSource` with `allowDiskUse=True`, enabling aggregation pipeline support for enrichment methods
+- **22 Pydantic v2 domain models** ported from old CLI (`trainforge/src/trainforge/domains/mtg/models.py`): `Card`, `CardWithMetadata`, `PriceData`, `Ruling`, `Legality`, `CardLegalities`, `Combo`, `ComboWithCards`, `Commander`, `CommanderWithTags`, `Archetype`, `Article`, `Guide`, `GameState`, `Rule`, `GlossaryTerm`, `Keyword`, and more — all with field aliases, validators, computed properties, and factory methods preserved
+- **Enriched MTGDataAccess** (`trainforge/src/trainforge/domains/mtg/data_source.py`) with:
+  - `LRUCacheWithTTL` (thread-safe, TTL-aware) and `retry_on_transient_error` (exponential backoff) utilities
+  - Card enrichment pipeline: `get_cards_enriched()`, `get_card_by_name()`, `get_cards_by_keyword_mechanic()`
+  - Combo enrichment: `get_combos_enriched()` with two-phase fetch (aggregate + Python-side card lookup)
+  - Commander enrichment: `get_commanders_enriched()` reshaping EDHREC data to `CommanderWithTags`
+  - Cached lookups: `get_rulings_for_cards()`, `get_prices_for_cards()`, `get_legalities_for_cards()`, `get_keyword_taxonomy()`, `get_archetype_data()`
+  - Analytics: `get_top_cards_by_edhrec_rank()`, `get_budget_alternatives()`, `get_synergy_partners()`, `get_commander_staples()`, `get_format_legalities()`, `calculate_color_identity()`, `search_cards_text()`
+  - All 11 original simple methods preserved (backward compatible)
+- **Test suite**: 40 new unit tests in `trainforge/tests/domains/mtg/test_data_source.py` (12 test classes), 300/301 total tests pass (1 pre-existing UI failure, 0 regressions)
+- **Dual collection namespace**: simple methods query `synthetic_queries.*`, enriched methods query `mtg_json.*`, `commander_spellbook.*`, `edhrec.*`
+- **Pipeline builders** as private `_build_*` methods testable in isolation
+- **JSON-stringified array fields** parsed in `_convert_doc_to_model` before Pydantic construction
+- **Package structure**: `trainforge/src/trainforge/domains/__init__.py` (NEW), `domains/mtg/models.py` (NEW), `domains/mtg/data_source.py` (REWRITTEN)
+
+See sub-entries below for detailed method listings and fixes.
+
+### Fixed: Code review issues in MTGDataAccess + unit test suite — 2026-07-23
+
+- **CRITICAL**: `_convert_doc_to_model` now pre-parses JSON-stringified array fields (colors, colorIdentity, keywords, subtypes, supertypes, frameEffects) before passing docs to Pydantic model constructors, fixing silent data corruption when mtg_json stores array fields as JSON strings
+- **CRITICAL**: Fixed `__init__` kwargs ordering — `cache_maxsize`/`cache_ttl` are now popped from kwargs before calling `super().__init__()`, preventing `TypeError: unexpected keyword argument` when these params leak to MongoDataSource
+- **MAJOR**: Changed `Ruling.date` type from `datetime` (required) to `datetime | None = None`, fixing Pydantic validation errors when ruling dates are empty strings or missing
+- **MAJOR**: Eliminated double calls to `_convert_doc_to_model` in list comprehensions (3 locations: `get_cards_enriched`, `get_budget_alternatives`, `get_synergy_partners`) using walrus operator — previously the expensive conversion ran twice per document
+- **MINOR**: Moved `import re as _re` from function body to module-level in `calculate_color_identity`
+- **Tests**: Added 40-unit test suite for MTGDataAccess with 12 test classes covering LRU cache, retry decorator, filter translation, pipeline builders, doc-to-model conversion, enrichment methods, combo methods, lookup methods, analytics methods, JSON string parsing, cache integration, and EDHREC rank queries
+
+New `trainforge/` subproject: a **generic synthetic data generation web interface** with Streamlit UI, pluggable domain architecture, and MongoDB backend. Extracts the proven BaseGenerator pattern from the MTG-specific codebase into a reusable framework where new domains can be added by implementing a plugin ABC and providing YAML configuration files — no core code changes required.
+
+### Added: Enriched MTGDataAccess with LRU cache, retry, and 25+ typed methods — 2026-07-23
+
+- Added `LRUCacheWithTTL` (thread-safe, TTL-based eviction) and `retry_on_transient_error` (exponential backoff for MongoDB transient errors) as module-level utilities
+- Added class constants `REQUIRED_COLLECTIONS` and `REQUIRED_INDEXES` for collection/index verification
+- Added card enrichment pipeline: `get_cards_enriched()`, `get_card_by_name()` (overloaded with `CardWithMetadata` return), `get_cards_by_keyword_mechanic()`, `_translate_card_filters()`, `_build_card_enrichment_pipeline()`
+- Added combo enrichment: `get_combos_enriched()`, `_build_combo_pipeline()` — two-phase fetch (aggregate + Python-side card lookup)
+- Added commander enrichment: `get_commanders_enriched()`, `_build_commander_pipeline()` — reshapes EDHREC data to `CommanderWithTags`
+- Added lookup methods with caching: `get_rulings_for_cards()`, `get_prices_for_cards()`, `get_legalities_for_cards()`, `get_keyword_taxonomy()`, `get_archetype_data()`
+- Added analytics methods: `get_top_cards_by_edhrec_rank()`, `get_budget_alternatives()`, `get_synergy_partners()`, `get_commander_staples()`, `get_format_legalities()`, `calculate_color_identity()`, `search_cards_text()`
+- Added helpers: `_convert_doc_to_model()`, `_batch_lookup_cards_by_name()`, `verify_indexes()`
+- All existing 11 simple methods preserved with backward compatibility (`get_cards()`, `get_articles()`, `get_rules()`, etc.)
+
+### Added: Domain models for MTG data at `trainforge/domains/mtg/models.py` — 2026-07-23
+
+- Ported all 22 Pydantic v2 domain model classes from the reference implementation (`training_data/generate_synthetic_data/domain_models.py`) into the TrainForge project
+- Models include: `Card`, `CardWithMetadata`, `PriceData`, `Ruling`, `Legality`, `CardLegalities`, `Combo`, `ComboWithCards`, `Commander`, `CommanderWithTags`, `Archetype`, `Article`, `Guide`, `Rule`, `GlossaryTerm`, `Keyword`, and more
+- All field aliases, validators, computed properties (`cmc`, `best_price`, `salt_level`, etc.), factory methods (`from_dict`, `to_prompt_detail`), and `model_rebuild()` calls preserved
+- Self-contained module with `__all__` export list — no imports from other trainforge modules
+
+### Added: `aggregate()` method to DataSource ABC and MongoDataSource — 2026-07-23
+
+- Added `aggregate()` as an abstract method on the `DataSource` ABC with signature `(collection, pipeline, allow_disk_use=True) -> list[dict]`
+- Implemented `aggregate()` on `MongoDataSource` with `db.coll` name parsing, graceful `None` collection handling, and default `allowDiskUse=True`
+- Enables aggregation pipeline support for future enrichment methods (card joins, combo pipelines, commander analytics)
+
+### Added
+
+- **Core framework** (`src/trainforge/`): 9 modules
+  - `models.py` — Pydantic v2 models: `Model` (LLM config), `QuestionAnswerEnhanced` (Q&A with metadata), `GenerationTrace` (full LLM interaction trace), `ValidationMetrics` (per-category/per-template stats)
+  - `config.py` — YAML loader with `${ENV_VAR}` interpolation, `AppConfig` singleton via `get_config()`
+  - `data_source.py` — `DataSource` ABC + `MongoDataSource` implementation with `DEFAULT_DATABASE` constant
+  - `domain.py` — `DomainPlugin` ABC, `TemplateConfig`, `DomainRegistry` with auto-discovery from `config/domains.yaml`
+  - `generator.py` — Generic `BaseGenerator[T]` using template method pattern; `create_generator()` factory function
+  - `query_model.py` — Multi-provider LLM client (Ollama/Anthropic/OpenAI) with streaming to stderr; accepts `Model` object or string params
+  - `training.py` — JSONL exporter with per-domain export (category ratio control) and cross-domain mixing
+  - `validator.py` — Domain-agnostic validation + regeneration loop (up to 3 fix attempts)
+
+- **Streamlit UI** (`src/trainforge/ui/`): 7 files
+  - `app.py` — Main entry point with sidebar navigation, welcome dashboard, connection status
+  - `pages/01_Dashboard.py` — Generation metrics with Plotly charts, per-category/per-generator breakdowns
+  - `pages/02_Generate.py` — Generation control: domain/generator/model selection, real-time progress, live output
+  - `pages/03_Browse_Data.py` — Data browser: search, filter by domain/category/score, pagination, export selected
+  - `pages/04_Export_Training.py` — Per-domain and cross-domain JSONL export with ratio controls
+  - `pages/05_Settings.py` — MongoDB config, model settings, API keys, domain management, danger zone
+  - `components/sidebar.py` — Shared sidebar: navigation menu, connection status, quick stats
+
+- **MTG domain plugin** (`domains/mtg/`): first domain implementation with 27 categories
+  - `__init__.py` — `MTGDomain(DomainPlugin)` with auto-registration, loads `templates.yaml` on init
+  - `config.yaml` — Domain metadata, MongoDB collections config
+  - `templates.yaml` — All 27 categories with templates migrated from old `constants.py` (system_message, notation_legend, per-category templates with validation_rules)
+  - `data_source.py` — `MTGDataAccess` extending `MongoDataSource` with typed methods (`get_cards`, `get_articles`, `get_rules`, `get_glossary`, `get_edhrec_data`, etc.)
+
+- **Test suite** (`tests/`): 261 tests total (9 core module tests + 7 UI page tests)
+  - Core: models, config, domain, generator, training, data_source, integration, config validation
+  - UI: app, dashboard, generate, browse_data, export_training, settings, sidebar
+
+### Changed
+
+- Domain templates migrated from monolithic `constants.py` to per-domain `templates.yaml`, enabling multi-domain support without code changes
+
+### Design Highlights
+
+- **Plugin architecture**: New domains added by implementing `DomainPlugin` ABC + providing `config.yaml` + `templates.yaml` — zero core framework modifications needed
+- **Multi-provider LLM support**: Same generator works with Ollama, Anthropic, or OpenAI via config-driven model selection
+- **Web-first workflow**: Generation, browsing, validation review, and export all available through the Streamlit UI (CLI still supported)
+
 ### Feature: Generation Trace Logging for Synthetic Data — 2026-07-21
 
 Added comprehensive LLM interaction tracing to capture the full lifecycle of every generated Q&A item. This enables debugging, analysis, and optimization of the generation/validation pipeline.

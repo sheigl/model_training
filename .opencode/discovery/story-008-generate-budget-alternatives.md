@@ -4,50 +4,34 @@
 As a **budget-conscious Commander player**, I want **specific cheaper alternatives with price comparisons and mechanical trade-offs**, so that **I can build competitive decks without expensive staples**.
 
 ## Context
-Current `GenerateBudgetAlternatives` uses 4 hardcoded patterns (ramp, removal, card draw, tutors), finds expensive rare/mythic cards and cheaper uncommon/common by rarity proxy (not real price), 1 template. Enhanced version uses real USD prices from `cardPrices`, EDHREC inclusion %, legalities, rulings, 4 templates.
+This story was originally scoped to ENHANCE the budget alternatives generator. The enhancements have been IMPLEMENTED in the old CLI. What remains is porting to the TrainForge framework.
 
-## Acceptance Criteria
-- [ ] **Data Integration**: `mtg_json.cards` + `cardPrices` (real USD) + EDHREC inclusion % + `cardLegalities` + `cardRulings`
-- [ ] **Template System**: 4 templates with distinct `task_instruction`:
-  - `pauper_budget`: "Find the best Pauper-legal (common only) alternatives to [expensive card]."
-  - `budget_optimized`: "Find the best cards under $5 that replace [expensive card]. Compare mechanical trade-offs."
-  - `proxy_friendly`: "Find cards under $15 that are commonly proxied for [expensive card]. Explain play pattern differences."
-  - `upgrade_path`: "Show the upgrade path from [budget card] to [expensive card]. What do you gain at each price tier?"
-- [ ] **Validation Criteria** (HARD REJECT rules):
-  - Answer MUST list 2-3 specific alternative cards with names
-  - Each alternative MUST include USD price (from `cardPrices.usd`)
-  - Pauper template: ALL cards MUST be common rarity AND Pauper legal
-  - Budget template: ALL cards MUST be under $5 USD
-  - Proxy template: ALL cards MUST be under $15 USD
-  - Upgrade template: MUST show 3 tiers (budget → mid → premium) with prices
-  - MUST explain mechanical trade-offs (what you lose/gain vs expensive card)
-  - MUST mention EDHREC inclusion % for context on popularity
-  - NO markdown formatting
-  - Answer length: 200-500 characters
-- [ ] **Context Building**: Pass to LLM: expensive card full details (name, cost, type, text, price, EDHREC rank, inclusion %, legalities, rulings), candidate alternatives with same details, template instruction
-- [ ] **Target Count**: 2,000 validated examples
-- [ ] **MongoDB Queries**:
-  ```python
-  # Expensive cards: price.usd > 20, commander legal, edhrecRank > 0
-  # Pauper: rarity = common, legalities.pauper = legal, similar function (text regex)
-  # Budget: price.usd < 5, commander legal, similar function, sort by edhrecRank
-  # Proxy: price.usd 5-15, commander legal, similar function
-  # Upgrade path: Find cards with same function at 3 price tiers
-  ```
+### Old CLI Implementation (`training_data/generate_synthetic_data/generate_budget_alternatives.py`) ✅ COMPLETE
+- `GenerateBudgetAlternatives(BaseGenerator[BudgetContext])` — 365 lines
+- **4 templates**: pauper_budget, budget_optimized, proxy_friendly, upgrade_path
+- **8 budget categories**: Fast Mana, Tutors, Card Draw Engines, Removal, Protection, Win Conditions, Counterspells, Board Wipes
+- Uses `MTGDataAccess.get_cards_enriched()` and `get_budget_alternatives()`
+- Template-specific validation with HARD REJECT rules
+- BudgetContext dataclass for typed data flow
+
+### TrainForge Status (`trainforge/domains/mtg/`) ❌ NOT STARTED
+- `templates.yaml` has a SIMPLIFIED `budget` category with only 1 template (`cheaper_alternative`)
+- No TrainForge-style generator class exists
+
+## Acceptance Criteria (TrainForge Port)
+- [ ] Create `trainforge/domains/mtg/generators/budget.py` with `GenerateBudgetAlternatives(BaseGenerator[dict])`
+- [ ] Port all 4 templates with full HARD REJECT validation rules
+- [ ] Port all 8 budget categories with MongoDB filter definitions
+- [ ] Register the generator in `MTGDomain.get_generators()`
+- [ ] Update templates.yaml with 4-template version
 
 ## Dependencies
-- Story 001: Shared Base Generator Class
-- Story 002: Unified Data Access Layer
-- Story 003: Extended Data Models
+- Story 011: Enrich TrainForge MTGDataAccess with typed joins
+- Story 012: Port MTG domain models to TrainForge domain plugin
 
 ## Priority: High
-## Story Points: 13
 
 ## Notes
-- `cardPrices` collection has 1M+ docs with `usd`, `usd_foil`, `eur`, `tix` fields - use `usd` for budget
-- EDHREC inclusion % = (num_decks_with_card / total_decks_for_commander) * 100 - approximate from `edhrecRank`
-- Rarity is NOT a price proxy - use real USD prices
-- Legalities: check `legalities.pauper`, `legalities.commander`
-- Rulings important for explaining functional differences (e.g., "enters tapped" vs "enters untapped")
-- Upgrade path template unique: starts from budget card, shows progression
-- Common expensive cards to target: Mana Crypt, Mana Drain, Imperial Seal, Gaea's Cradle, The Tabernacle at Pendrell Vale, Lion's Eye Diamond, etc.
+- Old CLI file is the REFERENCE IMPLEMENTATION (365 lines)
+- Uses both `get_cards_enriched()` and `get_budget_alternatives()` data access methods
+- The `get_budget_alternatives()` analytics method in old CLI data_access.py is more sophisticated than anything in TrainForge's data source

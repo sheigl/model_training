@@ -364,7 +364,7 @@ def main():
 
     from dataclasses import asdict
     traces_buffer: list[dict] = []
-    TRACE_BATCH_SIZE = 50
+    TRACE_BATCH_SIZE = 1
 
     def save_trace(trace: 'GenerationTrace') -> None:
         traces_buffer.append(asdict(trace))

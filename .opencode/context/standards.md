@@ -1,7 +1,7 @@
-# Coding Standards for MTG Synthetic Data Generation Pipeline
+# Coding Standards for TrainForge — MTG Domain Enrichment (Story 11)
 
 ## Overview
-This document defines the coding standards, patterns, and conventions for the synthetic data generation pipeline in `training_data/generate_synthetic_data/`.
+This document defines the coding standards for porting the enriched MTG data access layer from the old CLI (`training_data/generate_synthetic_data/data_access.py`) to the TrainForge framework (`trainforge/domains/mtg/data_source.py`).
 
 ---
 
@@ -10,127 +10,127 @@ This document defines the coding standards, patterns, and conventions for the sy
 ### Version & Type Hints
 - **Python**: 3.11+
 - **Type Hints**: Required for all public functions, methods, and class attributes
-- **Pydantic**: v2 (`BaseModel`, `Field`, `ConfigDict`, `computed_field`)
+- **Pydantic**: v2 (`BaseModel`, `ConfigDict`, `Field`, `computed_field`, `field_validator`)
 - **Imports**: Use `from __future__ import annotations` for forward references
 
 ### Code Style
 - **Formatter**: `ruff format` (line length 100)
 - **Linter**: `ruff check` with `select = ["E", "F", "I", "UP", "B", "C4", "SIM", "T20"]`
-- **Type Checker**: `pyright` or `mypy` in strict mode
 - **Naming**: 
   - Classes: `PascalCase`
   - Functions/Methods: `snake_case`
   - Constants: `UPPER_SNAKE_CASE`
   - Private: `_leading_underscore`
-  - Type Variables: `T`, `U`, `V` (single uppercase)
 
 ### Docstrings
-- **Format**: Google style (Args, Returns, Raises, Example)
-- **Required**: All public classes, methods, functions
-- **Example**:
-```python
-def get_cards_enriched(
-    self,
-    filters: dict | None = None,
-    limit: int = 100,
-) -> list[CardWithMetadata]:
-    """Fetch cards with all enrichment joins applied.
-    
-    Args:
-        filters: MongoDB query filter dict (e.g., {"colorIdentity": {"$in": ["W", "U"]}})
-        limit: Maximum number of cards to return.
-    
-    Returns:
-        List of CardWithMetadata with prices, legalities, rulings, keywords joined.
-    
-    Raises:
-        PyMongoError: If aggregation pipeline fails.
-    """
-```
-
----
-
-## Architecture Patterns
-
-### 1. Base Generator Pattern (Template Method)
-All generators inherit from `BaseGenerator[T]`:
-```python
-class MyGenerator(BaseGenerator[MyDataType]):
-    TEMPLATES: ClassVar[list[TemplateConfig]] = [...]
-    
-    def get_data_batches(self) -> list[MyDataType]: ...
-    def build_prompt(self, template: TemplateConfig, data: MyDataType) -> str: ...
-    def get_source_category(self) -> str: ...
-```
-
-### 2. Data Access Layer (Facade)
-Single `MTGDataAccess` class for all MongoDB operations:
-- No raw `pymongo` in generators
-- All methods return Pydantic models
-- Aggregation pipelines for joins
-- Context manager for connection lifecycle
-
-### 3. Dependency Injection
-- `BaseGenerator` receives `data_access: MTGDataAccess`, `models: dict[ModelType, Model]`, `save_item: Callable`
-- No global state; all dependencies passed in `__init__`
-- Enables testing with mocks
-
-### 4. Validation Pipeline
-- Use `validate_and_loop_with_suggested_fix` from `common.py`
-- Pass `build_context` lambda for domain-specific validation context
-- Metrics tracked via `ValidationMetrics` (injected)
+- **Format**: Google style (Args, Returns, Raises)
+- **Required**: All public methods on MTGDataAccess
 
 ---
 
 ## MongoDB Patterns
 
-### Connection Management
+### Collection Name Strategy
+
+Simple methods (existing) use `synthetic_queries.*` namespace:
 ```python
-with MTGDataAccess(uri, user, pass) as db:
-    db.verify_indexes()
-    cards = db.get_cards_enriched(...)
+def get_cards(self, ...):
+    return self.get_records(f"{self.db_name}.mtg_cards", ...)
 ```
 
-### Aggregation Pipelines
-- Use `$lookup` for joins (not Python-side loops)
-- `$unwind` + `$group` for array flattening
-- `$project` to shape output to match Pydantic models
-- Always include `{"$limit": limit}` for safety
+Enriched methods use actual database names matching the MongoDB schema:
+```python
+def get_cards_enriched(self, ...):
+    return self.aggregate("mtg_json.cards", pipeline, ...)
+```
 
-### Field Naming
-- MongoDB: `camelCase` (`colorIdentity`, `edhrecRank`, `manaCost`)
-- Pydantic: `snake_case` with `Field(alias="camelCase")`
-- Python code: always use `snake_case`
+### Adding aggregate() to MongoDataSource
 
-### Indexes
-- Verify/create on startup via `verify_indexes()`
-- Compound indexes for common filter combinations
-- Text indexes for search fields
+```python
+def aggregate(
+    self, collection: str, pipeline: list[dict], allow_disk_use: bool = True
+) -> list[dict]:
+    """Run an aggregation pipeline on a collection.
+    
+    Collection name supports 'db.coll' or just 'coll' (uses default db).
+    """
+    parts = collection.split(".", 1)
+    if len(parts) == 2:
+        db_name, coll_name = parts
+    else:
+        db_name = self.DEFAULT_DATABASE
+        coll_name = collection
+
+    coll = self._get_collection(db_name, coll_name)
+    return list(coll.aggregate(pipeline, allowDiskUse=allow_disk_use))
+```
+
+### Aggregation Pipeline Pattern
+
+Always use `$project` as final stage to shape output to match Pydantic models:
+```python
+def _build_card_enrichment_pipeline(self, filters, limit, skip, lite=False):
+    pipeline = [{"$match": processed_filters}]
+    if not lite:
+        pipeline.extend([
+            {"$lookup": {"from": "cardPrices", "localField": "uuid", "foreignField": "uuid", "as": "price_docs"}},
+            {"$addFields": {...}},
+            {"$lookup": {...}},
+            {"$project": {**field_projections}},
+        ])
+    if skip > 0:
+        pipeline.append({"$skip": skip})
+    pipeline.append({"$sample": {"size": limit}})
+    pipeline.append({"$limit": limit})
+    return pipeline
+```
+
+### Card Filter Translation
+
+The `_translate_card_filters()` method handles JSON-stringified array fields:
+- `colorIdentity` in MongoDB is stored as `'["W","U"]'` (JSON string), not an array
+- Use `{"$regex": '"W"'}` to match a single color
+- `keywords`, `supertypes`, `subtypes` are also stored as JSON strings
+
+### Indexes to Verify on Startup
+
+```python
+REQUIRED_INDEXES = {
+    "mtg_json.cards": [[("uuid", 1)], [("name", 1)], [("colorIdentity", 1)], [("keywords", 1)], [("edhrecRank", 1)]],
+    "mtg_json.cardPrices": [[("uuid", 1)]],
+    "mtg_json.cardLegalities": [[("uuid", 1)]],
+    "mtg_json.cardRulings": [[("uuid", 1)]],
+    "commander_spellbook.variants": [[("status", 1)], [("uses.card.name", 1)]],
+    "edhrec.commanders": [[("cardUuid", 1)], [("numDecks", -1)], [("colorIdentity", 1)]],
+    "mtg_rules.rules": [[("ruleNumber", 1)]],
+    "mtg_rules.glossary": [[("term", 1)]],
+}
+```
 
 ---
 
-## Pydantic Model Standards
+## Pydantic Model Standards (for ported domain models)
 
 ### Base Configuration
 ```python
 from pydantic import BaseModel, ConfigDict, Field
 
-class BaseDomainModel(BaseModel):
+class MongoModel(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,      # Allow snake_case and alias
         extra="ignore",             # Ignore unknown MongoDB fields
-        arbitrary_types_allowed=True,  # For ObjectId, datetime
-        use_enum_values=True,       # Serialize enums as values
+        arbitrary_types_allowed=True,
+        use_enum_values=True,
     )
 ```
 
-### Aliases
+### Aliases (camelCase MongoDB → snake_case Python)
 ```python
-class Card(BaseDomainModel):
+class Card(MongoModel):
     name: str
-    mana_cost: str | None = Field(alias="manaCost", default=None)
-    color_identity: list[str] = Field(alias="colorIdentity", default_factory=list)
-    edhrec_rank: int | None = Field(alias="edhrecRank", default=None)
+    mana_cost: str | None = Field(default=None, alias="manaCost")
+    color_identity: list[str] = Field(default_factory=list, alias="colorIdentity")
+    edhrec_rank: int | None = Field(default=None, alias="edhrecRank")
 ```
 
 ### Computed Properties
@@ -140,325 +140,134 @@ def cmc(self) -> float:
     """Converted mana cost from mana_cost string."""
     if not self.mana_cost:
         return 0.0
-    # Parse {2}{W}{U} -> 4.0
     ...
 
 @property
 def is_commander_legal(self) -> bool:
-    return self.legalities.get("commander") == "legal"
+    return self.legalities.get("commander", "").lower() == "legal"
 ```
 
 ### Serialization for LLM Prompts
 ```python
-def to_prompt_detail(self) -> str:
-    """Format for LLM context - consistent across all generators."""
+def to_prompt_detail(self, include_prices=True, include_rulings=False) -> str:
+    """Format card for LLM context - consistent across all generators."""
     lines = [
         f"Name: {self.name}",
-        f"Type: {self.type}",
-        f"Cost: {self.mana_cost}",
-        f"Text: {self.text or self.oracle_text}",
+        f"Mana Cost: {self.mana_cost or 'N/A'}",
+        f"Type: {self.type or 'N/A'}",
+        f"Oracle Text: {self.text or 'N/A'}",
     ]
-    if self.edhrec_rank:
-        lines.append(f"EDHREC Rank: {self.edhrec_rank}")
+    ...
     return "\n".join(lines)
+```
+
+### List Field Normalization
+MongoDB stores lists as JSON strings. Handle in constructor or field_validator:
+```python
+@classmethod
+def from_dict(cls, data: dict) -> "Card | None":
+    def _parse_list(key: str) -> list[str]:
+        raw = data.get(key, [])
+        if isinstance(raw, str):
+            import json; return json.loads(raw) if ... else []
+        return raw if isinstance(raw, list) else []
+    ...
 ```
 
 ---
 
-## Generator Implementation Standards
+## Caching Pattern
 
-### Required Structure
 ```python
-class GenerateMyFormat(BaseGenerator[MyDataType]):
-    TEMPLATES: ClassVar[list[TemplateConfig]] = [
-        TemplateConfig("template_id", "Instruction...", weight=1.0),
-    ]
-    
-    def __init__(
-        self,
-        data_access: MTGDataAccess,
-        models: dict[ModelType, Model],
-        validation_pct: float,
-        target_count: int,
-        save_item: Callable[[QuestionAnswerEnhanced], None],
-        metrics: ValidationMetrics | None = None,
-        **kwargs,
-    ):
-        super().__init__(
-            data_access=data_access,
-            models=models,
-            validation_pct=validation_pct,
-            target_count=target_count,
-            save_item=save_item,
-            metrics=metrics,
-            **kwargs,
-        )
-    
-    def get_data_batches(self) -> list[MyDataType]:
-        return self.data_access.get_my_data_enriched(limit=self.target_count * 2)
-    
-    def build_prompt(self, template: TemplateConfig, data: MyDataType) -> str:
-        return f"{SYSTEM_MESSAGE}\n{MTG_NOTATION_LEGEND}\n{template.task_instruction}\n..."
-    
-    def get_source_category(self) -> str:
-        return "my_format"
-    
-    def build_context(self, template: TemplateConfig, data: MyDataType) -> str:
-        return f"Category: {self.get_source_category()}\nTemplate: {template.template_id}\nData: {data.to_prompt_detail()}"
+class LRUCacheWithTTL:
+    """Thread-safe LRU cache with TTL support."""
+    def __init__(self, maxsize: int = 1000, ttl: int = 300): ...
+    def get(self, key: str) -> Any | None: ...
+    def set(self, key: str, value: Any) -> None: ...
+    def clear(self) -> None: ...
+    def stats(self) -> dict[str, int]: ...
 ```
 
-### Template Configuration
-- Define in `constants.py` as `TemplateConfig` lists
-- Each template: `template_id`, `task_instruction`, `weight`, `validation_rules`
-- Use `random.choices(TEMPLATES, weights=[t.weight for t in TEMPLATES])` for selection
-
-### Error Handling
+Cache key pattern for lookup methods:
 ```python
-try:
-    response = self.query_model.query(self.models[ModelType.GENERATION], prompt)
-    qa_pairs = [QuestionAnswer(**qa) for qa in json.loads(response)]
-except json.JSONDecodeError as e:
-    logger.warning(f"JSON parse failed: {e}")
-    if self.metrics:
-        self.metrics.record_candidate(self.get_source_category(), template.template_id)
-    continue  # Graceful continuation
-except Exception as e:
-    logger.error(f"Generation error: {type(e).__name__}: {e}")
-    continue
+cache_key = f"rulings:{','.join(sorted(card_names))}"
+```
+
+---
+
+## Retry Decorator
+
+```python
+def retry_on_transient_error(max_retries: int = 3, base_delay: float = 0.5):
+    """Decorator for retrying transient MongoDB errors with exponential backoff.
+    
+    Retries on: ConnectionFailure, ServerSelectionTimeoutError, OperationFailure
+    """
+    ...
+```
+
+Apply to all enriched data access methods:
+```python
+@retry_on_transient_error()
+def get_cards_enriched(self, ...):
+    ...
 ```
 
 ---
 
 ## Testing Standards
 
-### Unit Tests
-- **Location**: `training_data/generate_synthetic_data/` (same directory as source)
-- **Framework**: `pytest` with `pytest-asyncio` if needed
-- **Mocking**: `unittest.mock` for `MTGDataAccess`, `QueryModel`, `MongoClient`
-- **Coverage Target**: 80%+ for new code
+### Test Location
+`trainforge/tests/domains/mtg/test_data_source.py`
 
-### Test File Naming
-- Generator tests: `test_generate_{module_name}.py` in the same directory
-- Example: `test_generate_meta_knowledge.py` for `generate_meta_knowledge.py`
+### Test Framework
+- `pytest` with `unittest.mock` for MongoDB mocking
+- Patch `pymongo.MongoClient` before imports
 
-### Test Patterns
+### Test Organization
+One class per method group:
 ```python
-# Test data access method
-def test_get_cards_enriched_returns_typed_models(mock_mongo):
-    db = MTGDataAccess(client=mock_mongo)
-    cards = db.get_cards_enriched(limit=5)
-    
-    assert len(cards) == 5
-    assert all(isinstance(c, CardWithMetadata) for c in cards)
-    assert cards[0].prices is not None  # Joined
-    assert cards[0].rulings is not None  # Joined
-
-# Test generator abstract methods
-def test_my_generator_implements_abstract_methods():
-    gen = GenerateMyFormat(data_access=mock_db, ...)
-    assert hasattr(gen, "get_data_batches")
-    assert hasattr(gen, "build_prompt")
-    assert hasattr(gen, "get_source_category")
+class TestCardEnrichmentMethods:
+class TestComboMethods:
+class TestCommanderMethods:
+class TestLookupMethods:
+class TestAnalyticsMethods:
+class TestPipelineBuilders:
+class TestTranslateCardFilters:
+class TestLRUCacheWithTTL:
+class TestRetryDecorator:
 ```
 
-### Topic-Based Generator Test Pattern (BaseGenerator[str])
-Each topic-based generator test file should follow this structure:
+### Test Fixture Pattern
+
 ```python
-"""Unit tests for Generate{GeneratorName}."""
-
-import json
-from unittest.mock import Mock
-
-import pytest
-
-from training_data.generate_synthetic_data.models import (
-    Model, ModelType, ModelProvider,
-)
-from training_data.generate_synthetic_data.query_model import QueryModel
-from training_data.generate_synthetic_data.generate_{module} import Generate{ClassName}
-
-
-class MockModel(Model):
-    def __init__(self, name="test-model", model_type=ModelType.GENERATION):
-        self.name = name
-        self.type = model_type
-        self.provider = ModelProvider.OLLAMA
-        self.provider_url = "http://localhost:11434"
-        self.api_key = None
-
-
 @pytest.fixture
-def models():
-    return {
-        ModelType.GENERATION: MockModel("gen", ModelType.GENERATION),
-        ModelType.VALIDATION: MockModel("val", ModelType.VALIDATION),
-    }
-
-
-@pytest.fixture
-def generator(models):
-    return Generate{ClassName}(
-        models=models,
-        validation_pct=1.0,
-        target_count=10,
-        save_item=Mock(),
-        metrics=Mock(),
-        dry_run=True,
-    )
-
-
-class Test{ClassName}:
-    def test_templates_defined(self, generator):
-        """TEMPLATES must be defined with at least 2 template configs."""
-        assert len(generator.TEMPLATES) == 2
-        ids = {t.template_id for t in generator.TEMPLATES}
-        assert "general_advice" in ids
-
-    def test_source_category(self, generator):
-        """get_source_category returns correct string."""
-        assert generator.get_source_category() == "{category}"
-
-    def test_data_batches_cycles(self, generator):
-        """get_data_batches yields all items from the class-level list."""
-        batches = []
-        for batch in generator.get_data_batches():
-            batches.append(batch[0])
-            if len(batches) >= {total_items}:
-                break
-        assert len(batches) == {total_items}
-
-    def test_build_prompt_includes_context(self, generator):
-        """build_prompt includes topic context and MTG_NOTATION_LEGEND."""
-        template = generator.TEMPLATES[0]
-        topic = generator.{CLASS_LEVEL_LIST}[0][0]
-        prompt = generator.build_prompt(template, topic)
-        assert "{mtg_notation_check}" in prompt
-        assert topic in prompt
-
-    def test_build_context_metadata(self, generator):
-        """build_context returns category, template_id, and domain label."""
-        template = generator.TEMPLATES[0]
-        topic = generator.{CLASS_LEVEL_LIST}[0][0]
-        context = generator.build_context(template, topic)
-        assert generator.get_source_category() in context
-        assert template.template_id in context
-
-    def test_dry_run_no_save(self, models):
-        """dry_run=True should not call save_item."""
-        save_item = Mock()
-        gen = Generate{ClassName}(
-            models=models,
-            validation_pct=1.0,
-            target_count=1,
-            save_item=save_item,
-            dry_run=True,
-        )
-        gen.query_model = Mock(spec=QueryModel)
-        gen.query_model.query.return_value = json.dumps([
-            {"question": "Test?", "answer": "Test answer with sufficient length."}
-        ])
-        gen.query_model.validate_qa.return_value = (True, "OK", 8.0)
-        gen.generate()
-        save_item.assert_not_called()
-        assert gen.generated_count == 1
+def data_access(self):
+    """Create MTGDataAccess with mocked client."""
+    with patch("trainforge.domains.mtg.data_source.MongoClient") as mock_client_class:
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.admin.command.return_value = {"ok": 1}
+        
+        da = MTGDataAccess()
+        da._client = mock_client
+        
+        # Mock collections as needed
+        mock_cards_coll = MagicMock()
+        mock_db = MagicMock()
+        mock_db.list_collection_names.return_value = ["cards", "cardPrices", ...]
+        mock_db.__getitem__.return_value = mock_cards_coll
+        mock_client.__getitem__.return_value = mock_db
+        da._databases["mtg_json"] = mock_db
+        da._collections["mtg_json.cards"] = mock_cards_coll
+        
+        yield da
 ```
 
-### Integration Tests
-- **Location**: `tests/integration/`
-- **Run**: `pytest tests/integration/` (requires MongoDB)
-- **Fixtures**: Real MongoDB test database with sample data
-
----
-
-## Logging & Observability
-
-### Console Output
-- Use `rich.console.Console` for user-facing output
-- Use `rich.progress.Progress` for generation loops
-- Structured logging via `logger` module (already configured)
-
-### Metrics
-- `ValidationMetrics` tracks: candidates, validated, passed, failed, fix attempts, scores
-- Flush to MongoDB every 10 candidates (`print_rolling_summary(interval=10)`)
-- Run ID shared across all generators in a process
-
-### Dry Run Mode
-- All generators support `dry_run=True` (no MongoDB writes)
-- Use for testing and CI
-
----
-
-## Dependency Management
-
-### Allowed Dependencies (in `pyproject.toml` / `requirements.txt`)
-- `pymongo` - MongoDB driver
-- `pydantic` - Data models
-- `rich` - Console UI
-- `ollama` / `anthropic` / `openai` - LLM clients
-- `python-dotenv` - Environment config
-- `bson` - ObjectId support
-
-### Adding New Dependencies
-1. Justify in PR description
-2. Prefer stdlib over third-party
-3. Pin versions in `requirements.txt`
-
----
-
-## Git & CI Conventions
-
-### Branches
-- `main` - Production ready
-- `feature/*` - New features
-- `fix/*` - Bug fixes
-- `refactor/*` - Code improvements
-
-### Commits
-- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`
-- Reference issue: `feat: add base generator (issue #123)`
-
-### CI Pipeline
-1. `ruff check` - Lint
-2. `ruff format --check` - Format
-3. `pyright` - Type check
-4. `pytest tests/unit/` - Unit tests
-5. `pytest tests/integration/` - Integration (if MongoDB available)
-
----
-
-## Migration Checklist (for existing generators)
-
-### Data-Driven Generators (use MTGDataAccess)
-When refactoring a generator that reads from MongoDB:
-
-- [ ] Inherit from `BaseGenerator[T]` where T is the data model type
-- [ ] Define `TEMPLATES` class variable with TemplateConfig dataclasses
-- [ ] Implement `get_data_batches()` using `data_access` methods
-- [ ] Implement `build_prompt()` using `template` + `data`
-- [ ] Implement `get_source_category()`
-- [ ] Override `build_context()` for rich validation context
-- [ ] Override `get_source_data()` if data structure differs from data_batch
-- [ ] Remove `__init__` (use base), `generate_*()`, manual validation loop
-- [ ] Remove raw `pymongo` imports and collection dependencies
-- [ ] Update `main.py` to pass `data_access` instance
-- [ ] Test with `--dry-run` first
-- [ ] Verify output matches pre-refactor format
-
-### Topic-Based Generators (BaseGenerator[str])
-When refactoring a generator with hardcoded topics (no data_access):
-
-- [ ] Inherit from `BaseGenerator[str]`
-- [ ] Define `TEMPLATES` class variable with 2 TemplateConfig dataclasses
-- [ ] Preserve all original topics/terms/archetypes as class-level constant (e.g., TOPICS, TERMS, ARCHETYPES)
-- [ ] Implement `get_data_batches()` that cycles through the class-level list
-- [ ] Implement `build_prompt()` that looks up context by name, uses MTG_NOTATION_LEGEND + OUTPUT_FORMAT
-- [ ] Implement `get_source_category()` returning the category string
-- [ ] Implement `build_context()` returning category + template_id + domain-specific label
-- [ ] Remove `__init__` (use base class), `generate_*()` method, manual validation loop
-- [ ] Remove raw `pymongo` imports, `QueryModel()` instantiation, manual JSON parsing
-- [ ] Remove `from .logger import print` — base class uses rich.console
-- [ ] Update `main.py`: use keyword args constructor + `.generate()` instead of positional args + `.generate_*()`
-- [ ] Add `dry_run` support via base class parameter
-- [ ] Write unit tests following the test pattern in Testing Standards above
-- [ ] Test with `--dry-run` first
-- [ ] Verify output matches pre-refactor category and data coverage
+### Key Test Cases
+- **Pipeline building**: Verify stage order, field mappings, filter translation
+- **Model conversion**: Verify MongoDB doc → Pydantic model with aliases
+- **Cache behavior**: Hit, miss, TTL expiration, eviction
+- **Retry logic**: First-try success, retry on failure, exhaustion
+- **Edge cases**: Missing collections, empty results, null fields, JSON-string arrays
+- **Filter translation**: colorIdentity regex, keywords regex, text search, rarity

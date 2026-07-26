@@ -1,0 +1,8 @@
+# Domain Registry - lists all available domain plugins
+# Each entry maps a short name to the importable module path
+
+domains:
+  mtg:
+    display_name: "Magic: The Gathering"
+    module_path: "domains.mtg"
+    enabled: true

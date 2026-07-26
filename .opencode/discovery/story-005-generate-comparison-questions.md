@@ -4,48 +4,35 @@
 As a **player choosing between similar cards**, I want **detailed mechanical comparisons with context-aware recommendations**, so that **I pick the right card for my specific deck and strategy**.
 
 ## Context
-Current `GenerateComparisonQuestions` pairs cards by 8 regex patterns, 1 template, ignores card types (creature vs artifact critical), EDHREC, prices, legalities, rulings. Enhanced version uses 4 templates with rich joined data and HARD REJECT validation like combos/rules generators.
+This story was originally scoped to ENHANCE the comparison generator. The enhancements have been IMPLEMENTED in the old CLI. What remains is porting to the TrainForge framework.
 
-## Acceptance Criteria
-- [ ] **Data Integration**: Full card data for BOTH cards including EDHREC rank/salt/tags, prices (USD), legalities, rulings, keywords, subtypes, supertypes
-- [ ] **Template System**: 4 templates with distinct `task_instruction`:
-  - `power_level`: "Compare these cards for competitive Commander. Which is stronger and in what metas?"
-  - `mana_efficiency`: "Compare mana efficiency. Which gives better value per mana invested?"
-  - `commander_suitability`: "Compare for a [commander] deck. Which fits the strategy and color identity better?"
-  - `synergy_potential`: "Compare synergy with [archetype/mechanic]. Which enables more combos/interactions?"
-- [ ] **Validation Criteria** (HARD REJECT rules):
-  - Answer MUST correctly identify card types for BOTH cards
-  - If types differ, MUST explain implications (summoning sickness, removal vulnerability, etc.)
-  - Casting costs MUST be accurately compared (total mana, colored vs colorless)
-  - Net mana production MUST be calculated correctly (cost X produces X = net zero)
-  - ALL key abilities from oracle text MUST be mentioned for both cards
-  - Context-dependent recommendation (not "X is always better")
-  - NO markdown formatting
-  - Answer length: 200-500 characters
-  - Price comparison when relevant
-- [ ] **Context Building**: Pass to LLM: both cards' full details, commander/archetype context, template instruction, EDHREC comparison (rank, salt, tags), price comparison
-- [ ] **Target Count**: 2,000 validated examples
-- [ ] **MongoDB Queries**:
-  ```python
-  # Find pairs by effect category (text regex + edhrecTags)
-  # Join prices, legalities, rulings for both
-  # Filter: both commander legal
-  # Ensure diverse type combos (creature vs non-creature, etc.)
-  # Pair cards with similar EDHREC rank (fair comparison)
-  ```
+### Old CLI Implementation (`training_data/generate_synthetic_data/generate_comparison_questions.py`) ✅ COMPLETE
+- `GenerateComparisonQuestions(BaseGenerator[tuple[CardWithMetadata, CardWithMetadata]])` — 627 lines
+- **4 templates**: power_level, mana_efficiency, commander_suitability, synergy_potential
+- **10 effect categories**: Fast Mana, Green Ramp, Removal, Card Draw, Counterspells, Board Wipes, Tutors, Reanimation, Protection, Token Generation
+- **3 pair strategies**: adjacent EDHREC rank, same CMC different colors, same effect different colors
+- **10 example commanders**, **15 synergy themes** for context variation
+- Full HARD REJECT validation per template type
+
+### TrainForge Status (`trainforge/domains/mtg/`) ❌ NOT STARTED
+- `templates.yaml` has a SIMPLIFIED `comparison` category with only 1 template (`which_is_better`)
+- No TrainForge-style generator class exists
+
+## Acceptance Criteria (TrainForge Port)
+- [ ] Create `trainforge/domains/mtg/generators/comparison.py` with `GenerateComparisonQuestions(BaseGenerator[tuple[CardWithMetadata, CardWithMetadata]])`
+- [ ] Port all 4 templates with full HARD REJECT validation rules
+- [ ] Port all 10 effect categories with MongoDB filter definitions
+- [ ] Port pair strategies (adjacent rank, same CMC, same effect)
+- [ ] Register the generator in `MTGDomain.get_generators()`
+- [ ] Update templates.yaml with 4-template version
 
 ## Dependencies
-- Story 001: Shared Base Generator Class
-- Story 002: Unified Data Access Layer
-- Story 003: Extended Data Models
+- Story 011: Enrich TrainForge MTGDataAccess with typed joins
+- Story 012: Port MTG domain models to TrainForge domain plugin
 
 ## Priority: High
-## Story Points: 13
 
 ## Notes
-- `CARD_COMPARISON_INSTRUCTIONS` in constants.py has excellent rules - promote to HARD REJECT
-- Card type difference is #1 error - MUST validate
-- Net mana math: {3}→{C}{C}{C}=net 0, {2}→{C}{C}=net +1/turn
-- Salt > 1.5 = controversial - mention if relevant
-- Commander suitability needs CR 903.4 color identity check
-- Synergy template should reference Commander Spellbook combo data
+- Old CLI file is the REFERENCE IMPLEMENTATION (627 lines)
+- The `build_card_detail()` function in old CLI `common.py` may need porting too
+- TrainForge validator uses `notation_legend` + `system_message` from templates.yaml instead of per-generator constants

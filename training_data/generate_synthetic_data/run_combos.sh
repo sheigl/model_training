@@ -1,11 +1,11 @@
 #!/bin/sh
 
-#./run_combos.sh 1000 https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.5:9b,sk-1234-dasdasdjkase381312321==2311 https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.6:27b,sk-1234-dasdasdjkase381312321==2311
+#./run_combos.sh 1000 https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.5:9b,sk-1234-dasdasdjkase381312321==2311 https://server.tailc63ae8.ts.net:4444/v1,openai,glm-5.1,sk-1234-dasdasdjkase381312321==2311
 
 
 NUM=${1:-1}
-MODEL=${2:-https://server.tailc63ae8.ts.net:4444/v1,openai,gemma4:12b,$LITELLM_API_KEY}
-VALIDATION_MODEL=${3:-https://server.tailc63ae8.ts.net:4444/v1,openai,qwen3.6:27b,$LITELLM_API_KEY}
+MODEL=${2:-https://server.tailc63ae8.ts.net:4444/v1,openai,gemma4:31b,$LITELLM_API_KEY}
+VALIDATION_MODEL=${3:-https://server.tailc63ae8.ts.net:4444/v1,openai,glm-5.2,$LITELLM_API_KEY}
 VALIDATION_PCT=${4:-1}
 
 BASE_DIR=/home/sheigl/code/model_training

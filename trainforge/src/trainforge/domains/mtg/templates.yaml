@@ -1,0 +1,493 @@
+# MTG Domain Templates — migrated from old constants.py + generator files
+# Each category has 1-3 templates with instruction, weight, and validation_rules
+
+system_message: |
+  <system>
+  You are an expert Magic: The Gathering rules advisor. You generate accurate, natural Q&A training data about card combos. You output ONLY valid JSON — no preamble, no explanation, no markdown fences.
+  </system>
+
+notation_legend: |
+  <reference>
+  MTG NOTATION:
+  - {T}: Tap (rotate card 90°; only if untapped)
+  - {C}: Colorless mana | {W}: White | {U}: Blue | {B}: Black | {R}: Red | {G}: Green
+  - {X}: Variable amount | {1},{2},{3}...: Generic mana (any color/colorless)
+  - Example: {2}{U}{U} = 4 total mana (2 generic + 2 blue)
+
+  CARD TYPES:
+  - Creature: Can attack/block; has summoning sickness (can't tap or attack first turn it enters)
+  - Artifact / Enchantment: Permanent; stays on battlefield
+  - Instant: Cast anytime; goes to graveyard after resolving
+  - Sorcery: Cast only on your turn; goes to graveyard after resolving
+  - Land: Played once per turn (not cast); produces mana
+
+  KEY TERMS:
+  - ETB: Triggers when permanent enters the battlefield
+  - Summoning Sickness: Creatures can't tap or attack the turn they enter
+  - Sacrifice: Put into graveyard as a cost (uncounterable)
+  - Destroy: Put into graveyard (blocked by indestructible)
+  - Exile: Remove from game (harder to recover than graveyard)
+  </reference>
+
+categories:
+  # =====================================================================
+  # COMBO QUERIES — combo-based queries about card interactions
+  # =====================================================================
+  combo_query:
+    description: "Combo-based queries about card interactions and infinite loops"
+    templates:
+      how_does_it_work:
+        instruction: |
+          Generate exactly 3 Q&A pairs explaining HOW this combo works.
+          Focus on: the sequence of steps, what triggers what, and why the loop is infinite (if applicable).
+          At least one question must come from the perspective of a player who has never seen this combo before.
+        weight: 1.0
+        validation_rules:
+          - "Answer must explain each card's role in the combo"
+          - "All card names and effects must be accurate"
+          - "The concrete outcome (e.g., infinite damage, infinite mana) must be stated explicitly"
+      what_do_i_need:
+        instruction: |
+          Generate exactly 3 Q&A pairs focused on the REQUIREMENTS of this combo.
+          Focus on: what cards are needed, what zone each piece needs to be in, what mana or other resources are required.
+          At least one question must be phrased as a player asking 'I have X, what else do I need to go infinite?'
+        weight: 1.0
+        validation_rules:
+          - "Answer must list all essential cards"
+          - "Optional/enhancement cards should be noted as such"
+      why_does_this_work:
+        instruction: |
+          Generate exactly 3 Q&A pairs explaining WHY this combo works from a rules perspective.
+          Focus on: which specific abilities or rules interactions enable the combo, and why removing any one piece breaks it.
+          At least one question must address a potential misconception about why the combo functions.
+        weight: 1.0
+        validation_rules:
+          - "Answer must cite oracle text to explain WHY each trigger fires"
+          - "Must explain what happens if one piece is removed"
+      what_is_the_result:
+        instruction: |
+          Generate exactly 3 Q&A pairs focused on the OUTCOME of this combo.
+          Focus on: what the combo produces, how it wins the game, and what a player should do once the loop is established.
+          At least one question must be from the perspective of the OPPONENT asking what just happened to them.
+        weight: 1.0
+        validation_rules:
+          - "Answer must state the concrete outcome (e.g., infinite damage, infinite mana)"
+
+  # =====================================================================
+  # ARTICLE Q&A — derived from MTG articles and guides
+  # =====================================================================
+  article_qa:
+    description: "Q&A pairs derived from MTG articles and strategy guides"
+    templates:
+      key_takeaways:
+        instruction: |
+          Generate a question about the main points of this article, with an answer summarizing key takeaways.
+        weight: 1.0
+        validation_rules:
+          - "Answer must accurately reflect the article content"
+          - "No hallucinated information beyond what's in the source"
+      strategy_insights:
+        instruction: |
+          Generate a question about strategic insights from this article, with an answer explaining why certain strategies work.
+        weight: 1.0
+        validation_rules:
+          - "Answer must be grounded in the article content"
+
+  # =====================================================================
+  # CARD SEARCH — find cards by effect or property
+  # =====================================================================
+  card_search:
+    description: "Card search queries by effect, type, or property"
+    templates:
+      find_cards_with_effect:
+        instruction: |
+          Generate a question asking to find cards with a specific effect, with an answer listing matching cards.
+        weight: 1.0
+        validation_rules:
+          - "All listed cards must actually have the described effect"
+          - "Answer should include at least 2 relevant cards"
+
+  # =====================================================================
+  # COMPARISON — compare two or more cards
+  # =====================================================================
+  comparison:
+    description: "Compare two or more MTG cards across various dimensions"
+    templates:
+      which_is_better:
+        instruction: |
+          Generate a question comparing two cards, with an answer analyzing their differences.
+          CRITICAL ANALYSIS REQUIREMENTS:
+          0. Card Types: What TYPE is each card? If one is a CREATURE and one is NOT, this is CRITICAL.
+          1. Mana Economics: Compare casting costs vs what they produce. Net benefit = (what you get) - (what you pay).
+          2. Key Mechanics: Does it sacrifice itself? Tap repeatedly? Produce colored or colorless mana?
+          3. Common Errors to Avoid: DON'T confuse casting cost with activation cost. DON'T claim X-for-X is ramp.
+          4. Context Matters: Which is better for ramp, color fixing, card advantage, removal, resilience?
+        weight: 1.0
+        validation_rules:
+          - "Card types MUST be mentioned and compared"
+          - "Summoning sickness must be addressed for creatures"
+          - "Vulnerability differences between card types must be discussed"
+          - "Mana costs must be accurate (no backwards comparisons)"
+          - "Net mana production must be calculated correctly (X-for-X = conversion, not ramp)"
+
+  # =====================================================================
+  # REVERSE LOOKUP — find cards by description or effect
+  # =====================================================================
+  reverse_lookup:
+    description: "Find MTG cards based on a description of their effect"
+    templates:
+      what_card_does_this:
+        instruction: |
+          Generate a question describing an effect without naming the card, with an answer identifying the correct card(s).
+        weight: 1.0
+        validation_rules:
+          - "The identified card must actually have the described effect"
+
+  # =====================================================================
+  # SYNERGY — find cards that work well together
+  # =====================================================================
+  synergy:
+    description: "Card synergies and combo pieces that work well together"
+    templates:
+      what_synergizes_with:
+        instruction: |
+          Generate a question about what cards synergize with a given card, with an answer explaining the interactions.
+        weight: 1.0
+        validation_rules:
+          - "Each synergy must be mechanically accurate"
+          - "Answer should explain WHY the synergy works"
+
+  # =====================================================================
+  # BUDGET — budget-friendly alternatives and cheap options
+  # =====================================================================
+  budget:
+    description: "Budget-friendly card alternatives and cheap deck-building options"
+    templates:
+      cheaper_alternative:
+        instruction: |
+          Generate a question asking for budget alternatives to an expensive card, with an answer listing affordable substitutes.
+        weight: 1.0
+        validation_rules:
+          - "Alternative cards must serve a similar function"
+
+  # =====================================================================
+  # COLOR IDENTITY — questions about color identity and pie rules
+  # =====================================================================
+  color_identity:
+    description: "Questions about MTG color identity, the color pie, and philosophy"
+    templates:
+      what_color_does_this:
+        instruction: |
+          Generate a question about which color(s) handle a specific mechanic or theme, with an answer explaining the color pie reasoning.
+        weight: 1.0
+        validation_rules:
+          - "Answer must correctly identify relevant colors"
+
+  # =====================================================================
+  # GUIDELINES — deck-building guidelines and best practices
+  # =====================================================================
+  guidelines:
+    description: "Deck-building guidelines, land ratios, and best practices"
+    templates:
+      how_many_lands:
+        instruction: |
+          Generate a question about deck-building guidelines (land count, card distribution), with an answer providing specific recommendations.
+        weight: 1.0
+        validation_rules:
+          - "Recommendations must be reasonable and well-explained"
+
+  # =====================================================================
+  # TERMINOLOGY — MTG-specific terms and definitions
+  # =====================================================================
+  terminology:
+    description: "MTG-specific terminology, keywords, and their meanings"
+    templates:
+      what_does_this_mean:
+        instruction: |
+          Generate a question asking about an MTG term or keyword ability, with an answer defining it clearly.
+        weight: 1.0
+        validation_rules:
+          - "Definition must be accurate per comprehensive rules"
+
+  # =====================================================================
+  # DECKBUILDING THEORY — strategic deck-building concepts
+  # =====================================================================
+  deckbuilding_theory:
+    description: "Strategic deck-building theory and design principles"
+    templates:
+      deck_design_principle:
+        instruction: |
+          Generate a question about a deck-building principle or strategy, with an answer explaining the concept.
+        weight: 1.0
+        validation_rules:
+          - "Answer must explain the strategic reasoning"
+
+  # =====================================================================
+  # COMMANDER BUILDING — EDH/Commander-specific construction
+  # =====================================================================
+  commander_building:
+    description: "EDH/Commander deck-building questions and answers"
+    templates:
+      commander_deck_tips:
+        instruction: |
+          Generate a question about building an EDH/Commander deck, with an answer providing specific advice.
+        weight: 1.0
+        validation_rules:
+          - "Advice must be relevant to Commander format rules"
+
+  # =====================================================================
+  # RULES SCENARIOS — concrete gameplay scenarios governed by rules
+  # =====================================================================
+  rules_scenarios:
+    description: "Concrete in-game scenarios where specific rules determine the outcome"
+    templates:
+      what_happens_when:
+        instruction: |
+          Generate a question describing a specific board state or game action, with an answer explaining the ruling.
+          Questions must start with 'What happens when...' or 'My opponent just...'.
+        weight: 1.0
+        validation_rules:
+          - "Answer must cite relevant rule text"
+          - "The concrete outcome must be stated clearly"
+
+  # =====================================================================
+  # ARCHETYPES — deck archetypes and their characteristics
+  # =====================================================================
+  archetypes:
+    description: "Deck archetypes (aggro, control, combo, midrange) and their strategies"
+    templates:
+      what_is_this_archetype:
+        instruction: |
+          Generate a question about a deck archetype or strategy type, with an answer explaining its characteristics.
+        weight: 1.0
+        validation_rules:
+          - "Answer must accurately describe the archetype"
+
+  # =====================================================================
+  # GAME THEORY — game theory concepts applied to MTG
+  # =====================================================================
+  game_theory:
+    description: "Game theory concepts (mulligan decisions, information advantage) in MTG"
+    templates:
+      mulligan_decision:
+        instruction: |
+          Generate a question about a game theory decision in MTG (e.g., mulligan strategy), with an answer explaining the reasoning.
+        weight: 1.0
+        validation_rules:
+          - "Answer must explain the strategic trade-offs"
+
+  # =====================================================================
+  # META KNOWLEDGE — current meta trends and competitive knowledge
+  # =====================================================================
+  meta_knowledge:
+    description: "Current MTG meta trends, format states, and competitive knowledge"
+    templates:
+      what_is_meta:
+        instruction: |
+          Generate a question about the current state of a format's metagame, with an answer describing relevant trends.
+        weight: 1.0
+        validation_rules:
+          - "Answer should be grounded in provided data"
+
+  # =====================================================================
+  # COMMANDER KNOWLEDGE — EDH-specific meta and strategy
+  # =====================================================================
+  commander_knowledge:
+    description: "EDH/Commander format knowledge, singleton rules, and community standards"
+    templates:
+      edh_format_rules:
+        instruction: |
+          Generate a question about Commander format rules or conventions, with an answer explaining the specifics.
+        weight: 1.0
+        validation_rules:
+          - "Answer must be accurate to current Commander rules"
+
+  # =====================================================================
+  # RULE EXPLANATIONS — explain individual rules in plain English
+  # =====================================================================
+  rule_explanations:
+    description: "Explain individual MTG rules in accessible language"
+    templates:
+      plain_english:
+        instruction: |
+          Generate exactly 3 Q&A pairs explaining this rule in plain English.
+          At least one question must come from a newer player who doesn't know the terminology —
+          phrased as something they'd actually ask at a kitchen table game.
+        weight: 1.0
+        validation_rules:
+          - "Answer is directly grounded in the rule text provided"
+          - "Uses plain language accessible to a newer player"
+          - "Includes a concrete in-game example"
+          - "HARD REJECT if answer references any rule number"
+          - "HARD REJECT if answer contains markdown formatting (bold, bullet points)"
+      in_game_scenario:
+        instruction: |
+          Generate exactly 3 Q&A pairs presenting concrete in-game scenarios where this rule determines the outcome.
+          Questions must describe a specific board state or game action — not ask abstractly about the rule.
+          At least one must start with 'What happens when...' or 'My opponent just...'.
+        weight: 1.0
+        validation_rules:
+          - "Question describes a specific board state or game action"
+          - "Answer walks through what happens step by step"
+          - "Concrete outcome is stated — no vague 'it depends' answers"
+          - "HARD REJECT if answer references any rule number"
+          - "HARD REJECT if answer contains markdown formatting"
+      edge_case:
+        instruction: |
+          Generate exactly 3 Q&A pairs exploring edge cases or common misconceptions about this rule.
+          At least one question must address something a player might incorrectly assume.
+        weight: 1.0
+        validation_rules:
+          - "Question targets a genuine misconception or non-obvious edge case"
+          - "Answer identifies what a player might incorrectly assume and corrects it"
+          - "HARD REJECT if answer references any rule number"
+          - "HARD REJECT if answer contains markdown formatting"
+
+  # =====================================================================
+  # RULE INTERACTIONS — how two rules interact with each other
+  # =====================================================================
+  rule_interactions:
+    description: "How two MTG rules interact, with concrete scenarios"
+    templates:
+      plain_english:
+        instruction: |
+          Generate exactly 3 Q&A pairs explaining how these two rules interact in plain English.
+          At least one question must come from a newer player who doesn't know the terminology —
+          phrased as something they'd actually ask at a kitchen table game.
+        weight: 1.0
+        validation_rules:
+          - "Answer explains how BOTH rules interact"
+          - "Uses plain language accessible to a newer player"
+          - "Includes a concrete in-game example illustrating the interaction"
+          - "Explains which rule applies first or takes precedence"
+          - "HARD REJECT if answer references any rule number"
+          - "HARD REJECT if answer contains markdown formatting"
+      in_game_scenario:
+        instruction: |
+          Generate exactly 3 Q&A pairs presenting concrete in-game scenarios where BOTH rules are relevant.
+          Questions must describe a specific board state or game action — not ask abstractly about either rule.
+          At least one must start with 'What happens when...' or 'My opponent just...'.
+        weight: 1.0
+        validation_rules:
+          - "Question describes a scenario where BOTH rules are relevant"
+          - "Answer walks through the scenario step by step"
+          - "Explains how both rules contributed to the outcome"
+          - "HARD REJECT if answer references any rule number"
+          - "HARD REJECT if answer contains markdown formatting"
+      edge_case:
+        instruction: |
+          Generate exactly 3 Q&A pairs exploring edge cases or common misconceptions that arise specifically from the interaction of these two rules.
+          At least one question must address something a player might incorrectly assume when applying one rule without considering the other.
+        weight: 1.0
+        validation_rules:
+          - "Question targets a misconception arising from BOTH rules interacting"
+          - "Answer corrects the misconception and explains WHY"
+          - "HARD REJECT if answer references any rule number"
+          - "HARD REJECT if answer contains markdown formatting"
+
+  # =====================================================================
+  # GLOSSARY WITH EXAMPLES — glossary terms with in-game examples
+  # =====================================================================
+  glossary_with_examples:
+    description: "Glossary terms explained with concrete in-game examples"
+    templates:
+      term_with_example:
+        instruction: |
+          Generate a question about an MTG glossary term, with an answer that defines it and provides a concrete example.
+        weight: 1.0
+        validation_rules:
+          - "Definition must be accurate per comprehensive rules"
+          - "Example must clearly illustrate the term's usage"
+
+  # =====================================================================
+  # RULE EDGE CASES — unusual or non-obvious rule interactions
+  # =====================================================================
+  rule_edge_cases:
+    description: "Unusual, non-obvious edge cases in MTG rules"
+    templates:
+      unusual_interaction:
+        instruction: |
+          Generate a question about an unusual or non-obvious edge case in the rules, with an answer explaining the correct ruling.
+        weight: 1.0
+        validation_rules:
+          - "The edge case must be genuine and non-trivial"
+          - "Answer must explain WHY the ruling is what it is"
+
+  # =====================================================================
+  # RULE WHY QUESTIONS — why does this rule exist?
+  # =====================================================================
+  rule_why_questions:
+    description: "Questions about the design rationale behind MTG rules"
+    templates:
+      why_this_rule:
+        instruction: |
+          Generate a question asking why a specific rule exists, with an answer explaining its purpose and history.
+        weight: 1.0
+        validation_rules:
+          - "Answer must provide reasonable design rationale"
+
+  # =====================================================================
+  # GUIDE Q&A — questions derived from strategy guides
+  # =====================================================================
+  guide_qa:
+    description: "Q&A pairs derived from MTG strategy guides and tutorials"
+    templates:
+      guide_question:
+        instruction: |
+          Generate a question based on the content of this guide, with an answer summarizing the relevant information.
+        weight: 1.0
+        validation_rules:
+          - "Answer must be grounded in the guide content"
+
+  # =====================================================================
+  # STAPLE ANALYSIS — analysis of staple cards and why they're good
+  # =====================================================================
+  staple_analysis:
+    description: "Analysis of staple cards, their impact, and why they're consistently played"
+    templates:
+      why_is_this_a_staple:
+        instruction: |
+          Generate a question about why a specific card is considered a staple, with an answer analyzing its strengths.
+        weight: 1.0
+        validation_rules:
+          - "Analysis must be grounded in the card's actual abilities"
+
+  # =====================================================================
+  # COLOR STAPLES — staple cards for each color identity
+  # =====================================================================
+  color_staples:
+    description: "Staple cards organized by color identity"
+    templates:
+      staples_for_color:
+        instruction: |
+          Generate a question about staple cards in a specific color, with an answer listing and explaining them.
+        weight: 1.0
+        validation_rules:
+          - "All listed cards must match the specified color identity"
+
+  # =====================================================================
+  # SALT QUESTIONS — controversial/salty cards and their impact
+  # =====================================================================
+  salt_questions:
+    description: "Questions about controversial, polarizing ('salty') MTG cards"
+    templates:
+      why_is_this_salty:
+        instruction: |
+          Generate a question about why a specific card is considered controversial or 'salty', with an answer explaining the community reaction.
+        weight: 1.0
+        validation_rules:
+          - "Answer must explain both sides of the controversy"
+
+  # =====================================================================
+  # MULTI-CARD USAGE — how to use multiple cards together effectively
+  # =====================================================================
+  multi_card_usage:
+    description: "How to effectively use multiple cards together in a deck or combo"
+    templates:
+      how_to_use_these_together:
+        instruction: |
+          Generate a question about using multiple specific cards together, with an answer explaining the strategy.
+        weight: 1.0
+        validation_rules:
+          - "Strategy must be mechanically sound"
+          - "All mentioned interactions must be accurate"

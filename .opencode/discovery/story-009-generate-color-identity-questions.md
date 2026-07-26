@@ -4,49 +4,38 @@
 As a **Commander player building a deck**, I want **accurate color identity legality answers with rule explanations**, so that **I know exactly what cards I can and cannot play in my commander's color identity**.
 
 ## Context
-Current `GenerateColorIdentityQuestions` samples 500 cards and 100 commanders, has bugs (undefined variables `card_name`, `commander_name`, `card_colors`, `commander_colors`, `is_legal`), 1 template. Enhanced version uses ALL EDHREC commanders weighted by deck count, full card legalities, CR 903.4, 4 templates.
+This story was originally scoped to ENHANCE the color identity generator. The enhancements have been IMPLEMENTED in the old CLI. What remains is porting to the TrainForge framework.
 
-## Acceptance Criteria
-- [ ] **Data Integration**: `mtg_json.cards` (full color identity, mana cost, color indicator) + `edhrec.commanders` (ALL commanders with deck counts, color identity) + `cardLegalities` + CR 903.4 rules
-- [ ] **Template System**: 4 templates with distinct `task_instruction`:
-  - `mono_color`: "Explain color identity rules for mono-colored commanders. Can [card] be played in [commander]?"
-  - `two_color`: "Explain color identity for two-color commanders. Is [card] legal in [commander]?"
-  - `three_color`: "Explain color identity for three-color (wedge/shard) commanders. Why is [card] legal/illegal in [commander]?"
-  - `five_color`: "Explain color identity for five-color commanders. What restrictions still apply to [card] in [commander]?"
-- [ ] **Validation Criteria** (HARD REJECT rules):
-  - Answer MUST correctly determine legality (YES/NO) per CR 903.4
-  - MUST explain color identity calculation: mana symbols in cost + color indicator + color-defining ability
-  - MUST mention commander's color identity explicitly
-  - MUST explain WHY legal/illegal (which mana symbol violates identity)
-  - For legal cards: MUST mention any color identity nuances (hybrid, phyrexian, colorless)
-  - For illegal cards: MUST specify which color symbol is not in commander's identity
-  - NO markdown formatting
-  - Answer length: 150-400 characters
-  - NO rule number references (explain conversationally)
-- [ ] **Context Building**: Pass to LLM: card full details (mana cost, color identity, color indicator, text), commander full details (name, color identity, deck count), legality determination, template instruction
-- [ ] **Target Count**: 2,000 validated examples
-- [ ] **MongoDB Queries**:
-  ```python
-  # All EDHREC commanders with num_decks > 0, weighted by num_decks
-  # Cards: all commander-legal cards with colorIdentity, manaCost, colorIndicator
-  # Pair cards with commanders ensuring diverse color identity combos
-  # Include edge cases: hybrid mana, phyrexian mana, colorless, color indicators
-  ```
+### Old CLI Implementation (`training_data/generate_synthetic_data/generate_color_identity_questions.py`) ✅ COMPLETE
+- `GenerateColorIdentityQuestions(BaseGenerator[ColorIdentityContext])` — 686 lines
+- **4 templates**: mono_color, two_color, three_color, five_color
+- Uses ALL EDHREC commanders weighted by deck count popularity
+- Full CR 903.4 color identity calculation
+- Color pair/wedge/shard naming maps (Azorius, Dimir, etc.)
+- Handles hybrid mana, phyrexian mana, colorless cards, color indicators
+- Template-specific validation with HARD REJECT rules
+
+### TrainForge Status (`trainforge/domains/mtg/`) ❌ NOT STARTED
+- `templates.yaml` has a COMPLETELY DIFFERENT `color_identity` category (`what_color_does_this` about color pie, not Commander legality)
+- No TrainForge-style generator class exists
+
+## Acceptance Criteria (TrainForge Port)
+- [ ] Create `trainforge/domains/mtg/generators/color_identity.py` with `GenerateColorIdentityQuestions(BaseGenerator[ColorIdentityContext])`
+- [ ] Port all 4 templates with full HARD REJECT validation rules
+- [ ] Port commander weighting logic (popular commanders appear more)
+- [ ] Port color identity calculation (CR 903.4 including hybrid, phyrexian, etc.)
+- [ ] Port edge case handling (Extort in reminder text, Devoid, DFCs)
+- [ ] Register the generator in `MTGDomain.get_generators()`
+- [ ] Update templates.yaml from color-pie topic to Commander legality topic
 
 ## Dependencies
-- Story 001: Shared Base Generator Class
-- Story 002: Unified Data Access Layer
-- Story 003: Extended Data Models
+- Story 011: Enrich TrainForge MTGDataAccess with typed joins
+- Story 012: Port MTG domain models to TrainForge domain plugin
 
 ## Priority: High
-## Story Points: 13
 
 ## Notes
-- CR 903.4: Color identity = mana symbols in cost + color indicator + characteristic-defining abilities
-- Hybrid mana: counts as BOTH colors for identity (e.g., {W/U} = white AND blue)
-- Phyrexian mana: counts as its color (e.g., {W/P} = white)
-- Colorless cards (no colored symbols, no indicator) = colorless identity = legal in any deck
-- Color indicator (e.g., on back face of DFCs, or cards like Dryad Arbor) sets identity
-- EDHREC `commanders` collection has `color_identity` array and `num_decks` for weighting
-- Weighted sampling: popular commanders (Atraxa, Edgar Markov, Urza) should appear more often
-- Edge cases to cover: Extort (hybrid in reminder text only - doesn't count), Devoid (colorless identity despite colored cost), Transformed DFCs
+- Old CLI file is the REFERENCE IMPLEMENTATION (686 lines)
+- **CRITICAL**: templates.yaml has the WRONG topic for this category — it describes color pie philosophy questions instead of Commander color identity legality questions. This must be corrected during porting.
+- Uses `get_commanders_enriched()` and `get_cards_enriched()` for data
+- `ColorIdentityContext` dataclass needs to be ported

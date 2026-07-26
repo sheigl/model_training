@@ -2,6 +2,11 @@
 
 Fine-tune LLMs to be Magic: The Gathering experts — covering all 108K+ cards, 76K+ combos, comprehensive rules (292 pages), strategic advice, and competitive meta knowledge.
 
+This repository contains two projects:
+
+- **`training_data/`** — Legacy MTG-specific synthetic data generation system (CLI-based, 27 generators)
+- **`trainforge/`** — Generic synthetic data generation framework with Streamlit web UI and pluggable domain architecture (includes MTG as first domain plugin)
+
 ## Prerequisites
 
 - **Python 3.10+** (see `.python-version`)
@@ -65,6 +70,27 @@ python training_data/extract_training_data.py
 python training.py
 ```
 
+### TrainForge Web Interface (Generic Framework)
+
+TrainForge is a generic synthetic data generation framework with a Streamlit web UI. The MTG domain plugin provides the same 27 categories as the legacy system, but through a pluggable architecture.
+
+```bash
+cd trainforge
+
+# Install dependencies
+uv sync
+
+# Start the web interface
+streamlit run src/trainforge/ui/app.py
+
+# Or use the entry point (after installing with uv/pip)
+trainforge
+```
+
+The UI provides generation control, data browsing, metrics dashboards, and JSONL export — all through a browser. Configure MongoDB connection, LLM provider (Ollama/Anthropic/OpenAI), and domain settings in the Settings page.
+
+See `docs/ARCHITECTURE.md` for TrainForge architecture details and how to add new domains.
+
 ## Running Tests
 
 ```bash
@@ -94,7 +120,7 @@ See `docs/ARCHITECTURE.md` for the trace schema and design details.
 ```
 model_training/
 ├── training_data/
-│   ├── generate_synthetic_data/    # Synthetic Q&A generation system
+│   ├── generate_synthetic_data/    # Legacy MTG-specific synthetic Q&A generation (CLI)
 │   │   ├── base_generator.py       # BaseGenerator[T] abstract class
 │   │   ├── main.py                 # CLI entry point for all generators
 │   │   ├── data_access.py          # MTGDataAccess - MongoDB abstraction
@@ -104,11 +130,30 @@ model_training/
 │   │   ├── generate_*.py           # Individual generator implementations
 │   │   └── test_*.py               # Generator unit tests
 │   └── *.py                        # Data scraping, extraction, and conversion
-├── tests/                          # Top-level unit tests
+├── trainforge/                     # Generic synthetic data generation framework
+│   ├── src/trainforge/             # Core framework modules (9 files)
+│   │   ├── models.py               # Pydantic v2 models (Model, Q&A, Trace, Metrics)
+│   │   ├── config.py               # YAML loader with env var interpolation
+│   │   ├── data_source.py          # DataSource ABC + MongoDataSource
+│   │   ├── domain.py               # DomainPlugin ABC, TemplateConfig, DomainRegistry
+│   │   ├── generator.py            # BaseGenerator[T] template method pattern
+│   │   ├── query_model.py          # Multi-provider LLM client (Ollama/Anthropic/OpenAI)
+│   │   ├── training.py             # JSONL exporter with ratio controls
+│   │   ├── validator.py            # Domain-agnostic validation + regeneration loop
+│   │   └── ui/                     # Streamlit web interface (7 files)
+│   ├── domains/mtg/                # MTG domain plugin (first domain implementation)
+│   │   ├── models.py               # 22 Pydantic v2 domain models (Card, Combo, Commander, etc.)
+│   │   ├── data_source.py          # Enriched MTGDataAccess with typed joins, cache, retry
+│   │   ├── __init__.py             # MTGDomain plugin (auto-registers)
+│   │   ├── config.yaml             # Domain metadata, MongoDB collection config
+│   │   └── templates.yaml          # 27 category templates with validation rules
+│   ├── tests/                      # 301 tests (core + UI + MTG domain)
+│   └── pyproject.toml              # Dependencies and entry point
+├── tests/                          # Top-level unit tests (legacy)
 ├── qwen_training/                  # Qwen model training scripts
 ├── CHANGELOG.md
 └── docs/
-    └── ARCHITECTURE.md
+    └── ARCHITECTURE.md             # Architecture for both legacy + TrainForge
 ```
 
 ## Generator Categories
