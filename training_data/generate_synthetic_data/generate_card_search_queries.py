@@ -252,49 +252,6 @@ COMMON_COMMANDERS = [
 class GenerateCardSearchQueries(BaseGenerator[CardWithMetadata]):
     """Generate card search query Q&A pairs from enriched card data."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="competitive",
-            task_instruction="""Generate exactly 3 Q&A pairs for COMPETITIVE Commander players asking about the best cards for this effect.
-Focus on: EDHREC rank, inclusion percentage, top-tier competitive staples, and why these cards dominate the meta.
-At least one question must be phrased as a competitive player optimizing their deck.""",
-            validation_rules=COMPETITIVE_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="budget",
-            task_instruction="""Generate exactly 3 Q&A pairs for BUDGET-CONSCIOUS Commander players asking about affordable options for this effect.
-Focus on: actual USD prices (cite specific prices), cards under $5, budget alternatives, and value-for-money.
-At least one question must be phrased as a player with a strict budget (e.g., "under $5 per card").""",
-            validation_rules=BUDGET_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="commander_specific",
-            task_instruction="""Generate exactly 3 Q&A pairs for players building around a SPECIFIC COMMANDER asking what cards with this effect work well in that deck.
-Focus on: color identity legality, commander synergy (how the effect interacts with the commander's abilities), and deck-specific strategy.
-At least one question must name a specific commander and ask about synergy.""",
-            validation_rules=COMMANDER_SPECIFIC_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="thematic",
-            task_instruction="""Generate exactly 3 Q&A pairs for players building a THEMATIC/MECHANIC-FOCUSED deck asking what cards support this strategy.
-Focus on: mechanic synergy, keyword interactions, how cards enable the theme, and thematic coherence.
-At least one question must ask about the mechanic/theme by name (e.g., "What cards support a treasure strategy?").""",
-            validation_rules=THEMATIC_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="beginner",
-            task_instruction="""Generate exactly 3 Q&A pairs for BEGINNER Commander players asking what cards with this effect they should consider.
-Focus on: simple explanations (no jargon or explain it), concrete card examples with plain-language descriptions, budget-friendly options, and why each card is good for learning.
-At least one question must be phrased as a new player (e.g., "I'm new to Commander...").""",
-            validation_rules=BEGINNER_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     def __init__(
         self,
         data_access: MTGDataAccess,

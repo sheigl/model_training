@@ -134,11 +134,31 @@ class MockQueryModel(QueryModel):
 
 class ConcreteGenerator(BaseGenerator[dict]):
     """Concrete generator for testing trace integration."""
-    TEMPLATES = [
-        TemplateConfig("test_template", "Test instruction", weight=1.0),
-    ]
 
     def __init__(self, *args, **kwargs):
+        # Provide a mock yaml_loader so select_templates() can find templates.
+        if "yaml_loader" not in kwargs:
+            from unittest.mock import MagicMock
+            from training_data.generate_synthetic_data.yaml_template_loader import YamlTemplateLoader
+            loader = MagicMock(spec=YamlTemplateLoader)
+            loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
+            loader.list_templates.return_value = ["test_template"]
+
+            def get_latest_side(gen, tid, ttype):
+                if ttype == "generation":
+                    return {
+                        "template_id": tid,
+                        "instruction": "Test instruction",
+                        "weight": 1.0,
+                        "validation_rules": [],
+                        "min_answer_length": 80,
+                        "max_answer_length": 2000,
+                        "version": "1",
+                    }
+                return None
+
+            loader.get_latest.side_effect = get_latest_side
+            kwargs["yaml_loader"] = loader
         super().__init__(*args, **kwargs)
         self.data_batches: list[list[dict]] = []
 
@@ -400,7 +420,7 @@ class TestBaseGeneratorTraceIntegration:
         assert generator.generated_count == 1
 
     def test_trace_callback_not_called_when_validation_fails(self):
-        """Test that trace callback is NOT called when item is rejected (not saved)."""
+        """Test that trace callback IS called even when item is rejected (not saved)."""
         traces_received: list[GenerationTrace] = []
 
         def capture_trace(trace: GenerationTrace):
@@ -435,8 +455,11 @@ class TestBaseGeneratorTraceIntegration:
 
         generator.generate()
 
-        # Trace should NOT be called because item was rejected
-        assert len(traces_received) == 0
+        # Trace IS called even on rejection — captures the full lifecycle
+        assert len(traces_received) == 1
+        trace = traces_received[0]
+        assert trace.final_outcome == "rejected"
+        assert trace.total_rounds >= 3
         assert generator.generated_count == 0
 
     def test_trace_callback_called_per_template(self):
@@ -502,10 +525,13 @@ class TestBaseGeneratorTraceIntegration:
 
         generator.generate()
 
-        # Only the second item should produce a trace (first had JSON parse error and was skipped)
-        assert len(traces_received) == 1
-        trace = traces_received[0]
-        assert trace.generation_parsed_ok is True
+        # Both items produce traces — first with parse error, second successful
+        assert len(traces_received) == 2
+        failed_trace = traces_received[0]
+        assert failed_trace.generation_parsed_ok is False
+        assert failed_trace.final_outcome == "generation_error"
+        success_trace = traces_received[1]
+        assert success_trace.generation_parsed_ok is True
         assert generator.generated_count == 1
 
 

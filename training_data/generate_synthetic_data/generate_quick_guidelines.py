@@ -80,111 +80,9 @@ ARCHETYPE_COMMANDERS = {
 
 
 # Template configurations for the 5 guideline types
-TEMPLATE_CONFIGS = [
-    TemplateConfig(
-        template_id="land_count",
-        task_instruction=(
-            "Generate 3 Q&A pairs about land count for this archetype. "
-            "Each question should ask 'How many lands should my [archetype] deck run?' with natural variations. "
-            "Answers MUST: give a specific land count range (e.g., 36-38), explain based on average mana curve and ramp density, "
-            "cite 2+ example commanders from the archetype, mention how ramp affects land count, "
-            "and reference real deck statistics if available."
-        ),
-        weight=1.0,
-        validation_rules=[
-            "Answer gives specific land count range (e.g., 36-38)",
-            "Explains based on curve and ramp",
-            "Cites 2+ example commanders",
-            "Mentions ramp effect on land count",
-        ],
-        min_answer_length=120,
-    ),
-    TemplateConfig(
-        template_id="ramp_package",
-        task_instruction=(
-            "Generate 3 Q&A pairs about ramp package for this archetype. "
-            "Each question should ask 'How much ramp does [archetype] need?' with natural variations. "
-            "Answers MUST: give a ramp count range (e.g., 8-12), break down by type (land ramp / artifact ramp / rituals), "
-            "explain based on commander CMC and color identity, list 3+ specific ramp cards matching the archetype's colors, "
-            "and mention color constraints on ramp choices."
-        ),
-        weight=1.0,
-        validation_rules=[
-            "Answer gives ramp count range",
-            "Breaks down by type (land/artifact/ritual)",
-            "Explains based on commander CMC",
-            "Lists 3+ specific ramp cards",
-            "Mentions color constraints",
-        ],
-        min_answer_length=150,
-    ),
-    TemplateConfig(
-        template_id="removal_suite",
-        task_instruction=(
-            "Generate 3 Q&A pairs about removal suite for this archetype. "
-            "Each question should ask 'What removal should I run in [archetype]?' with natural variations. "
-            "Answers MUST: give a removal count range (e.g., 8-12), break down targeted removal vs board wipes, "
-            "explain based on archetype role (control needs more, aggro needs less), "
-            "list 3+ specific removal cards matching the archetype's colors, "
-            "and mention versatile vs narrow removal choices."
-        ),
-        weight=1.0,
-        validation_rules=[
-            "Answer gives removal count range",
-            "Breaks down targeted vs board wipes",
-            "Explains based on archetype role",
-            "Lists 3+ specific removal cards",
-            "Mentions versatile vs narrow removal",
-        ],
-        min_answer_length=150,
-    ),
-    TemplateConfig(
-        template_id="card_advantage",
-        task_instruction=(
-            "Generate 3 Q&A pairs about card advantage for this archetype. "
-            "Each question should ask 'How do I get card advantage in [archetype]?' with natural variations. "
-            "Answers MUST: list 3+ specific card advantage engines (draw, selection, recursion), "
-            "explain synergy with archetype's game plan, distinguish between burst draw and steady engines, "
-            "mention at least 1 commander that enables card advantage, "
-            "and explain why these engines fit the archetype better than generic goodstuff."
-        ),
-        weight=1.0,
-        validation_rules=[
-            "Lists 3+ specific card advantage engines",
-            "Explains synergy with archetype",
-            "Distinguishes burst vs steady draw",
-            "Mentions 1+ commander enabling CA",
-            "Explains archetype-specific fit",
-        ],
-        min_answer_length=150,
-    ),
-    TemplateConfig(
-        template_id="win_con_density",
-        task_instruction=(
-            "Generate 3 Q&A pairs about win condition density for this archetype. "
-            "Each question should ask 'How many win conditions does [archetype] need?' with natural variations. "
-            "Answers MUST: give a specific win con count or range (e.g., 2-4), explain compact vs redundant win cons, "
-            "list 2+ example win conditions matching the archetype, "
-            "explain how the archetype's strategy impacts win con choices, "
-            "and mention relationship between tutor density and win con count."
-        ),
-        weight=1.0,
-        validation_rules=[
-            "Gives specific win con count/range",
-            "Explains compact vs redundant",
-            "Lists 2+ example win conditions",
-            "Explains strategy impact on win cons",
-            "Mentions tutor density relationship",
-        ],
-        min_answer_length=150,
-    ),
-]
-
 
 class GenerateQuickGuidelines(BaseGenerator[dict]):
     """Generator for quick deckbuilding guidelines using BaseGenerator pattern."""
-
-    TEMPLATES = TEMPLATE_CONFIGS
 
     def __init__(
         self,
@@ -494,6 +392,7 @@ KEY TERMS:
         template: TemplateConfig,
         data_batch: dict,
         source_data: list[Any],
+        trace: GenerationTrace | None = None,
         sibling_corrections: list[str] | None = None,
     ) -> tuple[bool, QuestionAnswerEnhanced | None]:
         """Run validation pipeline with regeneration loop."""

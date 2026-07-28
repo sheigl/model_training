@@ -184,34 +184,61 @@ def _load_generator_class(module_name: str, class_name: str):
 
 
 def extract_legacy() -> list[dict]:
-    """Extract one generation doc per ``TemplateConfig`` from each generator's
-    ``TEMPLATES`` class variable.
+    """Extract one generation doc per template from each generator's YAML file.
 
     Each doc has ``template_type="generation"`` and ``yaml_content`` with keys:
     ``instruction``, ``weight``, ``validation_rules``, ``min_answer_length``,
     ``max_answer_length``.
     """
     docs: list[dict] = []
+    templates_dir = Path(__file__).parent / "templates"
+
     for module_name, class_name, category in GENERATOR_REGISTRY:
+        # Try class-level TEMPLATES first (backward compat)
         cls = _load_generator_class(module_name, class_name)
         templates = getattr(cls, "TEMPLATES", None)
-        if not templates:
-            logger.warning("generator %s has no TEMPLATES — skipping", class_name)
-            continue
-        for tc in templates:
-            yaml_content = _dump_yaml({
-                "instruction": tc.task_instruction,
-                "weight": tc.weight,
-                "validation_rules": list(tc.validation_rules or []),
-                "min_answer_length": tc.min_answer_length,
-                "max_answer_length": tc.max_answer_length,
-            })
-            docs.append({
-                "generator": category,
-                "template_id": tc.template_id,
-                "template_type": "generation",
-                "yaml_content": yaml_content,
-            })
+
+        if templates:
+            for tc in templates:
+                yaml_content = _dump_yaml({
+                    "instruction": tc.task_instruction,
+                    "weight": tc.weight,
+                    "validation_rules": list(tc.validation_rules or []),
+                    "min_answer_length": tc.min_answer_length,
+                    "max_answer_length": tc.max_answer_length,
+                })
+                docs.append({
+                    "generator": category,
+                    "template_id": tc.template_id,
+                    "template_type": "generation",
+                    "yaml_content": yaml_content,
+                })
+        else:
+            # Fallback: read from YAML file on disk
+            category_file = templates_dir / f"{category}.yaml"
+            if not category_file.is_file():
+                logger.warning("generator %s has no TEMPLATES and no YAML file — skipping", class_name)
+                continue
+            entries = yaml.safe_load(category_file.read_text(encoding="utf-8"))
+            if not isinstance(entries, list):
+                logger.warning("generator %s YAML file did not produce a list — skipping", class_name)
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict) or "template_id" not in entry:
+                    continue
+                yaml_content = _dump_yaml({
+                    "instruction": entry.get("instruction", ""),
+                    "weight": entry.get("weight", 1.0),
+                    "validation_rules": list(entry.get("validation_rules") or []),
+                    "min_answer_length": int(entry.get("min_answer_length", 80)),
+                    "max_answer_length": int(entry.get("max_answer_length", 2000)),
+                })
+                docs.append({
+                    "generator": category,
+                    "template_id": entry["template_id"],
+                    "template_type": "generation",
+                    "yaml_content": yaml_content,
+                })
     return docs
 
 

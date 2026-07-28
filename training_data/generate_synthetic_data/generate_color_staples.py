@@ -6,13 +6,6 @@ from .common import TemplateConfig, build_color_staples_prompt
 from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 
 class GenerateColorStaples(BaseGenerator[tuple[str, list[dict]]]):
-    TEMPLATES: ClassVar[list[TemplateConfig]] = [
-        TemplateConfig(
-            template_id="color_staples",
-            task_instruction="""Generate 3 Q&A pairs about the top cards for this color in Commander.""",
-        )
-    ]
-
     COLORS: ClassVar[list[str]] = ['black', 'blue', 'colorless', 'green', 'red', 'white']
 
     def __init__(self, data_access: MTGDataAccess, models: dict[ModelType, Model],

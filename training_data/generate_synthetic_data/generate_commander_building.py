@@ -173,40 +173,6 @@ ARCHETYPE_KEY_CARDS: dict[str, list[str]] = {
 class GenerateCommanderBuilding(BaseGenerator[CommanderBuildingBatch]):
     """Generate Commander-specific deckbuilding Q&A with enriched card data."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="general_advice",
-            task_instruction="""You are an expert Commander deckbuilder. Generate exactly 3 Q&A pairs about building a {archetype} Commander deck.
-
-Use the provided commanders, key cards, and strategy context to give specific, grounded advice.
-Reference actual card names from the <key_cards> and <commanders> blocks.
-Explain WHY specific cards fit this archetype in Commander.
-
-Questions should be specific to Commander format construction challenges.
-Cover topics like: choosing a commander, building around themes, threat density, political considerations, power level calibration.
-Answers must address Commander-specific constraints (100-card singleton, multiplayer dynamics).
-Do NOT invent cards that are not in the provided context.
-
-Output JSON array with question/answer pairs. Keep answers 3-6 sentences with Commander-specific advice and reasoning.
-{output_format}""",
-            validation_rules=COMMANDER_GENERAL_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="example_driven",
-            task_instruction="""You are an expert Commander deckbuilder. Generate exactly 3 Q&A pairs about building a {archetype} Commander deck using concrete card examples.
-
-Use the provided commanders, key cards, and strategy context. Each answer MUST include at least one specific card or commander from the <key_cards> or <commanders> blocks.
-Explain WHY that card is a good fit for this strategy in Commander specifically.
-Do NOT invent cards that are not in the provided context.
-
-Output JSON array with question/answer pairs. Keep answers 3-6 sentences with Commander-specific advice and reasoning.
-{output_format}""",
-            validation_rules=COMMANDER_EXAMPLE_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     # All archetypes preserved from the original generator
     ARCHETYPES = [
         (

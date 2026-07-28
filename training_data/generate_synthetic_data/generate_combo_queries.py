@@ -96,41 +96,6 @@ VALIDATION CHECKLIST:
 class GenerateComboQueries(BaseGenerator[ComboWithCards]):
     """Generate combo query Q&A pairs from Commander Spellbook combos."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="how_does_it_work",
-            task_instruction="""Generate exactly 3 Q&A pairs explaining HOW this combo works.
-Focus on: the sequence of steps, what triggers what, and why the loop is infinite (if applicable).
-At least one question must come from the perspective of a player who has never seen this combo before.""",
-            validation_rules=COMBO_HOW_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="what_do_i_need",
-            task_instruction="""Generate exactly 3 Q&A pairs focused on the REQUIREMENTS of this combo.
-Focus on: what cards are needed, what zone each piece needs to be in, what mana or other resources are required.
-At least one question must be phrased as a player asking 'I have X, what else do I need to go infinite?'""",
-            validation_rules=COMBO_WHAT_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="why_does_this_work",
-            task_instruction="""Generate exactly 3 Q&A pairs explaining WHY this combo works from a rules perspective.
-Focus on: which specific abilities or rules interactions enable the combo, and why removing any one piece breaks it.
-At least one question must address a potential misconception about why the combo functions.""",
-            validation_rules=COMBO_WHY_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="what_is_the_result",
-            task_instruction="""Generate exactly 3 Q&A pairs focused on the OUTCOME of this combo.
-Focus on: what the combo produces, how it wins the game, and what a player should do once the loop is established.
-At least one question must be from the perspective of the OPPONENT asking what just happened to them.""",
-            validation_rules=COMBO_RESULT_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     def __init__(
         self,
         data_access: MTGDataAccess,

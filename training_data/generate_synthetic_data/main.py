@@ -35,6 +35,38 @@ sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_bufferi
 # Load environment variables from .env file
 load_dotenv()
 
+# Register generator categories for class-level TEMPLATES access
+from .base_generator import BaseGenerator
+BaseGenerator._CATEGORY_MAP.update({
+    "GenerateArchetypes": "archetype",
+    "GenerateArticleQa": "article_qa",
+    "GenerateBudgetAlternatives": "budget_alternative",
+    "GenerateCardSearchQueries": "card_search",
+    "GenerateColorIdentityQuestions": "color_identity",
+    "GenerateColorStaples": "color_staples",
+    "GenerateComboQueries": "combo_query",
+    "GenerateCommanderBuilding": "commander_building",
+    "GenerateCommanderKnowledge": "commander_rules",
+    "GenerateComparisonQuestions": "comparison",
+    "GenerateDeckbuildingTheory": "deckbuilding_theory",
+    "GenerateGameTheory": "game_theory",
+    "GenerateGlossaryWithExamples": "glossary_with_examples",
+    "GenerateGuideQa": "guide_qa",
+    "GenerateMetaKnowledge": "meta_knowledge",
+    "GenerateMultiCardUsage": "multi_card_usage",
+    "GenerateQuickGuidelines": "quick_guideline",
+    "GenerateReverseLookupQuestions": "reverse_lookup",
+    "GenerateRuleEdgeCases": "rule_edge_case",
+    "GenerateRuleExplanations": "rule_explanation",
+    "GenerateRuleInteractions": "rule_interaction",
+    "GenerateRulesScenarios": "rules_scenario",
+    "GenerateRuleWhyQuestions": "rule_why",
+    "GenerateSaltQuestions": "salt_analysis",
+    "GenerateStapleAnalysis": "staple_analysis",
+    "GenerateSynergyQuestions": "synergy",
+    "GenerateTerminologyQuestions": "terminology",
+})
+
 """
 Synthetic Query Generator - Saves to MongoDB
 

@@ -142,72 +142,6 @@ VALIDATION CHECKLIST:
 # TEMPLATE CONFIGURATIONS
 # =============================================================================
 
-COMPARISON_TEMPLATES = [
-    TemplateConfig(
-        template_id="power_level",
-        task_instruction="""Generate exactly 2 Q&A pairs comparing the POWER LEVEL of these two cards for a specific archetype.
-
-Question format: "Which is stronger: [card1] or [card2] for [archetype]?"
-
-Answers MUST:
-- Compare EDHREC rank (lower = more popular/stronger)
-- Compare inclusion percentage (num_decks context)
-- Compare salt score (controversy level)
-- Cite oracle text to justify power assessment
-- Give context-dependent recommendation (not absolute)
-- Mention card types and their implications (creature vs non-creature vulnerability)""",
-        validation_rules=POWER_LEVEL_VALIDATION.strip().split("\n"),
-        weight=1.0,
-    ),
-    TemplateConfig(
-        template_id="mana_efficiency",
-        task_instruction="""Generate exactly 2 Q&A pairs comparing the MANA EFFICIENCY of these two cards.
-
-Question format: "Which gives better mana value: [card1] or [card2]?"
-
-Answers MUST:
-- State the mana value (CMC) of each card explicitly
-- Calculate net mana advantage: what you get minus what you pay
-- Discuss tempo: when does the value come online? (turn 1, turn 2, delayed)
-- Distinguish colored vs colorless mana production
-- Distinguish casting cost vs activation cost
-- Identify if a card is mana conversion (cost X, produce X) vs actual ramp""",
-        validation_rules=MANA_EFFICIENCY_VALIDATION.strip().split("\n"),
-        weight=1.0,
-    ),
-    TemplateConfig(
-        template_id="commander_suitability",
-        task_instruction="""Generate exactly 2 Q&A pairs comparing COMMANDER SUITABILITY for a specific example commander.
-
-Question format: "Should I run [card1] or [card2] in my [commander] deck?"
-
-Answers MUST:
-- State the example commander's name and color identity
-- Check color identity legality for BOTH cards against that commander
-- Explicitly state legal/illegal for each card
-- Explain commander synergy: how each card interacts with the commander's abilities/theme
-- If a card is illegal, explain why (color identity rule)
-- Give context-dependent recommendation based on commander strategy""",
-        validation_rules=COMMANDER_SUITABILITY_VALIDATION.strip().split("\n"),
-        weight=1.0,
-    ),
-    TemplateConfig(
-        template_id="synergy_potential",
-        task_instruction="""Generate exactly 2 Q&A pairs comparing SYNERGY POTENTIAL with a specific theme/mechanic.
-
-Question format: "Which has better synergy with [theme]: [card1] or [card2]?"
-
-Answers MUST:
-- Identify the theme/mechanic (e.g., "artifacts matter", "graveyard recursion", "token doubling")
-- Name shared keywords/mechanics between each card and the theme
-- Explain the mechanical interaction: how the card's abilities work with the theme
-- Give specific in-game examples of the synergy playing out
-- Compare which card has stronger/deeper synergy and why""",
-        validation_rules=SYNERGY_POTENTIAL_VALIDATION.strip().split("\n"),
-        weight=1.0,
-    ),
-]
-
 
 # =============================================================================
 # EXAMPLE COMMANDERS FOR COMMANDER_SUITABILITY TEMPLATE
@@ -256,8 +190,6 @@ SYNERGY_THEMES = [
 
 class GenerateComparisonQuestions(BaseGenerator[tuple[CardWithMetadata, CardWithMetadata]]):
     """Generate card comparison Q&A pairs from enriched card data."""
-
-    TEMPLATES = COMPARISON_TEMPLATES
 
     def __init__(
         self,

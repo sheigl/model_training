@@ -5,7 +5,6 @@ from typing import Callable, Iterator
 
 from .base_generator import BaseGenerator, TemplateConfig
 from .common import build_rule_explanation_prompt
-from .constants import RULE_EXPLANATION_TEMPLATES, RULE_EXPLANATION_VALIDATION
 from .data_access import MTGDataAccess
 from .domain_models import Rule
 from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
@@ -13,15 +12,6 @@ from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 
 class GenerateRuleExplanations(BaseGenerator[Rule]):
     """Generate natural Q&A from specific rule text using multiple templates."""
-
-    TEMPLATES: list[TemplateConfig] = [
-        TemplateConfig(
-            template_id=t["type"],
-            task_instruction=t["task_instruction"],
-            validation_rules=[RULE_EXPLANATION_VALIDATION[t["type"]]],
-        )
-        for t in RULE_EXPLANATION_TEMPLATES
-    ]
 
     SKIP_SECTIONS: set[str] = {
         "000",  # Preface/introduction

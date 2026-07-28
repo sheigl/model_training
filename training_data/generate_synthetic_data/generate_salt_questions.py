@@ -6,13 +6,6 @@ from .common import TemplateConfig, build_salt_prompt
 from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 
 class GenerateSaltQuestions(BaseGenerator[list[dict]]):
-    TEMPLATES: ClassVar[list[TemplateConfig]] = [
-        TemplateConfig(
-            template_id="salt_analysis",
-            task_instruction="""Generate 3 Q&A pairs about controversial/salty Commander cards.""",
-        )
-    ]
-
     BATCH_SIZE: ClassVar[int] = 8
 
     def __init__(self, data_access: MTGDataAccess, models: dict[ModelType, Model],

@@ -18,13 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# SCAFFOLDING CACHE — shared prompt blocks loaded from the MongoDB TemplateStore
+# SCAFFOLDING CACHE — shared prompt blocks loaded from templates/shared.yaml
 # =============================================================================
-# Populated once at startup by ``init_scaffolding(store)``. Each ``build_*_prompt``
-# function reads scaffolding via ``_get_scaffold(key, fallback)`` which checks
-# the cache first, then falls back to the ``constants.py`` import. With
-# ``template_store=None`` (the default) the cache stays empty and every
-# generator behaves byte-identically to the current hardcoded behavior.
+# Populated once at startup by ``init_scaffolding(yaml_loader)``. Each
+# ``build_*_prompt`` function reads scaffolding via ``_get_scaffold(key, fallback)``
+# which checks the cache first, then falls back to the ``constants.py`` import.
 
 _SCAFFOLDING_CACHE: dict[str, str | list[str]] = {}
 
@@ -51,20 +49,15 @@ _CACHE_KEY_TO_YAML_KEY: dict[str, str] = {
 
 def init_scaffolding(
     yaml_loader: "YamlTemplateLoader | None" = None,
-    store: "TemplateStore | None" = None,
 ) -> None:
-    """Populate the scaffolding cache. YAML path takes precedence.
+    """Populate the scaffolding cache from templates/shared.yaml.
 
-    Called once at startup in ``main.py``. When *yaml_loader* is provided the
-    cache is populated from ``templates/shared.yaml``; otherwise when *store*
-    is provided the legacy MongoDB path is used. With both ``None`` this is a
-    no-op and every ``build_*_prompt`` function falls back to the
-    ``constants.py`` imports (current hardcoded behavior).
+    Called once at startup in ``main.py``. With *yaml_loader* provided the
+    cache is populated; otherwise this is a no-op and every
+    ``build_*_prompt`` function falls back to the ``constants.py`` imports.
     """
     if yaml_loader is not None:
         _populate_from_yaml(yaml_loader)
-    elif store is not None:
-        _populate_from_store(store)
 
 
 def _populate_from_yaml(loader: "YamlTemplateLoader") -> None:
@@ -77,16 +70,6 @@ def _populate_from_yaml(loader: "YamlTemplateLoader") -> None:
         if content is not None:
             _SCAFFOLDING_CACHE[cache_key] = content  # type: ignore[assignment]
 
-
-def _populate_from_store(store: "TemplateStore") -> None:
-    """Legacy MongoDB path — unchanged from previous behaviour."""
-    shared = store.SHARED_NAMESPACE
-    for key, tid, _expected_type in _SCAFFOLDING_KEYS:
-        doc = store.get_latest(shared, tid, "generation")
-        if doc:
-            data = yaml.safe_load(doc["yaml_content"]) or {}
-            content = data.get("content", "")
-            _SCAFFOLDING_CACHE[key] = content  # type: ignore[assignment]
 
 
 def _get_scaffold(key: str, fallback: str | list[str]) -> str | list[str]:
@@ -125,31 +108,26 @@ class TemplateConfig:
 
 
 def _dict_to_template_config(doc: dict) -> TemplateConfig:
-    """Convert a template dict (from YAML or MongoDB) to :class:`TemplateConfig`.
+    """Convert a template dict (from :class:`YamlTemplateLoader` or MongoDB) to :class:`TemplateConfig`.
 
-    The *doc* may come from either the MongoDB store (with ``yaml_content``
-    containing a YAML string) or from :class:`~.YamlTemplateLoader` (with
-    parsed fields like ``instruction``, ``weight``, etc. already resolved).
-
-    Missing fields fall back to the :class:`TemplateConfig` defaults. The
-    ``version`` field is preserved from the doc when present (e.g. MongoDB
-    docs carry an integer version; YAML entries carry ``"1"`` as a stable
-    sentinel).
+    The *doc* may have parsed fields like ``instruction``, ``weight``, etc.
+    When the doc comes from MongoDB it may instead have ``yaml_content`` which
+    is parsed first. Missing fields fall back to the :class:`TemplateConfig` defaults.
     """
-    # MongoDB path: yaml_content is a string that needs parsing
-    if "yaml_content" in doc:
-        data: Any = yaml.safe_load(doc["yaml_content"]) or {}
-        return TemplateConfig(
-            template_id=doc["template_id"],
-            task_instruction=data.get("instruction", ""),
-            weight=float(data.get("weight", 1.0)),
-            validation_rules=data.get("validation_rules") or [],
-            min_answer_length=int(data.get("min_answer_length", 80)),
-            max_answer_length=int(data.get("max_answer_length", 2000)),
-            version=doc.get("version"),
-        )
+    # MongoDB docs store templates as YAML strings; parse them first.
+    if "yaml_content" in doc and not doc.get("instruction"):
+        parsed = yaml.safe_load(doc["yaml_content"])
+        if isinstance(parsed, dict):
+            doc = {**doc, **parsed}
 
-    # YAML loader path: fields are already parsed
+    raw_version = doc.get("version")
+    if raw_version is None:
+        version: int | str | None = None
+    elif isinstance(raw_version, str):
+        version = raw_version if raw_version.isdigit() else raw_version
+    else:
+        version = raw_version
+
     return TemplateConfig(
         template_id=doc["template_id"],
         task_instruction=doc.get("instruction", ""),
@@ -157,7 +135,7 @@ def _dict_to_template_config(doc: dict) -> TemplateConfig:
         validation_rules=doc.get("validation_rules") or [],
         min_answer_length=int(doc.get("min_answer_length", 80)),
         max_answer_length=int(doc.get("max_answer_length", 2000)),
-        version=str(doc.get("version", "1")),
+        version=version,
     )
 
 

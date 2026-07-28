@@ -43,38 +43,6 @@ VALIDATION CHECKLIST:
 class GenerateDeckbuildingTheory(BaseGenerator[str]):
     """Generate deckbuilding theory Q&A covering ratios, evaluation, and construction principles."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="general_advice",
-            task_instruction="""You are an expert Magic: The Gathering deckbuilder. Generate exactly 3 Q&A pairs about this deckbuilding topic.
-
-Topic: {topic}
-Context: {context}
-
-Questions should cover practical deckbuilding decisions, card evaluation, and construction theory.
-Answers should be detailed, actionable, and explain the WHY behind the advice. Be specific — avoid vague platitudes.
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences with concrete reasoning.
-{output_format}""",
-            validation_rules=DECKBUILDING_GENERAL_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="example_driven",
-            task_instruction="""You are an expert Magic: The Gathering deckbuilder. Generate exactly 3 Q&A pairs about this deckbuilding topic using concrete card examples.
-
-Topic: {topic}
-Context: {context}
-
-Each answer MUST include at least one specific card example that illustrates the concept. Explain WHY that card is a good example of the principle being discussed.
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences with concrete examples and reasoning.
-{output_format}""",
-            validation_rules=DECKBUILDING_EXAMPLE_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     # All topics preserved from the original generator — order and content must not change
     TOPICS = [
         (

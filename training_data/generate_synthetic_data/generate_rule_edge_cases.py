@@ -14,16 +14,6 @@ from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 class GenerateRuleEdgeCases(BaseGenerator[Rule]):
     """Generate tricky edge case questions from complex rule sections."""
 
-    TEMPLATES: list[TemplateConfig] = [
-        TemplateConfig(
-            template_id="edge_case",
-            task_instruction=(
-                "Generate 2 tricky edge case Q&A pairs from this rule. "
-                "Focus on non-obvious applications, common player mistakes, and edge cases."
-            ),
-        )
-    ]
-
     def __init__(
         self,
         data_access: MTGDataAccess,

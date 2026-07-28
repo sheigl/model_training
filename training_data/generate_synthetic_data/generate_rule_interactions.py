@@ -10,7 +10,6 @@ from .common import (
     OUTPUT_FORMAT,
     SYSTEM_MESSAGE,
 )
-from .constants import RULE_INTERACTION_TEMPLATES, RULE_INTERACTION_VALIDATION
 from .data_access import MTGDataAccess
 from .domain_models import Rule
 from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
@@ -30,15 +29,6 @@ class ProjectedRulePair:
 
 class GenerateRuleInteractions(BaseGenerator[ProjectedRulePair]):
     """Generate scenario Q&A where two rules interact."""
-
-    TEMPLATES: list[TemplateConfig] = [
-        TemplateConfig(
-            template_id=t["type"],
-            task_instruction=t["task_instruction"],
-            validation_rules=[RULE_INTERACTION_VALIDATION[t["type"]]],
-        )
-        for t in RULE_INTERACTION_TEMPLATES
-    ]
 
     INTERACTION_PAIRS: list[tuple[str, str]] = [
         # Existing pairs

@@ -6,13 +6,6 @@ from .common import TemplateConfig, build_staple_analysis_prompt
 from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 
 class GenerateStapleAnalysis(BaseGenerator[dict]):
-    TEMPLATES: ClassVar[list[TemplateConfig]] = [
-        TemplateConfig(
-            template_id="staple_analysis",
-            task_instruction="""Generate 3 Q&A pairs analyzing why this card is a Commander staple.""",
-        )
-    ]
-
     def __init__(self, data_access: MTGDataAccess, models: dict[ModelType, Model],
                  validation_pct: float, target_count: int, save_item: Callable[[QuestionAnswerEnhanced], None],
                  metrics: ValidationMetrics | None = None, dry_run: bool = False, **kwargs):

@@ -43,38 +43,6 @@ VALIDATION CHECKLIST:
 class GenerateRulesScenarios(BaseGenerator[str]):
     """Generate rules and scenario Q&A covering stack, combat, triggers, SBAs, and more."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="general_advice",
-            task_instruction="""You are an expert Magic: The Gathering rules judge. Generate exactly 3 Q&A pairs about this rules topic.
-
-Scenario category: {scenario}
-Relevant rules context: {context}
-
-Questions should cover practical in-game situations that players encounter at the table.
-Answers must correctly explain the relevant game rule — explain WHY it works that way, not just WHAT happens. Do NOT reference specific rule numbers (e.g., "Rule 608.2b"). Explain mechanics conversationally.
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences with clear rules explanations.
-{output_format}""",
-            validation_rules=RULES_GENERAL_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="example_driven",
-            task_instruction="""You are an expert Magic: The Gathering rules judge. Generate exactly 3 Q&A pairs about this rules topic using concrete card examples.
-
-Scenario category: {scenario}
-Relevant rules context: {context}
-
-Each answer MUST include at least one specific card example that illustrates the rule interaction. Explain WHY the rule applies in this context. Do NOT reference specific rule numbers (e.g., "Rule 608.2b").
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences with clear rules explanations.
-{output_format}""",
-            validation_rules=RULES_EXAMPLE_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     # All scenarios preserved from the original generator — order and content must not change
     SCENARIOS = [
         (

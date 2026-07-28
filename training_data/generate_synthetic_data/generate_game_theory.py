@@ -43,38 +43,6 @@ VALIDATION CHECKLIST:
 class GenerateGameTheory(BaseGenerator[str]):
     """Generate game theory and decision-making Q&A covering sequencing, threat assessment, and politics."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="general_advice",
-            task_instruction="""You are an expert Magic: The Gathering player. Generate exactly 3 Q&A pairs about game theory and decision-making.
-
-Situation: {situation}
-Decision context: {context}
-
-Questions should cover practical in-game decisions, sequencing, threat assessment, and multiplayer politics.
-Answers should provide actionable decision-making frameworks — explain WHEN to do what and WHY.
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences with actionable reasoning.
-{output_format}""",
-            validation_rules=GAME_THEORY_GENERAL_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="scenario_walkthrough",
-            task_instruction="""You are an expert Magic: The Gathering player. Generate exactly 3 Q&A pairs about game theory using concrete in-game scenarios.
-
-Situation: {situation}
-Decision context: {context}
-
-Each answer MUST include a concrete scenario that walks through the decision-making process step by step. Explain what information to look for and how to weigh trade-offs.
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences with actionable reasoning.
-{output_format}""",
-            validation_rules=GAME_THEORY_SCENARIO_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     # All situations preserved from the original generator — order and content must not change
     SITUATIONS = [
         (

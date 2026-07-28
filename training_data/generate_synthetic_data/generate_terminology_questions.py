@@ -43,37 +43,6 @@ VALIDATION CHECKLIST:
 class GenerateTerminologyQuestions(BaseGenerator[str]):
     """Generate MTG terminology Q&A covering slang, jargon, and format-specific terms."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="definition_focused",
-            task_instruction="""You are a Magic: The Gathering expert. Generate exactly 3 Q&A pairs about this MTG term.
-
-Term: {term}
-Definition: {definition}
-
-Questions should ask what the term means in natural, varied ways. Answers should provide an accurate definition and explain the term in the correct MTG context.
-
-Output JSON array with question/answer pairs. Keep answers 2-4 sentences with accurate definitions.
-{output_format}""",
-            validation_rules=TERMINOLOGY_DEFINITION_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="practical_application",
-            task_instruction="""You are a Magic: The Gathering expert. Generate exactly 3 Q&A pairs about this MTG term.
-
-Term: {term}
-Definition: {definition}
-
-Each answer MUST include a concrete in-game example that illustrates the term. Explain how the term works in practice with specific card references or game situations.
-
-Output JSON array with question/answer pairs. Keep answers 2-4 sentences with concrete examples and practical explanations.
-{output_format}""",
-            validation_rules=TERMINOLOGY_PRACTICAL_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     # All 20 terminology terms preserved from the original generator — order and content must not change
     TERMINOLOGY = [
         (

@@ -122,6 +122,21 @@ class YamlTemplateLoader:
         """Return an empty list — YAML has no versioning support."""
         return []
 
+    def list_templates(self, generator: str) -> list[str]:
+        """Return all template_ids defined for *generator* in its category file.
+
+        Loads ``templates/{generator}.yaml`` and returns the list of
+        ``template_id`` values found in the entries. Returns an empty list when
+        the category file is missing or does not contain a list of entries.
+        """
+        category_file = self._templates_dir / f"{generator}.yaml"
+        if not category_file.is_file():
+            return []
+        entries = self._load_yaml(category_file)
+        if not isinstance(entries, list):
+            return []
+        return [e.get("template_id") for e in entries if isinstance(e, dict) and e.get("template_id")]
+
     # ------------------------------------------------------------------
     # Convenience methods for shared content
     # ------------------------------------------------------------------

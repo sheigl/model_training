@@ -194,34 +194,7 @@ class SynergyDataBatch:
 
 class GenerateSynergyQuestions(BaseGenerator[SynergyDataBatch]):
     """Generate synergy discovery Q&A pairs from multiple MTG data sources."""
-    
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="combo_piece",
-            task_instruction=COMBO_PIECE_INSTRUCTION,
-            validation_rules=COMBO_PIECE_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="value_engine",
-            task_instruction=VALUE_ENGINE_INSTRUCTION,
-            validation_rules=VALUE_ENGINE_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="tribal_synergy",
-            task_instruction=TRIBAL_SYNERGY_INSTRUCTION,
-            validation_rules=TRIBAL_SYNERGY_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="mechanic_synergy",
-            task_instruction=MECHANIC_SYNERGY_INSTRUCTION,
-            validation_rules=MECHANIC_SYNERGY_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-    
+        
     def __init__(
         self,
         data_access: MTGDataAccess,

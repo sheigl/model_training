@@ -23,11 +23,7 @@ class QueryModel():
     def __init__(self):
         self.anthropic_client: Anthropic | None = None
         self._last_elapsed_ms = 0
-        # Optional MongoDB TemplateStore handle for loading validator templates.
-        # When ``None`` (the default) the inline prompt construction is used,
-        # preserving byte-identical backward compatibility.
-        self.template_store = None
-        # Optional YAML template loader — takes precedence over template_store.
+        # Optional YAML template loader for loading validator templates.
         self.yaml_loader = None
 
     def query(self, model: Model, prompt: str, max_tokens=8192, purpose: str = ""):
@@ -391,16 +387,13 @@ Output ONLY valid JSON, no other text."""
             return None
 
     def _resolve_validator_template(self, category: str, template_id: str = "qa_validation") -> str | None:
-        """Hybrid validator lookup. Returns prompt template text or ``None``.
+        """Validator lookup from YAML loader. Returns prompt template text or ``None``.
 
-        Lookup order (yaml_loader takes precedence over template_store):
-          1. YAML loader path — if ``self.yaml_loader`` is set:
-             a. Generator-specific validator override via
-                ``(generator=category, template_id="validator", template_type="validator")``.
-             b. Shared validator via
-                ``(generator="__shared__", template_id=template_id, template_type="validator")``.
-          2. MongoDB store path — if ``self.template_store`` is set (deprecated):
-             Same lookup shape as above but reads ``yaml_content`` from the doc.
+        Lookup order:
+          1. Generator-specific validator override via
+             ``(generator=category, template_id="validator", template_type="validator")``.
+          2. Shared validator via
+             ``(generator="__shared__", template_id=template_id, template_type="validator")``.
           3. ``None`` — caller falls back to the inline prompt construction.
 
         The returned string is the raw ``instruction`` field, containing
@@ -409,40 +402,20 @@ Output ONLY valid JSON, no other text."""
         MTG notation braces (``{T}``, ``{C}``, ``{W}``, ...) that ``.format()``
         would interpret as placeholders.
         """
-        # YAML loader path (preferred)
-        if self.yaml_loader is not None:
-            # 1. Generator-specific validator override
-            doc = self.yaml_loader.get_latest(category, "validator", "validator")
-            if doc and isinstance(doc, dict):
-                instruction = doc.get("instruction")
-                if instruction:
-                    return instruction
-            # 2. Shared validator
-            doc = self.yaml_loader.get_latest(
-                self.yaml_loader.SHARED_NAMESPACE, template_id, "validator",
-            )
-            if doc and isinstance(doc, dict):
-                instruction = doc.get("instruction")
-                if instruction:
-                    return instruction
+        if self.yaml_loader is None:
             return None
-
-        # MongoDB store path (deprecated)
-        if self.template_store is None:
-            return None
-        store = self.template_store
-        # 1. Generator-specific validator override (template_id="validator").
-        doc = store.get_latest(category, "validator", "validator")
-        if doc:
-            data = yaml.safe_load(doc["yaml_content"]) or {}
-            instruction = data.get("instruction")
+        # 1. Generator-specific validator override
+        doc = self.yaml_loader.get_latest(category, "validator", "validator")
+        if doc and isinstance(doc, dict):
+            instruction = doc.get("instruction")
             if instruction:
                 return instruction
-        # 2. Shared validator (template_id as given, e.g. "qa_validation").
-        doc = store.get_latest(store.SHARED_NAMESPACE, template_id, "validator")
-        if doc:
-            data = yaml.safe_load(doc["yaml_content"]) or {}
-            instruction = data.get("instruction")
+        # 2. Shared validator
+        doc = self.yaml_loader.get_latest(
+            self.yaml_loader.SHARED_NAMESPACE, template_id, "validator",
+        )
+        if doc and isinstance(doc, dict):
+            instruction = doc.get("instruction")
             if instruction:
                 return instruction
         return None

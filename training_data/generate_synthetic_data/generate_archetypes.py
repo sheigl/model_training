@@ -43,37 +43,6 @@ VALIDATION CHECKLIST:
 class GenerateArchetypes(BaseGenerator[str]):
     """Generate deck archetype and strategy Q&A covering playstyles and strategic concepts."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="general_advice",
-            task_instruction="""You are a Magic: The Gathering strategy expert. Generate exactly 3 Q&A pairs about the {archetype} archetype/strategy.
-
-Context:
-{context}
-
-Questions should cover: how the archetype works, strengths and weaknesses, key cards, how to play against it, when to choose it. Be specific — avoid vague platitudes.
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences covering the strategic depth of the archetype.
-{output_format}""",
-            validation_rules=ARCHETYPE_GENERAL_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="example_driven",
-            task_instruction="""You are a Magic: The Gathering strategy expert. Generate exactly 3 Q&A pairs about the {archetype} archetype/strategy using concrete card examples.
-
-Context:
-{context}
-
-Each answer MUST include at least one specific card example that illustrates the archetype. Explain WHY that card is a key piece of the strategy and how it fits into the archetype's game plan.
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences with specific card references and strategic reasoning.
-{output_format}""",
-            validation_rules=ARCHETYPE_EXAMPLE_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     # All 10 archetypes preserved from the original generator — order and content must not change
     ARCHETYPES = [
         (

@@ -13,16 +13,6 @@ from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 class GenerateGlossaryWithExamples(BaseGenerator[GlossaryTerm]):
     """Generate Q&A from glossary terms with concrete in-game examples."""
 
-    TEMPLATES: list[TemplateConfig] = [
-        TemplateConfig(
-            template_id="glossary_example",
-            task_instruction=(
-                "Generate 3 Q&A pairs about this MTG term. "
-                "Include the definition AND a concrete in-game example."
-            ),
-        )
-    ]
-
     def __init__(
         self,
         data_access: MTGDataAccess,

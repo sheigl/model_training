@@ -142,8 +142,11 @@ def test_qa_validation_is_in_shared_blocks_not_validators():
 # ---------------------------------------------------------------------------
 
 def test_generator_registry_matches_classes():
-    """For each registry entry, import the class, confirm it has TEMPLATES and
-    the category matches ``get_source_category()`` (read from source).
+    """For each registry entry, import the class and confirm the category
+    matches ``get_source_category()`` (read from source).
+
+    Generators no longer have a class-level TEMPLATES attribute — templates are
+    loaded dynamically from YAML files via :class:`YamlTemplateLoader`.
     """
     assert len(GENERATOR_REGISTRY) == 27
 
@@ -151,10 +154,6 @@ def test_generator_registry_matches_classes():
         # Import the class lazily
         from training_data.generate_synthetic_data.seed_templates import _load_generator_class
         cls = _load_generator_class(module_name, class_name)
-
-        # Confirm class has TEMPLATES
-        assert hasattr(cls, "TEMPLATES"), f"{class_name} has no TEMPLATES"
-        assert len(cls.TEMPLATES) > 0, f"{class_name} has empty TEMPLATES"
 
         # Confirm category matches get_source_category() by reading the source.
         # (Construction is heavy due to data_access deps, so we inspect source.)

@@ -43,37 +43,6 @@ VALIDATION CHECKLIST:
 class GenerateMetaKnowledge(BaseGenerator[str]):
     """Generate meta and power level Q&A covering cEDH, pod dynamics, and format knowledge."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="general_advice",
-            task_instruction="""You are an expert in Magic: The Gathering Commander meta and competitive play. Generate exactly 3 Q&A pairs about:
-
-Topic: {topic}
-Context: {context}
-
-Questions should cover power levels, meta considerations, format-specific knowledge, and competitive vs casual play. Be specific — avoid vague platitudes.
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences with specific, accurate meta knowledge.
-{output_format}""",
-            validation_rules=META_KNOWLEDGE_GENERAL_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="meta_deep_dive",
-            task_instruction="""You are an expert in Magic: The Gathering Commander meta and competitive play. Generate exactly 3 Q&A pairs about:
-
-Topic: {topic}
-Context: {context}
-
-Each answer MUST include specific card names, strategy references, or competitive analysis. Explain WHY specific cards or strategies are meta-relevant and how they shape the competitive landscape.
-
-Output JSON array with question/answer pairs. Keep answers 3-5 sentences with specific card/strategy references and power level reasoning.
-{output_format}""",
-            validation_rules=META_KNOWLEDGE_DEEP_DIVE_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     # All topics preserved from the original generator — order and content must not change
     TOPICS = [
         (

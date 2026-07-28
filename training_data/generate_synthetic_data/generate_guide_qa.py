@@ -8,13 +8,6 @@ from .common import TemplateConfig, build_guide_qa_prompt, clean_html
 from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 
 class GenerateGuideQa(BaseGenerator[Guide]):
-    TEMPLATES: ClassVar[list[TemplateConfig]] = [
-        TemplateConfig(
-            template_id="guide_qa",
-            task_instruction="""Read this EDHREC guide and generate 4 Q&A pairs from it. Focus on instructional, how-to aspects.""",
-        )
-    ]
-
     def __init__(self, data_access: MTGDataAccess, models: dict[ModelType, Model],
                  validation_pct: float, target_count: int, save_item: Callable[[QuestionAnswerEnhanced], None],
                  metrics: ValidationMetrics | None = None, dry_run: bool = False, **kwargs):

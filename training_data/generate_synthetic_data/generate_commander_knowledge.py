@@ -43,37 +43,6 @@ VALIDATION CHECKLIST:
 class GenerateCommanderKnowledge(BaseGenerator[str]):
     """Generate Commander rules Q&A covering deck construction, tax, damage, and format rules."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="general_advice",
-            task_instruction="""You are a Magic: The Gathering Commander rules expert. Generate exactly 3 Q&A pairs about this Commander topic.
-
-Topic: {topic}
-Context: {context}
-
-Questions should be natural and conversational — the way players actually ask about Commander rules. Answers should explain the rules accurately without citing rule numbers.
-
-Output JSON array with question/answer pairs. Keep answers 2-3 sentences, accurate and concise.
-{output_format}""",
-            validation_rules=COMMANDER_KNOWLEDGE_GENERAL_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-        TemplateConfig(
-            template_id="example_driven",
-            task_instruction="""You are a Magic: The Gathering Commander rules expert. Generate exactly 3 Q&A pairs about this Commander topic using concrete scenarios.
-
-Topic: {topic}
-Context: {context}
-
-Each answer MUST include a concrete scenario or card interaction that illustrates the rules. Explain what happens step by step and why.
-
-Output JSON array with question/answer pairs. Keep answers 2-4 sentences with specific scenarios and card references.
-{output_format}""",
-            validation_rules=COMMANDER_KNOWLEDGE_EXAMPLE_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     # Commander sub-topics broken from the original monolithic topic
     # Covers all concepts from the original: singleton, command zone, tax, damage, color identity, multiplayer, partner, companion
     COMMANDER_SUBTOPICS = [

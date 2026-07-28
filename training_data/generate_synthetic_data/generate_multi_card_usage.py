@@ -7,13 +7,6 @@ from .common import TemplateConfig, build_multi_card_usage_prompt
 from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 
 class GenerateMultiCardUsage(BaseGenerator[ComboWithCards]):
-    TEMPLATES: ClassVar[list[TemplateConfig]] = [
-        TemplateConfig(
-            template_id="multi_card",
-            task_instruction="""Generate 2 usage questions for these cards and how they work together.""",
-        )
-    ]
-
     def __init__(self, data_access: MTGDataAccess, models: dict[ModelType, Model],
                  validation_pct: float, target_count: int, save_item: Callable[[QuestionAnswerEnhanced], None],
                  metrics: ValidationMetrics | None = None, dry_run: bool = False, **kwargs):

@@ -46,7 +46,7 @@ class MockQueryModel(QueryModel):
         self.validate_call_count = 0
         self.regenerate_call_count = 0
 
-    def query(self, model: Model, prompt: str, max_tokens: int = 8192) -> str:
+    def query(self, model: Model, prompt: str, max_tokens: int = 8192, purpose: str = "") -> str:
         self.query_call_count += 1
         if self.query_responses:
             return self.query_responses.pop(0)
@@ -54,7 +54,7 @@ class MockQueryModel(QueryModel):
             {"question": "Test question?", "answer": "Test answer with sufficient length to pass validation."}
         ])
 
-    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True):
+    def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True, trace_round: dict | None = None):
         self.validate_call_count += 1
         if self.validate_responses:
             return self.validate_responses.pop(0)

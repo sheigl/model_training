@@ -16,6 +16,7 @@ from training_data.generate_synthetic_data.models import (
     ValidationMetrics,
 )
 from training_data.generate_synthetic_data.query_model import QueryModel
+from training_data.generate_synthetic_data.yaml_template_loader import YamlTemplateLoader
 
 
 class MockModel(Model):
@@ -39,7 +40,7 @@ class MockQueryModel(QueryModel):
         self.validate_call_count = 0
         self.regenerate_call_count = 0
 
-    def query(self, model: Model, prompt: str, max_tokens: int = 8192) -> str:
+    def query(self, model: Model, prompt: str, max_tokens: int = 8192, purpose: str = "") -> str:
         self.query_call_count += 1
         if self.query_responses:
             return self.query_responses.pop(0)
@@ -58,15 +59,40 @@ class MockQueryModel(QueryModel):
         return "Regenerated answer with sufficient length to pass validation."
 
 
+def _make_yaml_loader(template_ids: list[str], instructions: dict[str, str] | None = None,
+                      weights: dict[str, float] | None = None):
+    """Create a mock YamlTemplateLoader that returns the given templates."""
+    loader = MagicMock(spec=YamlTemplateLoader)
+    loader.list_templates.return_value = template_ids
+    instructions = instructions or {}
+    weights = weights or {}
+    def get_latest(category, template_id, template_type):
+        if template_type != "generation":
+            return None
+        return {
+            "template_id": template_id,
+            "instruction": instructions.get(template_id, f"Instruction for {template_id}"),
+            "weight": weights.get(template_id, 1.0),
+            "validation_rules": [],
+            "min_answer_length": 80,
+            "max_answer_length": 2000,
+            "version": "1",
+        }
+    loader.get_latest.side_effect = get_latest
+    return loader
+
+
 class ConcreteGenerator(BaseGenerator[dict]):
     """Concrete implementation for testing."""
-    TEMPLATES = [
-        TemplateConfig("template_a", "Instruction A", weight=1.0),
-        TemplateConfig("template_b", "Instruction B", weight=2.0),
-        TemplateConfig("template_c", "Instruction C", weight=1.0),
-    ]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, yaml_loader: MagicMock | None = None, **kwargs):
+        if yaml_loader is None:
+            yaml_loader = _make_yaml_loader(
+                ["template_a", "template_b", "template_c"],
+                {"template_a": "Instruction A", "template_b": "Instruction B", "template_c": "Instruction C"},
+                {"template_a": 1.0, "template_b": 2.0, "template_c": 1.0},
+            )
+        kwargs["yaml_loader"] = yaml_loader
         super().__init__(*args, **kwargs)
         self.data_batches = []
 
@@ -157,7 +183,10 @@ class TestTemplateSelection:
 
         # Select many templates to test distribution
         selected = generator.select_templates(k=1000)
-        counts = {t.template_id: selected.count(t) for t in generator.TEMPLATES}
+        template_ids = [t.template_id for t in selected]
+        counts = {"template_a": template_ids.count("template_a"),
+                  "template_b": template_ids.count("template_b"),
+                  "template_c": template_ids.count("template_c")}
 
         # With weights 1.0, 2.0, 1.0, template_b should be selected ~50% of the time
         assert counts["template_b"] > counts["template_a"]
@@ -166,23 +195,24 @@ class TestTemplateSelection:
 
     def test_select_templates_custom_weights(self):
         """Test template selection respects custom weights."""
+        yaml_loader = _make_yaml_loader(
+            ["rare", "common"],
+            {"rare": "Rare", "common": "Common"},
+            {"rare": 0.1, "common": 10.0},
+        )
         generator = ConcreteGenerator(
             models=self.models,
             validation_pct=1.0,
             target_count=10,
             save_item=self.save_item,
             metrics=self.metrics,
+            yaml_loader=yaml_loader,
         )
         generator.data_batches = [[{"id": 1}]]
 
-        # Override templates with extreme weights
-        generator.TEMPLATES = [
-            TemplateConfig("rare", "Rare", weight=0.1),
-            TemplateConfig("common", "Common", weight=10.0),
-        ]
-
         selected = generator.select_templates(k=1000)
-        counts = {t.template_id: selected.count(t) for t in generator.TEMPLATES}
+        template_ids = [t.template_id for t in selected]
+        counts = {"rare": template_ids.count("rare"), "common": template_ids.count("common")}
 
         # Common should be selected much more often
         assert counts["common"] > counts["rare"] * 50
@@ -203,28 +233,18 @@ class TestTemplateSelection:
         assert template.template_id in ["template_a", "template_b", "template_c"]
 
     def test_empty_templates_raises_error(self):
-        """Test that empty TEMPLATES raises ValueError."""
-        class EmptyGenerator(BaseGenerator[dict]):
-            TEMPLATES = []
-
-            def get_data_batches(self) -> Iterator[list[dict]]:
-                yield []
-
-            def build_prompt(self, template: TemplateConfig, data_batch: dict) -> str:
-                return ""
-
-            def get_source_category(self) -> str:
-                return "empty"
-
-        generator = EmptyGenerator(
+        """Test that no templates raises ValueError."""
+        yaml_loader = _make_yaml_loader([])
+        generator = ConcreteGenerator(
             models=self.models,
             validation_pct=1.0,
             target_count=10,
             save_item=self.save_item,
             metrics=self.metrics,
+            yaml_loader=yaml_loader,
         )
 
-        with pytest.raises(ValueError, match="must define TEMPLATES"):
+        with pytest.raises(ValueError, match="No templates found"):
             generator.select_template()
 
 

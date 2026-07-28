@@ -13,16 +13,6 @@ from .models import Model, ModelType, QuestionAnswerEnhanced, ValidationMetrics
 class GenerateRuleWhyQuestions(BaseGenerator[Rule]):
     """Generate backward-reasoning 'why does this work' questions from rule text."""
 
-    TEMPLATES: list[TemplateConfig] = [
-        TemplateConfig(
-            template_id="why",
-            task_instruction=(
-                "Generate 2 Q&A pairs that ask WHY a ruling works the way it does. "
-                "Start from a known outcome and ask why."
-            ),
-        )
-    ]
-
     PRINCIPLE_SECTIONS: list[str] = [
         "116", "117", "118", "120",
         "601", "602", "603", "604", "608",

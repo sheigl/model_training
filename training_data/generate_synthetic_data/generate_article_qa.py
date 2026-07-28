@@ -40,18 +40,6 @@ VALIDATION CHECKLIST:
 class GenerateArticleQa(BaseGenerator[Article]):
     """Generate Q&A pairs from EDHREC articles."""
 
-    TEMPLATES = [
-        TemplateConfig(
-            template_id="article_qa",
-            task_instruction="""Generate exactly 4 Q&A pairs from this EDHREC article.
-Questions should be what a Commander player would ask that this article answers.
-Answers MUST be grounded in the article content — do not invent information not present.
-Answers should synthesize the article's advice, not quote it directly.""",
-            validation_rules=ARTICLE_QA_VALIDATION.strip().split("\n"),
-            weight=1.0,
-        ),
-    ]
-
     def __init__(
         self,
         data_access: MTGDataAccess,
