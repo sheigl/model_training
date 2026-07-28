@@ -1,0 +1,7 @@
+- template_id: guide_qa
+  instruction: Read this EDHREC guide and generate 4 Q&A pairs from it. Focus on instructional,
+    how-to aspects.
+  weight: 1.0
+  validation_rules: []
+  min_answer_length: 80
+  max_answer_length: 2000

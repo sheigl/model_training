@@ -1,0 +1,29 @@
+- template_id: article_qa
+  instruction: 'Generate exactly 4 Q&A pairs from this EDHREC article.
+
+    Questions should be what a Commander player would ask that this article answers.
+
+    Answers MUST be grounded in the article content — do not invent information not
+    present.
+
+    Answers should synthesize the article''s advice, not quote it directly.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer is not grounded in the article content — inventing information not present
+    in the source.
+  - 2. Answer does not synthesize the article's advice — merely quoting without explanation.
+  - 3. Answer contains markdown formatting (bold, italics, bullet points).
+  - 4. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 5. Answer is less than 80 characters.
+  - 6. JSON parsing fails.
+  - 7. Question is not something a Commander player would naturally ask.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The question is something a Commander player would naturally ask that the article
+    answers.
+  - 2. The answer synthesizes the article's advice rather than quoting directly.
+  - 3. The answer is practical and actionable (3-5 sentences).
+  - 4. The answer is grounded in the provided article content.
+  min_answer_length: 80
+  max_answer_length: 2000

@@ -1,0 +1,68 @@
+- template_id: definition_focused
+  instruction: 'You are a Magic: The Gathering expert. Generate exactly 3 Q&A pairs
+    about this MTG term.
+
+
+    Term: {term}
+
+    Definition: {definition}
+
+
+    Questions should ask what the term means in natural, varied ways. Answers should
+    provide an accurate definition and explain the term in the correct MTG context.
+
+
+    Output JSON array with question/answer pairs. Keep answers 2-4 sentences with
+    accurate definitions.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not accurately define the MTG term — incorrect definitions are
+    validation failures.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references rule numbers directly — terms must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer accurately defines the MTG term in the correct context.
+  - 2. The answer uses correct MTG terminology and references.
+  - 3. At least one question asks what the term means in a natural way.
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: practical_application
+  instruction: 'You are a Magic: The Gathering expert. Generate exactly 3 Q&A pairs
+    about this MTG term.
+
+
+    Term: {term}
+
+    Definition: {definition}
+
+
+    Each answer MUST include a concrete in-game example that illustrates the term.
+    Explain how the term works in practice with specific card references or game situations.
+
+
+    Output JSON array with question/answer pairs. Keep answers 2-4 sentences with
+    concrete examples and practical explanations.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not include at least one concrete in-game example of the term.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references rule numbers directly — terms must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer includes at least one concrete in-game example that illustrates
+    the term.
+  - 2. The answer explains how the term works in practice, not just the definition.
+  - 3. The example references specific cards or game situations where the term applies.
+  min_answer_length: 80
+  max_answer_length: 2000

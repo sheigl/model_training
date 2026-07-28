@@ -1,0 +1,6 @@
+- template_id: multi_card
+  instruction: Generate 2 usage questions for these cards and how they work together.
+  weight: 1.0
+  validation_rules: []
+  min_answer_length: 80
+  max_answer_length: 2000

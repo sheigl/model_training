@@ -1,0 +1,74 @@
+- template_id: general_advice
+  instruction: 'You are an expert Magic: The Gathering player. Generate exactly 3
+    Q&A pairs about game theory and decision-making.
+
+
+    Situation: {situation}
+
+    Decision context: {context}
+
+
+    Questions should cover practical in-game decisions, sequencing, threat assessment,
+    and multiplayer politics.
+
+    Answers should provide actionable decision-making frameworks — explain WHEN to
+    do what and WHY.
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-5 sentences with
+    actionable reasoning.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not provide actionable decision-making advice — vague platitudes
+    are validation failures.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer provides a clear decision-making framework for the given situation.
+  - 2. The answer explains trade-offs and when to apply different approaches.
+  - 3. At least one question comes from an in-game perspective (e.g., "When should
+    I...?" or "How do I decide...?").
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: scenario_walkthrough
+  instruction: 'You are an expert Magic: The Gathering player. Generate exactly 3
+    Q&A pairs about game theory using concrete in-game scenarios.
+
+
+    Situation: {situation}
+
+    Decision context: {context}
+
+
+    Each answer MUST include a concrete scenario that walks through the decision-making
+    process step by step. Explain what information to look for and how to weigh trade-offs.
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-5 sentences with
+    actionable reasoning.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not walk through a concrete scenario — abstract advice without
+    examples is a validation failure.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer includes a concrete in-game scenario that illustrates the decision-making
+    concept.
+  - 2. The scenario walks through the reasoning step by step.
+  - 3. The answer explains what information a player should look for to make the right
+    call.
+  min_answer_length: 80
+  max_answer_length: 2000

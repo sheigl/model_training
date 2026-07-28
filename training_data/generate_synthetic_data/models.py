@@ -173,6 +173,10 @@ class GenerationTrace:
     total_rounds: int = 0
     final_score: float | None = None
 
+    # Template version tracking (Story 045)
+    template_version: int | None = None
+    validator_template_version: int | None = None
+
 
 class ValidationMetrics:
     """Collects success/failure metrics for Q&A pair validation.
@@ -208,6 +212,9 @@ class ValidationMetrics:
         self.category_stats: dict[str, dict] = {}
         self.template_stats: dict[str, dict] = {}
         self._last_flush_candidates = 0
+        # Template version tracking (Story 045)
+        self.template_versions: dict[str, int | None] = {}
+        self.validator_template_versions: dict[str, int | None] = {}
 
     def record_candidate(self, category: str, template: str | None = None):
         self.total_candidates += 1
@@ -292,6 +299,14 @@ class ValidationMetrics:
         if template:
             self._ensure_template(template)
             self.template_stats[template]["fix_attempts"] += 1
+
+    def record_template_version(self, template_id: str, version: int | None,
+                                 is_validator: bool = False) -> None:
+        """Record which template version was used for a template_id."""
+        if is_validator:
+            self.validator_template_versions[template_id] = version
+        else:
+            self.template_versions[template_id] = version
 
     def _ensure_category(self, category: str):
         if category not in self.category_stats:
@@ -409,6 +424,8 @@ class ValidationMetrics:
             "first_attempt_pass_rate": round(self.total_first_attempt_passes / self.total_validated * 100, 1) if self.total_validated > 0 else 0,
             "fix_recovery_rate": round(self.total_pass_after_fix / total_with_fixes * 100, 1) if total_with_fixes > 0 else None,
             "fix_involvement_rate": round(total_with_fixes / self.total_validated * 100, 1) if self.total_validated > 0 else 0,
+            "template_versions": self.template_versions,
+            "validator_template_versions": self.validator_template_versions,
             "by_category": _build_substats(self.category_stats),
             "by_template": _build_substats(self.template_stats),
         }

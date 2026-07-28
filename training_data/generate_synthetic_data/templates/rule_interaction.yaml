@@ -1,0 +1,116 @@
+- template_id: plain_english
+  instruction: 'Generate exactly 3 Q&A pairs explaining how these two rules interact
+    in plain English.
+
+    At least one question must come from a newer player who doesn''t know the terminology
+    —
+
+    phrased as something they''d actually ask at a kitchen table game.'
+  weight: 1.0
+  validation_rules:
+  - '
+
+    1. The answer explains how BOTH rules interact in plain language — no extrapolation
+    beyond what either rule states.
+
+    2. The answer uses plain language accessible to a newer player — minimal jargon,
+    and any jargon used is explained.
+
+    3. The question is phrased naturally as something a kitchen table player would
+    actually ask.
+
+    4. The answer includes a concrete in-game example that illustrates how the two
+    rules interact.
+
+    5. The answer quotes or closely paraphrases text from BOTH rules when explaining
+    why the outcome occurs.
+
+    6. The answer explains which rule applies first or takes precedence.
+
+    7. HARD REJECT if the answer references any rule number — mechanics must be explained
+    conversationally.
+
+    8. HARD REJECT if the answer contains markdown formatting such as bold (**text**)
+    or bullet points.
+
+    9. The answer is at least 80 characters long and provides sufficient detail.'
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: in_game_scenario
+  instruction: 'Generate exactly 3 Q&A pairs presenting concrete in-game scenarios
+
+    where BOTH rules are relevant to determining the outcome. Questions must describe
+    a specific
+
+    board state or game action — not ask abstractly about either rule. At least one
+    must start with
+
+    ''What happens when...'' or ''My opponent just...'''
+  weight: 1.0
+  validation_rules:
+  - '
+
+    1. The question describes a specific board state or game action where BOTH rules
+    are relevant — not just one.
+
+    2. The answer walks through what happens in that specific scenario step by step.
+
+    3. The answer states the concrete final outcome — vague answers like "it depends"
+    are validation failures.
+
+    4. The answer explains how both rules contributed to that outcome, not just the
+    dominant one.
+
+    5. The answer quotes or closely paraphrases text from BOTH rules to explain WHY
+    the outcome occurs.
+
+    6. The answer explains which rule applies first or takes precedence.
+
+    7. HARD REJECT if the answer references any rule number — mechanics must be explained
+    conversationally.
+
+    8. HARD REJECT if the answer contains markdown formatting such as bold (**text**)
+    or bullet points.
+
+    9. The answer is at least 80 characters long and provides sufficient detail.'
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: edge_case
+  instruction: 'Generate exactly 3 Q&A pairs exploring edge cases or common
+
+    misconceptions that arise specifically from the interaction of these two rules
+    — not a
+
+    misunderstanding of either rule in isolation. At least one question must address
+    something
+
+    a player might incorrectly assume when applying one rule without considering the
+    other.'
+  weight: 1.0
+  validation_rules:
+  - '
+
+    1. The question targets a genuine misconception that arises specifically from
+    the interaction of BOTH rules — not a misunderstanding of either rule in isolation.
+
+    2. The answer explicitly identifies what a player might incorrectly assume when
+    applying one rule without considering the other.
+
+    3. The answer corrects the misconception and explains WHY the correct ruling is
+    what it is.
+
+    4. The answer explains which rule applies first or takes precedence in resolving
+    the confusion.
+
+    5. The answer quotes or closely paraphrases text from BOTH rules to justify the
+    ruling.
+
+    6. HARD REJECT if the answer references any rule number — mechanics must be explained
+    conversationally.
+
+    7. HARD REJECT if the answer contains markdown formatting such as bold (**text**)
+    or bullet points.
+
+    8. The answer is at least 80 characters long and provides sufficient detail.'
+  min_answer_length: 80
+  max_answer_length: 2000

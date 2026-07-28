@@ -1,0 +1,164 @@
+- template_id: power_level
+  instruction: 'Generate exactly 2 Q&A pairs comparing the POWER LEVEL of these two
+    cards for a specific archetype.
+
+
+    Question format: "Which is stronger: [card1] or [card2] for [archetype]?"
+
+
+    Answers MUST:
+
+    - Compare EDHREC rank (lower = more popular/stronger)
+
+    - Compare inclusion percentage (num_decks context)
+
+    - Compare salt score (controversy level)
+
+    - Cite oracle text to justify power assessment
+
+    - Give context-dependent recommendation (not absolute)
+
+    - Mention card types and their implications (creature vs non-creature vulnerability)'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not compare EDHREC rank of both cards.
+  - 2. Answer does not mention inclusion percentage (num_decks / total_decks) for
+    both cards.
+  - 3. Answer does not reference salt score for either card.
+  - 4. Answer does not cite or closely paraphrase oracle text when explaining power
+    level.
+  - 5. Answer contains markdown formatting (bold, italics, bullet points).
+  - 6. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 7. Answer is less than 80 characters.
+  - 8. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. EDHREC rank comparison is explicit (lower rank = more popular).
+  - 2. Inclusion percentage is calculated or referenced for both cards.
+  - 3. Salt score is mentioned and interpreted (higher = more controversial).
+  - 4. Oracle text is quoted/paraphrased to justify power level assessment.
+  - 5. Context-dependent recommendation is given (not "X is always better").
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: mana_efficiency
+  instruction: 'Generate exactly 2 Q&A pairs comparing the MANA EFFICIENCY of these
+    two cards.
+
+
+    Question format: "Which gives better mana value: [card1] or [card2]?"
+
+
+    Answers MUST:
+
+    - State the mana value (CMC) of each card explicitly
+
+    - Calculate net mana advantage: what you get minus what you pay
+
+    - Discuss tempo: when does the value come online? (turn 1, turn 2, delayed)
+
+    - Distinguish colored vs colorless mana production
+
+    - Distinguish casting cost vs activation cost
+
+    - Identify if a card is mana conversion (cost X, produce X) vs actual ramp'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not calculate and compare mana value (CMC) of both cards.
+  - 2. Answer does not compare CMC to effect (what you get for the cost).
+  - 3. Answer does not mention tempo implications (speed of value generation).
+  - 4. Answer contains markdown formatting (bold, italics, bullet points).
+  - 5. Answer references rule numbers directly.
+  - 6. Answer is less than 80 characters.
+  - 7. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Mana value (CMC) is explicitly stated for both cards.
+  - 2. Net mana advantage/disadvantage is calculated (e.g., "costs 2, taps for 2 =
+    net zero").
+  - '3. Tempo is discussed: when does value come online? (turn 1, turn 2, delayed).'
+  - 4. Colored vs colorless mana production is distinguished.
+  - 5. Activation costs vs casting costs are distinguished correctly.
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: commander_suitability
+  instruction: 'Generate exactly 2 Q&A pairs comparing COMMANDER SUITABILITY for a
+    specific example commander.
+
+
+    Question format: "Should I run [card1] or [card2] in my [commander] deck?"
+
+
+    Answers MUST:
+
+    - State the example commander''s name and color identity
+
+    - Check color identity legality for BOTH cards against that commander
+
+    - Explicitly state legal/illegal for each card
+
+    - Explain commander synergy: how each card interacts with the commander''s abilities/theme
+
+    - If a card is illegal, explain why (color identity rule)
+
+    - Give context-dependent recommendation based on commander strategy'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not check color identity legality for the example commander.
+  - 2. Answer does not mention commander synergy (how the card interacts with the
+    commander's abilities).
+  - 3. Answer contains markdown formatting (bold, italics, bullet points).
+  - 4. Answer references rule numbers directly.
+  - 5. Answer is less than 80 characters.
+  - 6. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Color identity of both cards is stated and compared to commander's color identity.
+  - 2. Legality verdict (legal/illegal) is explicit for each card in the example commander
+    deck.
+  - '3. Commander synergy is explained: how the card works with the commander''s abilities/theme.'
+  - 4. If one card is illegal, the answer explains why (color identity rule).
+  - 5. Context-dependent recommendation based on commander strategy.
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: synergy_potential
+  instruction: 'Generate exactly 2 Q&A pairs comparing SYNERGY POTENTIAL with a specific
+    theme/mechanic.
+
+
+    Question format: "Which has better synergy with [theme]: [card1] or [card2]?"
+
+
+    Answers MUST:
+
+    - Identify the theme/mechanic (e.g., "artifacts matter", "graveyard recursion",
+    "token doubling")
+
+    - Name shared keywords/mechanics between each card and the theme
+
+    - Explain the mechanical interaction: how the card''s abilities work with the
+    theme
+
+    - Give specific in-game examples of the synergy playing out
+
+    - Compare which card has stronger/deeper synergy and why'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not identify shared keywords/mechanics between the two cards.
+  - 2. Answer does not explain the interaction/synergy between the cards and the theme.
+  - 3. Answer contains markdown formatting (bold, italics, bullet points).
+  - 4. Answer references rule numbers directly.
+  - 5. Answer is less than 80 characters.
+  - 6. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Shared keywords/mechanics are explicitly named (e.g., "both have ETB triggers",
+    "both care about artifacts").
+  - 2. The interaction with the named theme is explained mechanically.
+  - 3. Specific examples of how the synergy plays out in-game are given.
+  - 4. Differences in synergy potential between the two cards are compared.
+  min_answer_length: 80
+  max_answer_length: 2000

@@ -1,0 +1,96 @@
+- template_id: plain_english
+  instruction: "Generate exactly 3 Q&A pairs explaining this rule in plain English.\n\
+    At least one question must come from a newer player who doesn't know the terminology\
+    \ — \nphrased as something they'd actually ask at a kitchen table game."
+  weight: 1.0
+  validation_rules:
+  - '
+
+    1. The answer is directly grounded in the rule text provided — no extrapolation
+    beyond what the rule states.
+
+    2. The answer uses plain language accessible to a newer player — minimal jargon,
+    and any jargon used is explained.
+
+    3. The question is phrased naturally as something a kitchen table player would
+    actually ask.
+
+    4. The answer includes a concrete in-game example that illustrates the rule.
+
+    5. The answer quotes or closely paraphrases the relevant rule text when explaining
+    why something works.
+
+    6. HARD REJECT if the answer references any rule number — mechanics must be explained
+    conversationally.
+
+    7. HARD REJECT if the answer contains markdown formatting such as bold (**text**)
+    or bullet points.
+
+    8. The answer is at least 80 characters long and provides sufficient detail.'
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: in_game_scenario
+  instruction: "Generate exactly 3 Q&A pairs presenting concrete in-game scenarios\
+    \ \nwhere this rule determines the outcome. Questions must describe a specific\
+    \ board state or \ngame action — not ask abstractly about the rule. At least one\
+    \ must start with \n'What happens when...' or 'My opponent just...'"
+  weight: 1.0
+  validation_rules:
+  - '
+
+    1. The answer is directly grounded in the rule text provided — no extrapolation
+    beyond what the rule states.
+
+    2. The question describes a specific board state or game action — not an abstract
+    question about the rule.
+
+    3. The answer walks through what happens in that specific scenario, not just what
+    the rule says in general.
+
+    4. The answer includes the concrete outcome of the scenario — vague answers like
+    "it depends" are validation failures.
+
+    5. The answer quotes or closely paraphrases the relevant rule text to explain
+    WHY the outcome occurs.
+
+    6. HARD REJECT if the answer references any rule number — mechanics must be explained
+    conversationally.
+
+    7. HARD REJECT if the answer contains markdown formatting such as bold (**text**)
+    or bullet points.
+
+    8. The answer is at least 80 characters long and provides sufficient detail.'
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: edge_case
+  instruction: "Generate exactly 3 Q&A pairs exploring edge cases or common \nmisconceptions\
+    \ about this rule. At least one question must address something a player \nmight\
+    \ incorrectly assume about how this rule works."
+  weight: 1.0
+  validation_rules:
+  - '
+
+    1. The answer is directly grounded in the rule text provided — no extrapolation
+    beyond what the rule states.
+
+    2. The question targets a genuine misconception or non-obvious edge case — not
+    a basic application of the rule.
+
+    3. The answer explicitly identifies what a player might incorrectly assume and
+    corrects it.
+
+    4. The answer explains WHY the correct ruling is what it is, not just what it
+    is.
+
+    5. The answer quotes or closely paraphrases the relevant rule text to justify
+    the ruling.
+
+    6. HARD REJECT if the answer references any rule number — mechanics must be explained
+    conversationally.
+
+    7. HARD REJECT if the answer contains markdown formatting such as bold (**text**)
+    or bullet points.
+
+    8. The answer is at least 80 characters long and provides sufficient detail.'
+  min_answer_length: 80
+  max_answer_length: 2000

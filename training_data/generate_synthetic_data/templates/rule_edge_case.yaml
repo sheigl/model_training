@@ -1,0 +1,7 @@
+- template_id: edge_case
+  instruction: Generate 2 tricky edge case Q&A pairs from this rule. Focus on non-obvious
+    applications, common player mistakes, and edge cases.
+  weight: 1.0
+  validation_rules: []
+  min_answer_length: 80
+  max_answer_length: 2000

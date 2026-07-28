@@ -5,7 +5,7 @@ Fine-tune LLMs to be Magic: The Gathering experts — covering all 108K+ cards, 
 This repository contains two projects:
 
 - **`training_data/`** — Legacy MTG-specific synthetic data generation system (CLI-based, 27 generators)
-- **`trainforge/`** — Generic synthetic data generation framework with Streamlit web UI and pluggable domain architecture (includes MTG as first domain plugin)
+- **TrainForge** (separate repo at `../trainforge/`) — Generic synthetic data generation framework extracted from this codebase
 
 ## Prerequisites
 
@@ -52,6 +52,9 @@ python -m training_data.generate_synthetic_data.main --terminology 200
 # Dry run (no MongoDB writes)
 python -m training_data.generate_synthetic_data.main --archetypes 100 --dry-run
 
+# Custom templates directory
+python -m training_data.generate_synthetic_data.main --all --templates-dir /path/to/templates
+
 # Disable generation trace logging (traces are on by default)
 python -m training_data.generate_synthetic_data.main --all --no-log-traces
 ```
@@ -69,27 +72,6 @@ python training_data/extract_training_data.py
 ```bash
 python training.py
 ```
-
-### TrainForge Web Interface (Generic Framework)
-
-TrainForge is a generic synthetic data generation framework with a Streamlit web UI. The MTG domain plugin provides the same 27 categories as the legacy system, but through a pluggable architecture.
-
-```bash
-cd trainforge
-
-# Install dependencies
-uv sync
-
-# Start the web interface
-streamlit run src/trainforge/ui/app.py
-
-# Or use the entry point (after installing with uv/pip)
-trainforge
-```
-
-The UI provides generation control, data browsing, metrics dashboards, and JSONL export — all through a browser. Configure MongoDB connection, LLM provider (Ollama/Anthropic/OpenAI), and domain settings in the Settings page.
-
-See `docs/ARCHITECTURE.md` for TrainForge architecture details and how to add new domains.
 
 ## Running Tests
 
@@ -123,6 +105,8 @@ model_training/
 │   ├── generate_synthetic_data/    # Legacy MTG-specific synthetic Q&A generation (CLI)
 │   │   ├── base_generator.py       # BaseGenerator[T] abstract class
 │   │   ├── main.py                 # CLI entry point for all generators
+│   │   ├── yaml_template_loader.py # YAML-based template loader
+│   │   ├── templates/              # Local YAML templates (27 categories + shared)
 │   │   ├── data_access.py          # MTGDataAccess - MongoDB abstraction
 │   │   ├── models.py               # Data models (Card, QuestionAnswer, etc.)
 │   │   ├── common.py               # TemplateConfig, prompt building, validation
@@ -130,31 +114,28 @@ model_training/
 │   │   ├── generate_*.py           # Individual generator implementations
 │   │   └── test_*.py               # Generator unit tests
 │   └── *.py                        # Data scraping, extraction, and conversion
-├── trainforge/                     # Generic synthetic data generation framework
-│   ├── src/trainforge/             # Core framework modules (9 files)
-│   │   ├── models.py               # Pydantic v2 models (Model, Q&A, Trace, Metrics)
-│   │   ├── config.py               # YAML loader with env var interpolation
-│   │   ├── data_source.py          # DataSource ABC + MongoDataSource
-│   │   ├── domain.py               # DomainPlugin ABC, TemplateConfig, DomainRegistry
-│   │   ├── generator.py            # BaseGenerator[T] template method pattern
-│   │   ├── query_model.py          # Multi-provider LLM client (Ollama/Anthropic/OpenAI)
-│   │   ├── training.py             # JSONL exporter with ratio controls
-│   │   ├── validator.py            # Domain-agnostic validation + regeneration loop
-│   │   └── ui/                     # Streamlit web interface (7 files)
-│   ├── domains/mtg/                # MTG domain plugin (first domain implementation)
-│   │   ├── models.py               # 22 Pydantic v2 domain models (Card, Combo, Commander, etc.)
-│   │   ├── data_source.py          # Enriched MTGDataAccess with typed joins, cache, retry
-│   │   ├── __init__.py             # MTGDomain plugin (auto-registers)
-│   │   ├── config.yaml             # Domain metadata, MongoDB collection config
-│   │   └── templates.yaml          # 27 category templates with validation rules
-│   ├── tests/                      # 301 tests (core + UI + MTG domain)
-│   └── pyproject.toml              # Dependencies and entry point
 ├── tests/                          # Top-level unit tests (legacy)
 ├── qwen_training/                  # Qwen model training scripts
 ├── CHANGELOG.md
 └── docs/
-    └── ARCHITECTURE.md             # Architecture for both legacy + TrainForge
+    └── ARCHITECTURE.md             # Architecture documentation
 ```
+
+## Template System
+
+Generation templates are stored as local YAML files in `training_data/generate_synthetic_data/templates/`:
+
+- **27 category files** — one per generator (e.g., `combo_query.yaml`, `meta_knowledge.yaml`)
+- **`shared.yaml`** — shared scaffolding blocks (`system_message`, `notation_legend`, `requirements_base`, `output_format`, `card_comparison_instructions`) and validator prompts
+- **`comparison_validator.yaml`** — card comparison-specific validator
+
+Templates are loaded at startup by `YamlTemplateLoader`. To regenerate YAML files from Python constants:
+
+```bash
+python -m training_data.generate_synthetic_data.seed_templates --to-yaml
+```
+
+Use `--templates-dir /path/to/templates` to load templates from a custom directory.
 
 ## Generator Categories
 

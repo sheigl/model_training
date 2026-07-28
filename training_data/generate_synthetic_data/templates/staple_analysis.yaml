@@ -1,0 +1,6 @@
+- template_id: staple_analysis
+  instruction: Generate 3 Q&A pairs analyzing why this card is a Commander staple.
+  weight: 1.0
+  validation_rules: []
+  min_answer_length: 80
+  max_answer_length: 2000

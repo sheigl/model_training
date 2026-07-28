@@ -1,6 +1,209 @@
 # Changelog
 
-## [Unreleased] — TrainForge Generic Framework (2026-07-24)
+### Test Suite Updates for YAML Template System (Story 007) — 2026-07-27
+
+Trimmed obsolete MongoDB-specific tests and verified zero regressions across the YAML template migration.
+
+- **`test_template_store.py`** — Reduced from 26 to 4 tests; kept only `TestToTemplateConfig` (the pure dict-to-TemplateConfig conversion reused by the YAML loader). Removed index creation, upsert, read, seed, delete_version, and from_uri tests.
+- **`test_seed_templates.py`** — Reduced from 12 to 9 tests; removed 3 deprecated MongoDB seeding tests (`test_idempotent_seed`, `test_dry_run_does_not_write_to_mongodb`, `test_non_dry_run_calls_seed`). Extraction and registry tests preserved.
+
+**Test results:** 368 pass, 20 pre-existing failures unchanged, zero new failures.
+
+### CLI Cleanup: Remove Version Flags, Add --templates-dir (Story 005) — 2026-07-27
+
+Simplified the CLI by removing all MongoDB template-store and per-generator version override flags. Added a single `--templates-dir` flag defaulting to the package's `templates/` directory. All 27 generators now receive a `YamlTemplateLoader` instance instead of a `TemplateStore`.
+
+- **`main.py`**: Extracted `build_parser()`; added `--templates-dir`; removed 54 version flags, `--template-versions`, `--list-template-versions`; replaced `TemplateStore` with `YamlTemplateLoader`; updated all generator instantiations
+- **New test file**: `test_cli_templates_dir.py` — 13 tests (flag parsing, version-flag removal, backward-compat checks)
+- **Removed**: `test_cli_version_flags.py`
+
+**Test results:** 393 pass (up from ~341), 20 pre-existing failures unchanged, zero regressions.
+
+### Seed Script Repurposed as YAML Generator (Story 006) — 2026-07-27
+
+`seed_templates.py` now supports a `--to-yaml` mode that regenerates all YAML template files from Python constants, instead of only seeding MongoDB. The existing extraction logic (`extract_shared_blocks`, `extract_legacy`, `extract_validators`) is reused unchanged. MongoDB seeding remains available but emits a `DeprecationWarning`.
+
+- **`seed_templates.py`**: Added `--to-yaml` and `--output-dir` CLI flags; added `generate_yaml_files()` and `write_yaml_file()` functions; branched `main()` on mode with deprecation warning for MongoDB path
+- **New test file**: `test_seed_templates_yaml.py` — 14 tests covering YAML generation, CLI path, deprecation warning, and round-trip loader compatibility
+
+**Test results:** 26 seed-template tests pass (12 existing + 14 new), same 20 pre-existing failures unchanged, zero regressions.
+
+### Validator Template Migration to YAML (Story 004) — 2026-07-27
+
+Validator prompts now load from local YAML files instead of MongoDB or inline construction. `QueryModel._resolve_validator_template()` reads from the YAML loader when provided, falling back to the legacy MongoDB store path, then inline prompt construction. The `str.replace()` placeholder substitution (which preserves MTG notation braces like `{T}`, `{C}`, `{W}`) is unchanged. Public helper functions `build_qa_validation_prompt_template()` and `build_card_validation_prompt_template()` are kept as reference implementations with a docstring note.
+
+- **`query_model.py`**: Added reference-implementation comments to both public validator template builders
+- **`test_template_loading.py`**: 4 new end-to-end tests verifying real YAML file loading, placeholder substitution, and MTG brace preservation through the YAML loader path
+
+**Test results:** 392 pass (384 + 8), 20 pre-existing failures unchanged, zero regressions.
+
+### Foundational: YAML Template Structure & Loader Module (Story 001) — 2026-07-27
+
+Created the local YAML template infrastructure that replaces MongoDB-based template storage. Every generation template from all 27 legacy generators is now stored as a local YAML file in `templates/`, alongside shared scaffolding blocks and validator prompts. A new `YamlTemplateLoader` class mirrors the read surface of `TemplateStore` so downstream code can swap it in with minimal changes.
+
+- **New directory**: `training_data/generate_synthetic_data/templates/` — 27 generator category YAML files + `shared.yaml` (5 scaffolding blocks + 3 validators) + `comparison_validator.yaml` + `qa_validation.yaml`
+- **New module**: `yaml_template_loader.py` — `YamlTemplateLoader` class with `get_latest()`, `list_versions()` (returns `[]`), `get_scaffolding()`, `get_validator()`
+- **New tests**: `test_yaml_template_loader.py` — 28 unit tests, all passing
+- **Backward compat**: All class-level `TEMPLATES` constants retained. `TemplateStore.to_template_config()` reused unchanged. Zero regressions.
+
+### Scaffolding Block Migration to YAML (Story 003) — 2026-07-27
+
+`init_scaffolding()` in `common.py` now reads shared scaffolding blocks from the YAML loader when provided, falling back to the legacy MongoDB path. Python constants remain as the ultimate fallback — prompt builders are unchanged.
+
+- **`common.py`**: Added `_CACHE_KEY_TO_YAML_KEY` mapping; refactored `init_scaffolding()` to accept `yaml_loader` (precedence) and `store` params; extracted `_populate_from_yaml()` and `_populate_from_store()` helpers
+- **`main.py`**: Updated call site to keyword arg `store=template_store` for signature compatibility
+- **`test_template_loading.py`**: 4 new tests for YAML scaffolding path, precedence, partial data, and None handling
+
+### Move TrainForge to Separate Repository (Story 046) — 2026-07-26
+
+Extracted the `trainforge/` subdirectory into a standalone git repository at `/home/sheigl/code/trainforge/` (initial commit `0a95df4`). The two codebases share a MongoDB backend (network dependency, not code dependency) and are now cleanly separated. TrainForge is 112 files in its own repo with independent versioning.
+
+- **New repo**: `/home/sheigl/code/trainforge/` — standalone git repository; initial commit `0a95df4620f503173efbd76f1cdd0a060cb43529`
+- **Removed**: `trainforge/` directory deleted from model_training workspace
+- **`seed_templates.py`**: Updated `TRAINFORGE_TEMPLATES_PATH` to use `TRAINFORGE_PATH` env var with fallback to sibling directory (`../trainforge/`). The old path assumed `trainforge/` was a subdirectory.
+- **`test_seed_templates.py`**: Updated `test_extract_trainforge_yaml_parses_categories` to use a fixture YAML file instead of depending on the external file system.
+- **`AGENTS.md`**: Updated TrainForge references to point to `../trainforge/`.
+- **`README.md`**: Updated TrainForge references, run instructions, and project structure tree.
+- **`docs/ARCHITECTURE.md`**: Updated TrainForge path references with "separate repository" notes.
+
+**Test results:**
+- model_training: 341/361 tests pass (20 pre-existing failures, zero regressions)
+- trainforge: 483/484 tests pass (1 pre-existing UI failure, zero regressions)
+- Integration check: path resolution via `TRAINFORGE_PATH` env var works correctly
+
+**Breaking changes:** None — graceful degradation if TrainForge repo is not present at the expected location.
+
+**Migration notes:**
+- Set `TRAINFORGE_PATH` env var if the TrainForge repo is not at `../trainforge/` relative to model_training.
+- TrainForge tests now live in `../trainforge/tests/` — run via `cd ../trainforge && pytest tests/ -v`.
+
+### Feature: Data-Driven Versioned Templates (Stories 040–045) — 2026-07-26
+
+All 27 hardcoded generation and validator templates (previously embedded in Python constants and `templates.yaml`) now live in a single, version-controlled MongoDB collection (`synthetic_metrics.templates`). Both the legacy CLI and TrainForge load templates from this shared store at startup, with full backward compatibility — when the store is unavailable or no version override is specified, every generator falls back to its existing hardcoded behavior byte-for-byte. Operators can pin any generator to a specific template version via CLI flags (`--<slug>-template-version N`) and inspect version history with `--list-template-versions`. Per-template version metadata is recorded on every `GenerationTrace` and `ValidationMetrics` document, enabling version-to-version performance comparison across runs.
+
+**Stories:**
+
+| Story | Title | Summary |
+|-------|-------|---------|
+| 040 | MongoDB Versioned Template Store | `TemplateStore` class with CRUD, version resolution, `is_latest` invariant, and compound unique indexes |
+| 041 | Seed/Import Script | Extracts all 27 generator templates + shared scaffolding from constants.py and templates.yaml into the store |
+| 042 | Legacy CLI Template Loading | `BaseGenerator` loads from store with version-override → latest → class-constant fallback chain; scaffolding cache in `common.py` |
+| 043 | TrainForge Template Loading | Read-only `TemplateStoreClient` shares same MongoDB schema; `MTGDomain` store-first loading with YAML fallback |
+| 044 | CLI Version Override Flags | 54 per-generator flags + JSON batch flag + `--list-template-versions` |
+| 045 | Metrics + Trace Template-Version | `TemplateConfig.version`, `GenerationTrace.template_version`, `ValidationMetrics.record_template_version()` |
+
+**New files:**
+
+| File | Description |
+|------|-------------|
+| `training_data/generate_synthetic_data/template_store.py` | `TemplateStore` class — CRUD, version resolution, seed, `to_template_config()` |
+| `training_data/generate_synthetic_data/seed_templates.py` | Seed/import script — extracts templates from constants.py + templates.yaml |
+| `training_data/generate_synthetic_data/test_template_loading.py` | 29 tests for store-present/absent, version-override, validator fallback, scaffolding cache |
+| `training_data/generate_synthetic_data/test_cli_version_flags.py` | 26 tests for flag parsing, JSON batch, precedence, `--list-template-versions` |
+| `training_data/generate_synthetic_data/test_metrics_trace_version.py` | 13 tests for `TemplateConfig.version`, trace version fields, metrics recording |
+| `trainforge/src/trainforge/template_store.py` | `TemplateStoreClient` — read-only client sharing the same MongoDB collection |
+| `trainforge/tests/test_template_store_client.py` | 14 tests for TrainForge store client |
+| `trainforge/tests/test_domain_store_loading.py` | 18 tests for MTGDomain store-first loading |
+| `trainforge/tests/test_validator_store.py` | 11 tests for TrainForge validator store integration |
+| `trainforge/tests/test_metrics_trace_version.py` | 14 tests for TrainForge metrics/trace version fields |
+
+**Modified files:**
+
+| File | Changes |
+|------|---------|
+| `training_data/generate_synthetic_data/base_generator.py` | `template_store`, `template_version_override`, `validator_template_version_override` params; `_load_templates_from_store()`, `_resolve_validator_version()`, trace/metrics version fields |
+| `training_data/generate_synthetic_data/common.py` | `TemplateConfig.version` field; `_SCAFFOLDING_CACHE` + `init_scaffolding()` + `_get_scaffold()` + `reset_scaffolding_cache()` |
+| `training_data/generate_synthetic_data/query_model.py` | `build_qa_validation_prompt_template()`, `build_card_validation_prompt_template()` public helpers; `_resolve_validator_template()` with `str.replace()` for MTG braces |
+| `training_data/generate_synthetic_data/main.py` | `GENERATOR_FLAGS` registry (27 entries); 54 version flags; JSON batch flag; `--list-template-versions`; `idx_category_version` + `idx_run_version` indexes |
+| `training_data/generate_synthetic_data/models.py` | `GenerationTrace.template_version` + `validator_template_version`; `ValidationMetrics.template_versions` + `validator_template_versions` + `record_template_version()` |
+| `trainforge/src/trainforge/domain.py` | `DomainPlugin._template_store` + `set_template_store()`; `TemplateConfig.version` |
+| `trainforge/src/trainforge/domains/mtg/__init__.py` | Store-first template loading with YAML fallback; store-first `system_message`/`notation_legend` |
+| `trainforge/src/trainforge/validator.py` | `_resolve_validator_template()` hybrid lookup; `str.replace()` for placeholder substitution |
+| `trainforge/src/trainforge/generator.py` | Threads `template_store` and `category` to validator; `_resolve_validator_version()` |
+| `trainforge/src/trainforge/models.py` | `GenerationTrace` + `ValidationMetrics` version fields; `record_template_version()` |
+| `trainforge/src/trainforge/ui/app.py` | Constructs `TemplateStoreClient` from MongoDB config; injects into MTG domain |
+
+**Breaking changes:** None — fully backward compatible. All new fields default to `None` or `{}`.
+
+**Migration notes:** None required — existing behavior is unchanged when no store is available or no version flags are provided.
+
+**Tests:** 822 pass (795 existing + 27 new for Story 045), 21 pre-existing failures unchanged. Total across all 6 stories: 167 new unit tests.
+
+**Bugfix: Validator template store path broken by MTG braces (Story 042 review) — 2026-07-26**
+
+The store path in `QueryModel.__build_qa_validation_prompt` and `__build_card_validation_prompt` used `.format()` to substitute placeholders into stored validator templates. Because those templates embed `MTG_NOTATION_LEGEND` (mana symbols like `{T}`, `{C}`, `{W}`, `{U}`, `{B}`, `{R}`, `{G}`, `{X}`, `{1}`, `{2}`), `.format()` interpreted the braces as placeholders and raised `KeyError`. The `try/except` then silently fell back to the inline prompt — so the store path NEVER worked for any real validator template, making Story 042 non-functional.
+
+- Replaced `.format()` with explicit `str.replace()` calls for each known placeholder (`{question}`, `{answer}`, `{context}`, `{category}` for QA; `{card1_name}`, `{card1_type}`, `{card1_text}`, `{card1_cost}`, `{card2_name}`, `{card2_type}`, `{card2_text}`, `{card2_cost}`, `{question}`, `{answer}` for card comparison). `str.replace()` does not interpret braces, so MTG notation passes through verbatim.
+- Removed the now-unreachable `try/except (KeyError, IndexError)` fallback blocks.
+- Updated the `_resolve_validator_template` docstring to document the `str.replace()` contract.
+- Added 3 regression tests in `test_template_loading.py` covering templates containing MTG braces (synthetic + the real `build_qa_validation_prompt_template()` output). 300 passing (297 + 3 new), 20 pre-existing failures unchanged.
+
+### Feature: Metrics + Trace Template-Version Recording (Story 045) — 2026-07-26
+
+Records which template version was used for every `GenerationTrace` and `ValidationMetrics` document, enabling analysts to track template performance over time and compare version-2-templates vs version-1-templates.
+
+- **`common.py`**: Added `version: int | None = None` to frozen `TemplateConfig` (last field, backward compatible).
+- **`models.py`**: Added `template_version: int | None = None` and `validator_template_version: int | None = None` to `GenerationTrace`. Added `template_versions` and `validator_template_versions` dicts + `record_template_version()` method to `ValidationMetrics`. Updated `summary()` to include both version dicts.
+- **`template_store.py`**: `to_template_config()` now passes `version=doc.get("version")` to the `TemplateConfig` constructor.
+- **`base_generator.py`**: New `_resolve_validator_version()` method mirrors the hybrid validator lookup. `_process_item()` now populates `template_version` and `validator_template_version` on `GenerationTrace` and calls `metrics.record_template_version()`.
+- **`main.py`**: Added two new MongoDB indexes: `idx_category_version` on `(category, template_version)` and `idx_run_version` on `(run_id, template_version)`.
+- **`domain.py` (TrainForge)**: Added `version: int | None = None` to `TemplateConfig.__init__` and `from_dict()`.
+- **`models.py` (TrainForge)**: Added version fields to `GenerationTrace` and `ValidationMetrics` (Pydantic models). Added `record_template_version()` method and updated `summary()`.
+- **`template_store.py` (TrainForge)**: `to_template_config()` now passes `version=doc.get("version")`.
+- **`generator.py` (TrainForge)**: New `_resolve_validator_version()` method. Trace construction and metrics recording now include version fields.
+- **`test_metrics_trace_version.py` (NEW, legacy)**: 13 tests covering `TemplateConfig.version`, `GenerationTrace` version fields, `ValidationMetrics.record_template_version()`, `summary()` inclusion, and `TemplateStore.to_template_config()` version propagation.
+- **`test_metrics_trace_version.py` (NEW, TrainForge)**: 14 tests covering the same areas for the TrainForge codebase.
+- **Backward compat**: All new fields default to `None` or `{}`. Existing code constructing these types without version fields continues to work unchanged. 822 tests pass (795 existing + 27 new), 21 pre-existing failures unchanged.
+
+### Feature: CLI Per-Generator Template Version Override Flags (Story 044) — 2026-07-26
+
+Adds per-generator CLI flags like `--combo-queries-template-version 2` and a JSON batch flag `--template-versions '{"combo_query": 2}'`, so operators can pin specific generators to specific template versions without modifying code. Also adds `--list-template-versions` to inspect the store.
+
+- **`main.py`**: New `GENERATOR_FLAGS` registry (27 entries mapping slug → category → class → argparse dest). Extracted `build_parser()` function (importable for testing). Added 54 per-generator version flags (`--<slug>-template-version` + `--<slug>-validator-template-version`) via loop, `--template-versions` JSON flag, `--list-template-versions` action. Each of the 27 generator instantiation blocks now passes `template_version_override` and `validator_template_version_override` to the constructor. Dry-run mode prints resolved versions. Fallback warnings when version overrides are set but no template store is available.
+- **`test_cli_version_flags.py` (NEW)**: 26 unit tests covering flag parsing, defaults, JSON flag, precedence (per-generator wins over JSON), `--list-template-versions`, completeness (all 27 generators × 2 flags), registry integrity, dry-run print simulation, and JSON error handling.
+- **Backward compat**: 326 passed (300 existing + 26 new), 20 pre-existing failures unchanged. When no version flags are provided, generators use `template_version_override=None` (latest template) — identical to prior behavior.
+
+### Feature: TrainForge Template Loading Integration (Story 043) — 2026-07-26
+
+Wires TrainForge's `MTGDomain` plugin to load templates from the MongoDB `TemplateStore` (shared with the legacy CLI via Story 040) instead of `templates.yaml`, with full backward compatibility — with `template_store=None` (the default) TrainForge behaves byte-identically to current behavior. All 426 existing tests pass unchanged; 43 new tests added.
+
+- **`template_store.py` (NEW)**: Thin read-only `TemplateStoreClient` reading the same `synthetic_metrics.templates` collection as the legacy CLI's `TemplateStore`, but does NOT import the legacy package. Provides `get_latest`/`get_version`/`list_versions`/`list_all` read paths plus `to_template_config` and `to_text` conversion helpers. Constructed from a plain `pymongo.collection.Collection` (or via `from_config`).
+- **`domain.py`**: `DomainPlugin` ABC gains an optional `_template_store` attribute (default `None`) and a `set_template_store()` method for lazy post-registration injection. The base `get_templates_for_category` keeps its YAML-parsing default behavior (unchanged fallback).
+- **`domains/mtg/__init__.py`**: `MTGDomain.__init__` now calls `super().__init__()`. `get_templates_for_category` checks the store first (iterating YAML-declared template_ids, preferring the store's latest `generation` doc per id, falling back to the YAML `TemplateConfig` for any id the store is missing), then falls back to YAML-only parsing when no store is injected. `system_message` and `notation_legend` properties check the store's `__shared__` namespace first, falling back to YAML-loaded values.
+- **`validator.py`**: New `_resolve_validator_template()` helper implements hybrid validator lookup (generator-specific `(category, "validator", "validator")` override → shared `(__shared__, "qa_validation", "validator")` → `None`). `validate_and_loop_with_suggested_fix` and `_validate_qa` accept optional `template_store` and `category` params. When a stored template is found, placeholder substitution uses `str.replace()` (NOT `.format()`) so MTG notation braces (`{T}`, `{C}`, ...) pass through verbatim. The inline prompt construction is the unchanged fallback path.
+- **`generator.py`**: `BaseGenerator.generate()` threads `template_store=getattr(self.domain, "_template_store", None)` and `category=category` into the validator call. `BaseGenerator.get_templates()` is unchanged.
+- **`ui/app.py`**: `_connect_mongodb()` constructs a `TemplateStoreClient` from the MongoDB config and injects it into the registered MTG domain via `set_template_store()` when MongoDB is available. Wrapped in try/except so MongoDB/store failures are non-fatal — the UI falls back to YAML-only behavior.
+- **Tests**: 43 new unit tests across `test_template_store_client.py` (14), `test_domain_store_loading.py` (18), and `test_validator_store.py` (11), covering store-present, store-absent fallback, store-missing-template fallback, validator generator-override, shared-validator fallback, inline fallback, and the `str.replace()` MTG-brace contract. 469 total passing (426 existing + 43 new), 1 pre-existing failure unchanged — backward compatibility confirmed.
+
+### Bugfix: Validator template store path broken by MTG braces (Story 042 review) — 2026-07-26
+
+The store path in `QueryModel.__build_qa_validation_prompt` and `__build_card_validation_prompt` used `.format()` to substitute placeholders into stored validator templates. Because those templates embed `MTG_NOTATION_LEGEND` (mana symbols like `{T}`, `{C}`, `{W}`, `{U}`, `{B}`, `{R}`, `{G}`, `{X}`, `{1}`, `{2}`), `.format()` interpreted the braces as placeholders and raised `KeyError`. The `try/except` then silently fell back to the inline prompt — so the store path NEVER worked for any real validator template, making Story 042 non-functional.
+
+- Replaced `.format()` with explicit `str.replace()` calls for each known placeholder (`{question}`, `{answer}`, `{context}`, `{category}` for QA; `{card1_name}`, `{card1_type}`, `{card1_text}`, `{card1_cost}`, `{card2_name}`, `{card2_type}`, `{card2_text}`, `{card2_cost}`, `{question}`, `{answer}` for card comparison). `str.replace()` does not interpret braces, so MTG notation passes through verbatim.
+- Removed the now-unreachable `try/except (KeyError, IndexError)` fallback blocks.
+- Updated the `_resolve_validator_template` docstring to document the `str.replace()` contract.
+- Added 3 regression tests in `test_template_loading.py` covering templates containing MTG braces (synthetic + the real `build_qa_validation_prompt_template()` output). 300 passing (297 + 3 new), 20 pre-existing failures unchanged.
+
+### Feature: Legacy CLI Template Loading Integration (Story 042) — 2026-07-26
+
+Wires the legacy CLI to load generation/validator templates from the MongoDB `TemplateStore` (Story 040) with full backward compatibility — with `template_store=None` (the default) every generator behaves byte-identically to current behavior.
+
+- **`base_generator.py`**: `BaseGenerator.__init__` accepts optional `template_store`, `template_version_override`, and `validator_template_version_override` params. `select_templates()` loads `TemplateConfig` objects from the store when available (via `TemplateStore.to_template_config`), falling back to the class-level `TEMPLATES` constant. New `_load_templates_from_store()` helper implements the fallback chain: version override → latest → class constant. The store handle is wired into the `QueryModel` instance so validator prompts can also be loaded from MongoDB.
+- **`common.py`**: Added module-level `_SCAFFOLDING_CACHE` populated by `init_scaffolding(store)` (called once at startup). All ~20 `build_*_prompt` functions read shared blocks (`MTG_NOTATION_LEGEND`, `SYSTEM_MESSAGE`, `OUTPUT_FORMAT`, `CARD_COMPARISON_INSTRUCTIONS`) via `_get_scaffold(key, fallback)`, falling back to `constants.py` imports when the cache is empty. No function signatures changed. `reset_scaffolding_cache()` added for tests.
+- **`query_model.py`**: `QueryModel` gains a `template_store` attribute and `_resolve_validator_template(category)` helper implementing hybrid validator lookup: generator-specific `(category, "validator", "validator")` doc → shared `(__shared__, "qa_validation", "validator")` doc → inline fallback. `__build_qa_validation_prompt` and `__build_card_validation_prompt` use the stored template with `.format()` placeholder substitution when available, keeping the existing inline construction as the fallback path (unchanged).
+- **`main.py`**: Constructs a single `TemplateStore` instance (wrapped in try/except so the pipeline still runs with hardcoded templates if MongoDB is unavailable), calls `init_scaffolding(template_store)`, and passes `template_store=template_store` to all 27 generator instantiations.
+- **Tests**: 26 new unit tests in `test_template_loading.py` covering store-present, store-absent, version-override, version-missing fallback, validator-override, shared-validator fallback, inline fallback, scaffolding cache population/fallback, and `__init__` wiring. 297 total passing (271 existing + 26 new), 20 pre-existing failures unchanged — backward compatibility confirmed.
+
+### Feature: Seed/Import Script for MongoDB Template Store (Story 041) — 2026-07-26
+
+- New `seed_templates.py` script extracts all hardcoded generation/validator templates from the 27 legacy generators and the TrainForge `templates.yaml`, reconciles them (legacy wins on conflicts), and populates the MongoDB template store via `TemplateStore.seed`. Run via `python -m training_data.generate_synthetic_data.seed_templates` with `--mongo-uri/--mongo-user/--mongo-pass/--dry-run` flags.
+- Added two public template-builder functions to `query_model.py`: `build_qa_validation_prompt_template()` and `build_card_validation_prompt_template()` returning the validator prompts with `{placeholders}` for storage. Private methods unchanged.
+- 16 new unit tests; 271 total passing, 20 pre-existing failures unchanged.
+
+### Feature: MongoDB Versioned Template Store (Story 040) — 2026-07-26
+
+- New `TemplateStore` class at `training_data/generate_synthetic_data/template_store.py` provides CRUD + version resolution + latest lookup against a MongoDB collection, so both the legacy CLI and TrainForge can load generation/validator templates from a single shared, version-controlled source instead of hardcoded Python constants and YAML files.
+- Enforces the `is_latest` invariant (exactly one latest doc per `(generator, template_id, template_type)`), creates compound unique + latest-lookup indexes idempotently, and ships with 26 unit tests (MagicMock-backed pymongo). Purely additive — no existing production files modified.
 
 ### Feature: MTG AI Pipeline prompt improvements (sibling feedback + trigger ordering) — 2026-07-26
 

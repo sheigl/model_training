@@ -1,0 +1,141 @@
+- template_id: combo_piece
+  instruction: 'Generate exactly 3 Q&A pairs for COMBO PIECE synergy questions.
+
+    Focus on: What cards combine with the primary card to create an INFINITE combo.
+
+    Questions should be phrased as players searching for combo partners: "What combos
+    with [card] for infinite [result]?" or "I have [card], what do I need to go infinite?"
+
+    Answers MUST: explain the infinite loop step by step, cite oracle text for each
+    piece, state zone/mana requirements, and name the concrete infinite outcome.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not explain the infinite loop mechanism step by step.
+  - 2. Answer does not cite oracle text for EACH combo piece explaining its role.
+  - 3. Answer does not mention required zones (battlefield, hand, command zone, graveyard)
+    for each piece.
+  - 4. Answer does not state the mana or other resource requirements to initiate the
+    combo.
+  - 5. Answer does not state the concrete infinite outcome (e.g., "infinite damage",
+    "infinite mana of any color", "infinite creature tokens").
+  - 6. Answer uses vague phrases like "very powerful" or "wins the game" instead of
+    specific outcomes.
+  - 7. Answer contains markdown formatting (bold, italics, bullet points).
+  - 8. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 9. Answer is less than 80 characters.
+  - 10. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The infinite loop mechanism is explained step by step in correct order.
+  - 2. Oracle text is cited or closely paraphrased for each combo piece.
+  - 3. Zone requirements for each piece are explicitly stated.
+  - 4. Mana/resource requirements are stated.
+  - 5. Concrete infinite outcome is stated explicitly.
+  - 6. At least one question comes from a player asking "What combos with X for infinite
+    Y?"
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: value_engine
+  instruction: 'Generate exactly 3 Q&A pairs for VALUE ENGINE synergy questions.
+
+    Focus on: What cards generate RECURRING VALUE over multiple turns with the primary
+    card (not infinite combos).
+
+    Questions should be phrased as: "What generates long-term value with [card]?"
+    or "What cards work well with [card] over a long game?"
+
+    Answers MUST: explain the value generation per turn/cycle, cite triggers/abilities,
+    state mana investment, and explain sustainability.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not explain how value is generated over multiple turns (not a one-time
+    effect).
+  - 2. Answer does not cite the specific triggers or abilities that generate recurring
+    value.
+  - 2. Answer does not mention the mana investment required to set up and maintain
+    the engine.
+  - 3. Answer does not explain what happens each turn/activation cycle.
+  - 4. Answer lists cards without explaining the synergistic interaction.
+  - 5. Answer contains markdown formatting (bold, italics, bullet points).
+  - 6. Answer references rule numbers directly.
+  - 7. Answer is less than 80 characters.
+  - 8. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Value generation over time is clearly explained (e.g., "each turn you draw
+    a card", "each activation creates a token").
+  - 2. Specific triggers/abilities are cited from oracle text.
+  - 3. Mana investment (setup cost + ongoing cost) is stated.
+  - 4. The engine's sustainability is addressed (does it run out of resources?).
+  - 5. At least one question asks about long-term value generation.
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: tribal_synergy
+  instruction: 'Generate exactly 3 Q&A pairs for TRIBAL SYNERGY questions.
+
+    Focus on: What cards of a SHARED CREATURE TYPE synergize with the primary card.
+
+    Questions should be phrased as: "What [creature type] cards synergize with [card]?"
+    or "What [creature type] tribal support works with [card]?"
+
+    Answers MUST: identify the shared creature type, name at least one tribal lord/support
+    card, explain the synergy mechanism (buffs, triggers, cost reduction), and cite
+    relevant card text.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not identify the shared creature type that enables the synergy.
+  - 2. Answer does not mention at least one tribal lord or tribal support card (e.g.,
+    "Lord of the Unreal", "Coat of Arms", "Kindred Discovery").
+  - 3. Answer does not explain HOW the tribal synergy works (e.g., "lords give +1/+1",
+    "kindred triggers draw cards").
+  - 4. Answer lists cards of the tribe without explaining their synergistic interaction.
+  - 5. Answer contains markdown formatting (bold, italics, bullet points).
+  - 6. Answer references rule numbers directly.
+  - 7. Answer is less than 80 characters.
+  - 8. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Shared creature type is explicitly identified.
+  - 2. At least one tribal lord/support card is named and its effect explained.
+  - 3. The mechanism of synergy is explained (buffs, triggers, cost reduction, etc.).
+  - 6. At least one question asks about building around a specific tribe.
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: mechanic_synergy
+  instruction: 'Generate exactly 3 Q&A pairs for MECHANIC SYNERGY questions.
+
+    Focus on: What cards work well with the primary card''s KEYWORD/MECHANIC ability.
+
+    Questions should be phrased as: "What cards work well with [card]''s [mechanic]
+    ability?" or "What synergizes with [mechanic] on [card]?"
+
+    Answers MUST: identify the shared keyword/mechanic, explain the interaction mechanism,
+    cite rules/reminder text if non-obvious, and give at least one concrete card interaction
+    example.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not identify the shared keyword/mechanic (e.g., landfall, magecraft,
+    proliferate).
+  - 2. Answer does not explain HOW the mechanic interaction works (e.g., "landfall
+    triggers twice with Yarok", "proliferate adds counters to saga").
+  - 3. Answer does not cite relevant rules or reminder text if the interaction is
+    non-obvious.
+  - 4. Answer lists cards with the mechanic without explaining the synergy.
+  - 5. Answer contains markdown formatting (bold, italics, bullet points).
+  - 6. Answer references rule numbers directly.
+  - 7. Answer is less than 80 characters.
+  - 8. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Shared keyword/mechanic is explicitly identified.
+  - 2. The interaction mechanism is explained step by step.
+  - 3. Relevant rules/reminder text is cited for non-obvious interactions.
+  - 4. At least one specific card interaction is detailed (e.g., "Rampaging Baloths
+    + Yarok = two 4/4 beasts per land").
+  - 5. At least one question asks about a specific mechanic interaction.
+  min_answer_length: 80
+  max_answer_length: 2000

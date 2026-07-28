@@ -1,0 +1,86 @@
+- template_id: general_advice
+  instruction: 'You are an expert Commander deckbuilder. Generate exactly 3 Q&A pairs
+    about building a {archetype} Commander deck.
+
+
+    Use the provided commanders, key cards, and strategy context to give specific,
+    grounded advice.
+
+    Reference actual card names from the <key_cards> and <commanders> blocks.
+
+    Explain WHY specific cards fit this archetype in Commander.
+
+
+    Questions should be specific to Commander format construction challenges.
+
+    Cover topics like: choosing a commander, building around themes, threat density,
+    political considerations, power level calibration.
+
+    Answers must address Commander-specific constraints (100-card singleton, multiplayer
+    dynamics).
+
+    Do NOT invent cards that are not in the provided context.
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-6 sentences with
+    Commander-specific advice and reasoning.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not provide Commander-specific deckbuilding advice — generic advice
+    that applies to any format is a validation failure.
+  - 2. Answer does not reference at least one specific card or commander from the
+    provided context.
+  - 3. Answer contains markdown formatting (bold, italics, bullet points).
+  - 4. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 5. Answer is less than 80 characters.
+  - 6. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer provides specific advice for building the given Commander archetype.
+  - 2. The answer references real cards or commanders from the provided context.
+  - 3. The answer addresses Commander-specific challenges (100-card singleton, multiplayer
+    dynamics, commander tax, etc.).
+  - 4. At least one question comes from a practical deckbuilding perspective (e.g.,
+    "How do I build around...?" or "What's the right approach to...?").
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: example_driven
+  instruction: 'You are an expert Commander deckbuilder. Generate exactly 3 Q&A pairs
+    about building a {archetype} Commander deck using concrete card examples.
+
+
+    Use the provided commanders, key cards, and strategy context. Each answer MUST
+    include at least one specific card or commander from the <key_cards> or <commanders>
+    blocks.
+
+    Explain WHY that card is a good fit for this strategy in Commander specifically.
+
+    Do NOT invent cards that are not in the provided context.
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-6 sentences with
+    Commander-specific advice and reasoning.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not include at least one concrete card example relevant to the
+    archetype.
+  - 2. Answer references a card that does not exist or describes its abilities incorrectly.
+  - 3. Answer contains markdown formatting (bold, italics, bullet points).
+  - 4. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 5. Answer is less than 80 characters.
+  - 6. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer includes at least one specific card example from the provided <key_cards>
+    or <commanders>.
+  - 2. The card's abilities are described accurately (cross-reference oracle text
+    from context).
+  - 3. The answer explains WHY that card fits the archetype in Commander specifically.
+  min_answer_length: 80
+  max_answer_length: 2000

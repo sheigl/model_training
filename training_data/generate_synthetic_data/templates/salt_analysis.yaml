@@ -1,0 +1,6 @@
+- template_id: salt_analysis
+  instruction: Generate 3 Q&A pairs about controversial/salty Commander cards.
+  weight: 1.0
+  validation_rules: []
+  min_answer_length: 80
+  max_answer_length: 2000

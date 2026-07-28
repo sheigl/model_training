@@ -1,0 +1,143 @@
+- template_id: mechanic_search
+  instruction: 'Generate 3 Q&A pairs for: "What cards have [mechanic/keyword]?"
+
+
+    Questions should be natural variations like:
+
+    - "What cards have [mechanic]?"
+
+    - "Which cards feature [mechanic]?"
+
+    - "Is there a card with [mechanic]?"
+
+
+    Answers MUST:
+
+    1. List 3-5 specific cards from the provided examples
+
+    2. Explain HOW each card uses the mechanic (quote oracle text)
+
+    3. Cite the relevant rule section if provided
+
+    4. Be 3-5 sentences per card mentioned
+
+    5. Use MTG notation ({T}, {W}, {U}, etc.)'
+  weight: 1.0
+  validation_rules:
+  - Answer lists 3-5 specific cards from the provided examples
+  - Answer explains how EACH card uses the mechanic with oracle text quotes
+  - Answer cites rule section when provided
+  - Answer is at least 200 characters
+  - Answer does not reference rule numbers directly (explain conversationally)
+  - Answer contains no markdown formatting
+  min_answer_length: 200
+  max_answer_length: 2000
+- template_id: tribal_search
+  instruction: 'Generate 3 Q&A pairs for: "What are the best [creature type] cards
+    for Commander?"
+
+
+    Questions should be natural variations like:
+
+    - "What are the best [tribe] cards for Commander?"
+
+    - "Which [tribe] cards should I run in my tribal deck?"
+
+    - "Top [tribe] cards for EDH?"
+
+
+    Answers MUST:
+
+    1. Mention tribal synergies (lords, tribal payoffs, kindred effects)
+
+    2. Include at least one lord effect (creature that buffs the tribe)
+
+    3. Include at least one tribal support card (non-creature that helps the tribe)
+
+    4. List 3-5 specific cards from the provided examples with EDHREC stats
+
+    5. Explain WHY each card is good for the tribe
+
+    6. Be 3-5 sentences per card'
+  weight: 1.0
+  validation_rules:
+  - Answer mentions tribal synergies (lords, payoffs, kindred)
+  - Answer includes at least one lord effect
+  - Answer includes at least one tribal support card
+  - Answer lists 3-5 specific cards with EDHREC stats
+  - Answer explains why each card is good for the tribe
+  - Answer is at least 200 characters
+  - Answer contains no markdown formatting
+  min_answer_length: 200
+  max_answer_length: 2000
+- template_id: utility_search
+  instruction: 'Generate 3 Q&A pairs for: "What cards can [utility effect]?"
+
+
+    Questions should be natural variations like:
+
+    - "What cards can [utility effect]?"
+
+    - "How do I [utility effect] in Commander?"
+
+    - "Best cards for [utility effect]?"
+
+
+    Answers MUST:
+
+    1. Solve the specific utility problem stated in the question
+
+    2. Explain HOW each card solves the problem (mechanics)
+
+    3. List 3-5 specific cards from the provided examples
+
+    4. Include EDHREC rank and price context
+
+    5. Be 3-5 sentences per card'
+  weight: 1.0
+  validation_rules:
+  - Answer solves the specific utility problem stated
+  - Answer explains how EACH card solves the problem mechanically
+  - Answer lists 3-5 specific cards from provided examples
+  - Answer includes EDHREC rank and price context
+  - Answer is at least 200 characters
+  - Answer contains no markdown formatting
+  min_answer_length: 200
+  max_answer_length: 2000
+- template_id: commander_search
+  instruction: 'Generate 3 Q&A pairs for: "What commanders support [theme/mechanic]?"
+
+
+    Questions should be natural variations like:
+
+    - "What commanders support [theme]?"
+
+    - "Best commanders for a [theme] deck?"
+
+    - "Which legendary creatures work with [mechanic]?"
+
+
+    Answers MUST:
+
+    1. Check color identity of each commander
+
+    2. Explain commander''s synergy with the theme/mechanic
+
+    3. List 3-5 legendary creatures from the provided examples
+
+    4. Include EDHREC deck count and salt score
+
+    5. Explain HOW the commander enables the theme (abilities, color identity)
+
+    6. Be 3-5 sentences per commander'
+  weight: 1.0
+  validation_rules:
+  - Answer checks color identity of each commander
+  - Answer explains commander's synergy with theme/mechanic
+  - Answer lists 3-5 legendary creatures from provided examples
+  - Answer includes EDHREC deck count and salt score
+  - Answer explains HOW commander enables the theme
+  - Answer is at least 200 characters
+  - Answer contains no markdown formatting
+  min_answer_length: 200
+  max_answer_length: 2000

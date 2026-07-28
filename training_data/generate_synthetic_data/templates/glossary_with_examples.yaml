@@ -1,0 +1,7 @@
+- template_id: glossary_example
+  instruction: Generate 3 Q&A pairs about this MTG term. Include the definition AND
+    a concrete in-game example.
+  weight: 1.0
+  validation_rules: []
+  min_answer_length: 80
+  max_answer_length: 2000

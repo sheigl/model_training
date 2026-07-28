@@ -113,7 +113,7 @@ Each generator implements the standard `BaseGenerator[str]` contract:
 
 All 7 are exported from `generators/__init__.py` and returned by `MTGDomain.get_generators()`.
 
-**Note**: `GenerateCommanderBuilding` (12 archetypes, source: `commander_building`) is separate — it still uses the legacy CLI pattern and has not yet been ported to TrainForge.
+**Note**: `GenerateCommanderBuilding` (12 archetypes, source: `commander_building`) is a standalone generator that hasn't been consolidated into the main generator registry.
 
 ### Template System
 
@@ -123,8 +123,100 @@ Each generator defines `TEMPLATES: ClassVar[list[TemplateConfig]]` with:
 - **task_instruction**: The prompt instruction for this template
 - **weight**: Selection weight for weighted random sampling
 - **validation_rules**: Template-specific HARD REJECT rules
+- **version**: Optional `int | None` — the template version loaded from the store (Story 045)
 
 Template selection is weighted random, allowing generators to balance between different output styles (e.g., definition-focused vs. practical-application for terminology).
+
+### YAML Template System (Stories 001–007)
+
+The legacy CLI loads generation and validator templates from local YAML files instead of hardcoded Python constants or a MongoDB store. Templates live in `training_data/generate_synthetic_data/templates/` alongside the package code, making them easy to inspect, edit, and version-control with git.
+
+#### Directory Layout
+
+```
+templates/
+    shared.yaml                    # scaffolding blocks + shared validators
+    comparison_validator.yaml      # card comparison validator override
+    combo_query.yaml               # generation templates for combo queries
+    card_search.yaml               # ...etc (one file per generator category)
+    commander_rules.yaml
+    terminology.yaml
+    ...                            # 27 total category files
+```
+
+- **`shared.yaml`** — Cross-generator scaffolding blocks (`system_message`, `notation_legend`, `requirements_base`, `output_format`, `card_comparison_instructions`) and shared validator prompts (`qa_validation`, `validator`).
+- **`comparison_validator.yaml`** — Per-generator validator override for the comparison category.
+- **Category files** — One YAML file per generator (e.g., `combo_query.yaml`, `meta_knowledge.yaml`), each containing a list of template definitions with `template_id`, `instruction`, `weight`, and optional `validation_rules`.
+
+#### File Schema
+
+Each category YAML file has the shape:
+
+```yaml
+templates:
+  - template_id: how_does_it_work
+    instruction: "Generate exactly 3 Q&A pairs explaining this combo..."
+    weight: 1
+    validation_rules:
+      - "Must mention both cards by name"
+      - "Each answer must be at least 2 sentences"
+```
+
+Shared scaffolding blocks in `shared.yaml` use top-level keys matching the scaffold cache keys:
+
+```yaml
+system_message: |
+  You are a Magic: The Gathering expert...
+notation_legend: |
+  {T} = tap, {C} = card cost, ...
+requirements_base: |
+  - CRITICAL — Trigger ordering...
+output_format: |
+  <qa>...</qa>
+```
+
+#### Template Loading
+
+`YamlTemplateLoader` (in `yaml_template_loader.py`) reads templates at construction time from the configured directory. Its public API mirrors the old `TemplateStore` surface:
+
+- `get_latest(generator, template_id, template_type)` — returns a dict compatible with `TemplateConfig`
+- `list_versions(generator, template_id, template_type)` — returns `[]` (no versioning in YAML)
+- `get_scaffolding(key)` — returns shared block text by key
+- `get_validator(category)` — returns validator prompt for the given category
+
+The loader is wired into `BaseGenerator` via the `yaml_loader` parameter. The fallback chain for template resolution is:
+
+1. **YAML loader** (primary) — loads from local YAML files
+2. **MongoDB store** (deprecated, kept as fallback) — reads from `synthetic_metrics.templates` if available
+3. **Class-level constant** (`TEMPLATES`) — hardcoded fallback
+
+If the YAML directory is missing, construction raises a `ValueError`. If the MongoDB store is also unavailable, generators fall back to their class-level `TEMPLATES` constants.
+
+#### Scaffolding Cache
+
+Shared blocks are loaded once at startup into a module-level `_SCAFFOLDING_CACHE` in `common.py` via `init_scaffolding(yaml_loader)`. All ~20 `build_*_prompt` functions read shared blocks via `_get_scaffold(key, fallback)`, falling back to `constants.py` imports when the cache is empty. `reset_scaffolding_cache()` is provided for tests.
+
+#### CLI Flag
+
+A single `--templates-dir` flag (defaulting to the package's `templates/` directory) lets operators point at a custom templates root:
+
+```bash
+python -m training_data.generate_synthetic_data.main --all --templates-dir /path/to/templates
+```
+
+#### Seed Script (`--to-yaml`)
+
+`seed_templates.py` supports a `--to-yaml` mode that regenerates all YAML template files from Python constants. This is the canonical way to bootstrap or update the YAML templates after code changes:
+
+```bash
+python -m training_data.generate_synthetic_data.seed_templates --to-yaml
+```
+
+The existing MongoDB seeding path remains available but emits a `DeprecationWarning`.
+
+#### Backward Compatibility
+
+All class-level `TEMPLATES` constants are retained as the ultimate fallback. The old `TemplateStore` class and its MongoDB-dependent tests have been trimmed to only keep the pure dict-to-`TemplateConfig` conversion test (`TestToTemplateConfig`). Per-generator version override flags were removed; operators who need version pinning should edit the YAML files directly or use `--templates-dir` with a different directory.
 
 ### Validation Pipeline
 
@@ -171,7 +263,7 @@ MongoDB (source data)
 
 ### MTGDataAccess — Domain Models
 
-`trainforge/src/trainforge/domains/mtg/models.py` contains 22 Pydantic v2 domain models ported from the legacy CLI (`training_data/generate_synthetic_data/domain_models.py`). All models are self-contained with `__all__` export and no imports from other TrainForge modules:
+`training_data/generate_synthetic_data/domain_models.py` contains 22 Pydantic v2 domain models. All models are self-contained with `__all__` export:
 
 | Model | Description |
 |-------|-------------|
@@ -202,7 +294,7 @@ Key features: field aliases for MongoDB `_id`→`id` mapping, JSON-stringified a
 
 ### MTGDataAccess Methods
 
-`MTGDataAccess` provides typed access to all MongoDB collections used by generators. It lives at `trainforge/src/trainforge/domains/mtg/data_source.py` and extends `MongoDataSource`.
+`MTGDataAccess` provides typed access to all MongoDB collections used by generators. It lives in `training_data/generate_synthetic_data/data_access.py`.
 
 **Dual collection namespace** design:
 - **Simple methods** (preserved from original): query `synthetic_queries.*` collections (e.g., `get_cards()`, `get_articles()`, `get_rules()`, `get_glossary()`, `get_edhrec_data()`)
@@ -284,6 +376,7 @@ Uses `LRUCacheWithTTL` (thread-safe, TTL-aware) for high-traffic lookups:
 - Pass/fail rates (first attempt, after fix)
 - Fix recovery rate
 - Per-category breakdowns
+- **Template version tracking** (Story 045): `template_versions` and `validator_template_versions` dicts recording which template version was used for each generation. With the YAML template system (Stories 001–007), these fields are always `None` since YAML templates have no versions, but the infrastructure is retained for backward compatibility with MongoDB-trace data.
 
 Metrics are stored in `synthetic_metrics.generator_runs` with a shared `run_id` per process.
 
@@ -291,7 +384,7 @@ Metrics are stored in `synthetic_metrics.generator_runs` with a shared `run_id` 
 
 Every Q&A item generated can have a full LLM interaction trace stored in `synthetic_metrics.generation_traces`. This captures the complete lifecycle — from prompt construction through validation rounds to final outcome — enabling debugging, analysis, and optimization of the generation pipeline.
 
-**Trace per template iteration**: One `GenerationTrace` document is created per template iteration (not per Q&A pair). A single template call may produce multiple Q&A items, all sharing the same trace.
+**Trace per template iteration**: One `GenerationTrace` document is created per template iteration (not per Q&A pair). A single template call may produce multiple Q&A items, all sharing the same trace. Each trace records which template version was used for generation and validation (Story 045), enabling version-to-version performance comparison.
 
 **Trace lifecycle:**
 1. `BaseGenerator.generate()` creates a `GenerationTrace` at the start of each template iteration
@@ -314,6 +407,8 @@ Every Q&A item generated can have a full LLM interaction trace stored in `synthe
   "item_id": "uuid",
   "category": "combo_query",
   "source_template": "how_does_it_work",
+  "template_version": null,        // always null with YAML templates; recorded for MongoDB-trace backward compat
+  "validator_template_version": null, // always null with YAML templates; recorded for MongoDB-trace backward compat
   "generator_name": "GenerateComboQueries",
   "generation_model": "qwen3.6:27b",
   "validation_model": "qwen3.6:27b",
@@ -355,12 +450,14 @@ Every Q&A item generated can have a full LLM interaction trace stored in `synthe
 **Indexes:**
 - Compound: `(run_id, category, final_outcome)` — For filtering traces by run, category, and outcome
 - Single: `item_id` — For looking up traces by Q&A item
+- Compound: `(category, template_version)` — For version-based analytics on traces (Story 045; deprecated with YAML templates since versions are always `null`)
+- Compound: `(run_id, template_version)` — For version-based analytics per run (Story 045; deprecated with YAML templates since versions are always `null`)
 
-### Domain Models (`domains/mtg/models.py`)
+### Domain Models (`training_data/generate_synthetic_data/domain_models.py`)
 
-The MTG domain models are ported from the legacy CLI and placed under `trainforge/src/trainforge/domains/mtg/` for proper package imports. Key design choices:
+The MTG domain models are defined in the legacy CLI. Key design choices:
 
-- **Self-contained module**: All 22 models in a single file with `__all__` export — no imports from other TrainForge modules, enabling standalone use
+- **Self-contained module**: All 22 models in a single file with `__all__` export, enabling standalone use
 - **JSON-stringified array parsing**: `_convert_doc_to_model` pre-parses array fields (`colors`, `colorIdentity`, `keywords`, `subtypes`, `supertypes`, `frameEffects`) before Pydantic construction, fixing silent data corruption when `mtg_json` stores arrays as JSON strings
 - **Field aliases**: MongoDB `_id` mapped to Pydantic `id` via `Field(validation_alias="_id")`
 - **Computed properties**: `cmc` (from mana cost), `best_price` (min of USD/EUR/TIX), `salt_level` (from EDHREC salt score)
@@ -393,155 +490,5 @@ The enriched data access layer (Story 11) adds aggregation pipelines on top of t
 
 7. **Generation traces stored separately**: Traces live in `synthetic_metrics.generation_traces` (not embedded in Q&A docs). Full prompt text is captured (not just hashes). Traces are batch-flushed (50 per batch) to minimize MongoDB write overhead. Traces are per template iteration, not per Q&A pair.
 
----
 
-## TrainForge — Generic Synthetic Data Generation Framework
-
-TrainForge (`trainforge/`) is a **generic** synthetic data generation framework extracted from the MTG-specific codebase. It provides a web interface (Streamlit) and pluggable domain architecture so new knowledge domains can be added without modifying core code.
-
-### Relationship to Legacy Code
-
-The legacy `training_data/generate_synthetic_data/` system is MTG-specific with hardcoded generators. TrainForge generalizes the proven patterns into:
-- **ABC-based plugin system** — domains implement interfaces, not subclass a monolithic base
-- **YAML-driven configuration** — templates, validation rules, and domain metadata live in YAML files
-- **Multi-provider LLM support** — Ollama, Anthropic, OpenAI selected via config (not hardcoded)
-- **Web-first UI** — Streamlit replaces CLI for day-to-day operations
-
-### Overall Design
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
-│  Domain      │────▶│  Generator   │────▶│ LLM Client   │────▶│  Validator   │
-│  Plugin      │     │  BaseGen[T]  │     │ (multi-      │     │  + Regen     │
-│  (ABC)       │     │              │     │  provider)   │     │  Loop        │
-└─────────────┘     └──────────────┘     └─────────────┘     └──────┬───────┘
-      │                        │                                        │
-      ▼                        ▼                                        ▼
-┌─────────────┐     ┌──────────────┐                          ┌──────────────┐
-│  DataSource  │     │ Validation   │                          │ MongoDB       │
-│  (ABC)       │     │ Metrics      │                          │ Storage       │
-│              │     │ + Traces     │                          │ + JSONL Export│
-└─────────────┘     └──────────────┘                          └──────────────┘
-```
-
-### Core Abstractions
-
-#### DataSource ABC (`data_source.py`)
-
-Defines the interface for data access:
-- `find()`, `find_one()` — Document query helpers
-- `aggregate(collection, pipeline, allow_disk_use=True) → list[dict]` — MongoDB aggregation pipeline support (added in Story 11)
-
-The base implementation is `MongoDataSource`, which provides:
-- Connection management (URI, database name from config)
-- Generic collection access via `get_collection(name)`
-- All ABC method implementations with graceful `None` collection handling
-- `aggregate()` with `allowDiskUse=True` default for large pipeline results
-
-Domain plugins extend this to add typed methods (e.g., `MTGDataAccess.get_cards()`, `get_rules()`).
-
-#### DomainPlugin ABC (`domain.py`)
-
-Defines the interface for a knowledge domain. Each plugin provides:
-- **`name`** — Unique identifier (e.g., `"mtg"`)
-- **`display_name`** — Human-readable label (e.g., "Magic: The Gathering")
-- **`templates`** — List of `TemplateConfig` loaded from YAML
-- **`data_source`** — Domain-specific data access instance
-- **`system_message`** — System prompt for LLM generation
-- **`create_generator()`** — Factory method returning a configured `BaseGenerator[T]`
-
-Domains auto-register via `DomainRegistry`, which reads `config/domains.yaml` and dynamically imports each domain's plugin class.
-
-#### BaseGenerator[T] (`generator.py`)
-
-Template method pattern (same as legacy but with framework-level generics):
-- Subclasses implement: `get_data_batches()`, `build_prompt()`, `get_source_category()`, `build_context()`
-- Base class handles: generation loop, progress reporting (rich), validation integration, trace callbacks, metrics collection
-- Factory function `create_generator(domain, model_config)` constructs the right generator for a domain
-
-#### Multi-Provider LLM Client (`query_model.py`)
-
-Routes requests to Ollama, Anthropic, or OpenAI based on the `Model` config. Supports:
-- Streaming output to stderr during generation
-- Accepts either a `Model` object or raw string params (model name, base URL, API key)
-- Validation and regeneration calls use the same client with different prompts
-
-#### Validator (`validator.py`)
-
-Domain-agnostic validation loop:
-1. Scores generated Q&A against template-specific rules
-2. If score is below threshold, generates a suggested fix prompt
-3. Retries up to 3 times before accepting or rejecting
-4. Records all rounds in `GenerationTrace` for debugging
-
-### Plugin System — Adding a New Domain
-
-To add a new domain (e.g., "legal" for legal Q&A generation):
-
-1. **Create directory**: `domains/legal/`
-2. **Implement plugin**: `__init__.py` with class extending `DomainPlugin`, auto-registering via decorator or registry call
-3. **Define config**: `config.yaml` with domain metadata, MongoDB collection mappings
-4. **Define templates**: `templates.yaml` with categories, instructions, validation rules per template
-5. **(Optional) Extend data source**: `data_source.py` extending `MongoDataSource` with typed query methods
-6. **Register in config**: Add entry to `config/domains.yaml`:
-
-```yaml
-domains:
-  - name: legal
-    module: domains.legal
-    class: LegalDomain
-```
-
-No core framework code changes are needed.
-
-### UI Architecture (`src/trainforge/ui/`)
-
-Streamlit-based web interface with session state management:
-
-- **`app.py`** — Entry point; initializes config, MongoDB connection, domain registry in `st.session_state`; renders welcome dashboard
-- **Sidebar** (`components/sidebar.py`) — Shared across all pages: navigation menu, connection status indicator, quick stats (total items, domains loaded)
-- **Pages** use Streamlit's file-based routing convention (`01_`, `02_`, etc.)
-
-Session state flow:
-```
-app startup → load config → connect MongoDB → discover domains → populate session_state
-page loads → read from session_state → render UI → user actions trigger generation/export
-generation  → BaseGenerator runs in background → progress updates via st.progress/st.status
-export      → training.py JSONL exporter → downloads file to browser
-```
-
-### Configuration (`config.py`)
-
-YAML-based config with environment variable interpolation:
-- `${ENV_VAR}` syntax replaced at load time (e.g., `${MONGO_URI}`, `${ANTHROPIC_API_KEY}`)
-- `AppConfig` singleton accessed via `get_config()` — caches parsed config for the session
-- Config files: main `config.yaml` + per-domain configs in their directories
-
-### Data Flow Summary
-
-```
-Domain Plugin (templates, system_message)
-  → BaseGenerator.get_data_batches() from DataSource
-    → build_prompt() with TemplateConfig
-      → query_model.py → LLM provider (Ollama/Anthropic/OpenAI)
-        → validator.py scores + regenerates if needed
-          → save_item() callback → MongoDB collection
-            → training.py exports to JSONL for fine-tuning
-```
-
-### Test Organization (`tests/`)
-
-- **`core/`** — 8 test files covering models, config, domain registry, generator, training export, data source, integration scenarios, config file validation
-- **`ui/`** — 7 test files covering each Streamlit page and the sidebar component
-- **`domains/mtg/`** — 1 test file (`test_data_source.py`) with 40 unit tests (12 test classes) covering:
-  - `LRUCacheWithTTL` (thread safety, TTL eviction, stats)
-  - `retry_on_transient_error` (decorator with exponential backoff)
-  - Filter translation (`_translate_card_filters`)
-  - Pipeline builders (`_build_card_enrichment_pipeline`, `_build_combo_pipeline`, `_build_commander_pipeline`)
-  - Doc-to-model conversion (`_convert_doc_to_model` with JSON string fields)
-  - All enrichment, lookup, and analytics methods with mocked MongoDB
-  - Cache integration (card name cache, keyword taxonomy cache)
-  - EDHREC rank queries and edge cases
-- **`conftest.py`** — Shared fixtures (mock domains, mock data sources, config overrides)
-
-**Total**: 301 tests (300 pass, 1 pre-existing UI failure unrelated to domain logic)
+**Total**: 368 tests passing (20 pre-existing failures unchanged).

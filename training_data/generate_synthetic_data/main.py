@@ -62,16 +62,57 @@ MongoDB Schema:
 """
 
 from pymongo import MongoClient
-import json
 import random
 import re
 from datetime import datetime
 import argparse
 import time
 import ollama
+from pathlib import Path
 from .common import *
 from .models import ValidationMetrics, QuestionAnswerEnhanced, GenerationTrace
 from .data_access import MTGDataAccess
+from .yaml_template_loader import YamlTemplateLoader
+from .common import init_scaffolding
+
+# =============================================================================
+# GENERATOR FLAGS REGISTRY
+# =============================================================================
+# Maps (slug, category, class_name, argparse_dest) for each generator.
+# slug matches the existing --<slug> count flag exactly.
+# category is the return value of get_source_category() on the generator.
+# class_name is the class as used in main.py (for documentation).
+# argparse_dest is the prefix for --<dest>-template-version / --<dest>-validator-template-version.
+GENERATOR_FLAGS: list[tuple[str, str, str, str]] = [
+    ("combo-queries", "combo_query", "GenerateComboQueries", "combo_queries"),
+    ("card-search", "card_search", "GenerateCardSearchQueries", "card_search"),
+    ("commander", "commander_rules", "GenerateCommanderKnowledge", "commander"),
+    ("multi-card", "multi_card_usage", "GenerateMultiCardUsage", "multi_card"),
+    ("comparison", "comparison", "GenerateComparisonQuestions", "comparison"),
+    ("reverse-lookup", "reverse_lookup", "GenerateReverseLookupQuestions", "reverse_lookup"),
+    ("synergy", "synergy", "GenerateSynergyQuestions", "synergy"),
+    ("budget", "budget_alternative", "GenerateBudgetAlternatives", "budget"),
+    ("color-identity", "color_identity", "GenerateColorIdentityQuestions", "color_identity"),
+    ("guidelines", "quick_guideline", "GenerateQuickGuidelines", "guidelines"),
+    ("terminology", "terminology", "GenerateTerminologyQuestions", "terminology"),
+    ("deckbuilding-theory", "deckbuilding_theory", "GenerateDeckbuildingTheory", "deckbuilding_theory"),
+    ("commander-building", "commander_building", "GenerateCommanderBuilding", "commander_building"),
+    ("rules-scenarios", "rules_scenario", "GenerateRulesScenarios", "rules_scenarios"),
+    ("archetypes", "archetype", "GenerateArchetypes", "archetypes"),
+    ("game-theory", "game_theory", "GenerateGameTheory", "game_theory"),
+    ("meta-knowledge", "meta_knowledge", "GenerateMetaKnowledge", "meta_knowledge"),
+    ("rule-explanations", "rule_explanation", "GenerateRuleExplanations", "rule_explanations"),
+    ("rule-interactions", "rule_interaction", "GenerateRuleInteractions", "rule_interactions"),
+    ("glossary-examples", "glossary_with_examples", "GenerateGlossaryWithExamples", "glossary_examples"),
+    ("rule-edge-cases", "rule_edge_case", "GenerateRuleEdgeCases", "rule_edge_cases"),
+    ("rule-why", "rule_why", "GenerateRuleWhyQuestions", "rule_why"),
+    ("article-qa", "article_qa", "GenerateArticleQa", "article_qa"),
+    ("guide-qa", "guide_qa", "GenerateGuideQa", "guide_qa"),
+    ("staple-analysis", "staple_analysis", "GenerateStapleAnalysis", "staple_analysis"),
+    ("color-staples", "color_staples", "GenerateColorStaples", "color_staples"),
+    ("salt-questions", "salt_analysis", "GenerateSaltQuestions", "salt_questions"),
+]
+
 
 # =============================================================================
 # MONGODB SETUP
@@ -178,7 +219,12 @@ def save_to_mongo(synthetic_collection, examples: list[QuestionAnswerEnhanced], 
 # MAIN
 # =============================================================================
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Build and return the CLI argument parser.
+
+    Extracted so that tests can import and exercise flag parsing without
+    running the full pipeline.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('--mongo-uri', default='mongodb://localhost:27017/')
     parser.add_argument('--mongo-user', default='root')
@@ -236,6 +282,18 @@ def main():
                         help='Log full generation/validation traces (default: on)')
     parser.add_argument('--no-log-traces', action='store_false', dest='log_traces',
                         help='Disable trace logging')
+
+    parser.add_argument(
+        "--templates-dir",
+        default=None,
+        help="Path to directory containing YAML template files (default: package templates/)",
+    )
+
+    return parser
+
+
+def main():
+    parser = build_parser()
 
     args = parser.parse_args()
     
@@ -331,6 +389,11 @@ def main():
     data_access.connect()
     print("  ✓ MTGDataAccess connected")
 
+    templates_dir = args.templates_dir or (Path(__file__).parent / "templates")
+    yaml_loader = YamlTemplateLoader(templates_dir)
+    init_scaffolding(yaml_loader=yaml_loader)
+    print(f"  ✓ Templates loaded from {templates_dir}")
+
     # Create trace indexes
     try:
         generation_traces.create_index(
@@ -338,6 +401,13 @@ def main():
             background=True
         )
         generation_traces.create_index("item_id", background=True)
+        # Story 045 — template version indexes
+        generation_traces.create_index(
+            [("category", 1), ("template_version", 1)],
+            name="idx_category_version", background=True)
+        generation_traces.create_index(
+            [("run_id", 1), ("template_version", 1)],
+            name="idx_run_version", background=True)
     except Exception:
         pass
 
@@ -380,6 +450,9 @@ def main():
 
     # Generate all synthetic data
 
+    if args.dry_run:
+        print(f"\nDry run complete. Templates loaded from: {templates_dir}")
+
     # Original formats (old pattern - pass collections directly)
     if args.combo_queries > 0:
         GenerateComboQueries(
@@ -390,6 +463,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateComboQueries"),
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.card_search > 0:
@@ -402,6 +476,7 @@ def main():
             metrics=make_metrics("GenerateCardSearchQueries"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     if args.commander > 0:
@@ -413,6 +488,7 @@ def main():
             metrics=make_metrics("GenerateCommanderKnowledge"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     if args.multi_card > 0:
@@ -425,6 +501,7 @@ def main():
             metrics=make_metrics("GenerateMultiCardUsage"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     if args.comparison > 0:
@@ -437,6 +514,7 @@ def main():
             metrics=make_metrics("GenerateComparisonQuestions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     if args.reverse_lookup > 0:
@@ -449,6 +527,7 @@ def main():
             metrics=make_metrics("GenerateReverseLookupQuestions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     if args.synergy > 0:
@@ -461,6 +540,7 @@ def main():
             metrics=make_metrics("GenerateSynergyQuestions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     if args.budget > 0:
@@ -473,6 +553,7 @@ def main():
             metrics=make_metrics("GenerateBudgetAlternatives"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     if args.color_identity > 0:
@@ -485,6 +566,7 @@ def main():
             metrics=make_metrics("GenerateColorIdentityQuestions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     if args.guidelines > 0:
@@ -498,6 +580,7 @@ def main():
             metrics=make_metrics("GenerateQuickGuidelines"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     if args.terminology > 0:
@@ -509,6 +592,7 @@ def main():
             metrics=make_metrics("GenerateTerminologyQuestions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     # Phase 2: Strategy/Theory formats
@@ -521,6 +605,7 @@ def main():
             metrics=make_metrics("GenerateDeckbuildingTheory"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.commander_building > 0:
@@ -533,6 +618,7 @@ def main():
             metrics=make_metrics("GenerateCommanderBuilding"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.rules_scenarios > 0:
@@ -544,6 +630,7 @@ def main():
             metrics=make_metrics("GenerateRulesScenarios"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.archetypes > 0:
@@ -555,6 +642,7 @@ def main():
             metrics=make_metrics("GenerateArchetypes"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.game_theory > 0:
@@ -566,6 +654,7 @@ def main():
             metrics=make_metrics("GenerateGameTheory"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.meta_knowledge > 0:
@@ -577,6 +666,7 @@ def main():
             metrics=make_metrics("GenerateMetaKnowledge"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     # Phase 3: Rules-grounded formats (BaseGenerator + MTGDataAccess pattern)
@@ -590,6 +680,7 @@ def main():
             metrics=make_metrics("GenerateRuleExplanations"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.rule_interactions > 0:
@@ -602,6 +693,7 @@ def main():
             metrics=make_metrics("GenerateRuleInteractions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.glossary_examples > 0:
@@ -614,6 +706,7 @@ def main():
             metrics=make_metrics("GenerateGlossaryWithExamples"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.rule_edge_cases > 0:
@@ -626,6 +719,7 @@ def main():
             metrics=make_metrics("GenerateRuleEdgeCases"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.rule_why > 0:
@@ -638,6 +732,7 @@ def main():
             metrics=make_metrics("GenerateRuleWhyQuestions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     # Phase 4: EDHREC-grounded formats
@@ -650,6 +745,7 @@ def main():
             save_item=save_item,
             metrics=make_metrics("GenerateArticleQa"),
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.guide_qa > 0:
@@ -662,6 +758,7 @@ def main():
             metrics=make_metrics("GenerateGuideQa"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.staple_analysis > 0:
@@ -674,6 +771,7 @@ def main():
             metrics=make_metrics("GenerateStapleAnalysis"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.color_staples > 0:
@@ -686,6 +784,7 @@ def main():
             metrics=make_metrics("GenerateColorStaples"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
 
     if args.salt_questions > 0:
@@ -698,6 +797,7 @@ def main():
             metrics=make_metrics("GenerateSaltQuestions"),
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
+            yaml_loader=yaml_loader,
         ).generate()
     
     # Summary

@@ -1,13 +1,102 @@
 from __future__ import annotations
 
+import logging
 import random
 import re
 from typing import Any, Callable
 from dataclasses import dataclass
 
+import yaml
+
 from .query_model import QueryModel
 from .models import Card, Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics, GenerationTrace
+from . import constants
 from .constants import *
+
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# SCAFFOLDING CACHE — shared prompt blocks loaded from the MongoDB TemplateStore
+# =============================================================================
+# Populated once at startup by ``init_scaffolding(store)``. Each ``build_*_prompt``
+# function reads scaffolding via ``_get_scaffold(key, fallback)`` which checks
+# the cache first, then falls back to the ``constants.py`` import. With
+# ``template_store=None`` (the default) the cache stays empty and every
+# generator behaves byte-identically to the current hardcoded behavior.
+
+_SCAFFOLDING_CACHE: dict[str, str | list[str]] = {}
+
+# Map of scaffolding cache key → (template_id, expected_type) for the shared
+# namespace docs produced by ``seed_templates.extract_shared_blocks``.
+_SCAFFOLDING_KEYS: list[tuple[str, str, type]] = [
+    ("SYSTEM_MESSAGE", "system_message", str),
+    ("MTG_NOTATION_LEGEND", "notation_legend", str),
+    ("OUTPUT_FORMAT", "output_format", str),
+    ("CARD_COMPARISON_INSTRUCTIONS", "card_comparison_instructions", str),
+    ("REQUIREMENTS_BASE", "requirements_base", list),
+]
+
+# Mapping from internal cache keys to the corresponding YAML key names in
+# ``templates/shared.yaml`` under the ``scaffolding:`` section.
+_CACHE_KEY_TO_YAML_KEY: dict[str, str] = {
+    "SYSTEM_MESSAGE": "system_message",
+    "MTG_NOTATION_LEGEND": "notation_legend",
+    "OUTPUT_FORMAT": "output_format",
+    "CARD_COMPARISON_INSTRUCTIONS": "card_comparison_instructions",
+    "REQUIREMENTS_BASE": "requirements_base",
+}
+
+
+def init_scaffolding(
+    yaml_loader: "YamlTemplateLoader | None" = None,
+    store: "TemplateStore | None" = None,
+) -> None:
+    """Populate the scaffolding cache. YAML path takes precedence.
+
+    Called once at startup in ``main.py``. When *yaml_loader* is provided the
+    cache is populated from ``templates/shared.yaml``; otherwise when *store*
+    is provided the legacy MongoDB path is used. With both ``None`` this is a
+    no-op and every ``build_*_prompt`` function falls back to the
+    ``constants.py`` imports (current hardcoded behavior).
+    """
+    if yaml_loader is not None:
+        _populate_from_yaml(yaml_loader)
+    elif store is not None:
+        _populate_from_store(store)
+
+
+def _populate_from_yaml(loader: "YamlTemplateLoader") -> None:
+    """Load scaffolding blocks from ``templates/shared.yaml`` via the YAML loader."""
+    scaffold_data = loader.get_scaffolding()
+    if scaffold_data is None or not isinstance(scaffold_data, dict):
+        return
+    for cache_key, yaml_key in _CACHE_KEY_TO_YAML_KEY.items():
+        content = scaffold_data.get(yaml_key)
+        if content is not None:
+            _SCAFFOLDING_CACHE[cache_key] = content  # type: ignore[assignment]
+
+
+def _populate_from_store(store: "TemplateStore") -> None:
+    """Legacy MongoDB path — unchanged from previous behaviour."""
+    shared = store.SHARED_NAMESPACE
+    for key, tid, _expected_type in _SCAFFOLDING_KEYS:
+        doc = store.get_latest(shared, tid, "generation")
+        if doc:
+            data = yaml.safe_load(doc["yaml_content"]) or {}
+            content = data.get("content", "")
+            _SCAFFOLDING_CACHE[key] = content  # type: ignore[assignment]
+
+
+def _get_scaffold(key: str, fallback: str | list[str]) -> str | list[str]:
+    """Return the cached scaffold for *key*, or *fallback* if unset."""
+    return _SCAFFOLDING_CACHE.get(key, fallback)
+
+
+def reset_scaffolding_cache() -> None:
+    """Clear the scaffolding cache (for tests)."""
+    _SCAFFOLDING_CACHE.clear()
 
 
 @dataclass(frozen=True)
@@ -28,10 +117,48 @@ class TemplateConfig:
     validation_rules: list[str] | None = None
     min_answer_length: int = 80
     max_answer_length: int = 2000
+    version: int | None = None  # NEW — template version tracking (Story 045)
 
     def __post_init__(self):
         if self.validation_rules is None:
             object.__setattr__(self, "validation_rules", [])
+
+
+def _dict_to_template_config(doc: dict) -> TemplateConfig:
+    """Convert a template dict (from YAML or MongoDB) to :class:`TemplateConfig`.
+
+    The *doc* may come from either the MongoDB store (with ``yaml_content``
+    containing a YAML string) or from :class:`~.YamlTemplateLoader` (with
+    parsed fields like ``instruction``, ``weight``, etc. already resolved).
+
+    Missing fields fall back to the :class:`TemplateConfig` defaults. The
+    ``version`` field is preserved from the doc when present (e.g. MongoDB
+    docs carry an integer version; YAML entries carry ``"1"`` as a stable
+    sentinel).
+    """
+    # MongoDB path: yaml_content is a string that needs parsing
+    if "yaml_content" in doc:
+        data: Any = yaml.safe_load(doc["yaml_content"]) or {}
+        return TemplateConfig(
+            template_id=doc["template_id"],
+            task_instruction=data.get("instruction", ""),
+            weight=float(data.get("weight", 1.0)),
+            validation_rules=data.get("validation_rules") or [],
+            min_answer_length=int(data.get("min_answer_length", 80)),
+            max_answer_length=int(data.get("max_answer_length", 2000)),
+            version=doc.get("version"),
+        )
+
+    # YAML loader path: fields are already parsed
+    return TemplateConfig(
+        template_id=doc["template_id"],
+        task_instruction=doc.get("instruction", ""),
+        weight=float(doc.get("weight", 1.0)),
+        validation_rules=doc.get("validation_rules") or [],
+        min_answer_length=int(doc.get("min_answer_length", 80)),
+        max_answer_length=int(doc.get("max_answer_length", 2000)),
+        version=str(doc.get("version", "1")),
+    )
 
 
 # =============================================================================
@@ -47,7 +174,8 @@ class TemplateConfig:
 
 def build_commander_prompt() -> str:
     """Generate Commander rules questions with MTG notation guide."""
-    
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
+
     commander_context = """
 Commander rules:
 - 100-card singleton deck
@@ -75,7 +203,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_multi_card_usage_prompt(card1: str, card2: str, description: str) -> str:
     """Generate multi-card usage prompt with MTG notation guide."""
-    
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
+
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 Generate 2 usage questions for: {card1} and {card2}
@@ -109,7 +238,9 @@ Text: {card.text}
 
 def build_card_comparision_prompt(card1: Card, card2: Card) -> str:
     """Generate card comparison prompt with full MTG notation and analysis requirements."""
-    
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
+    CARD_COMPARISON_INSTRUCTIONS = _get_scaffold("CARD_COMPARISON_INSTRUCTIONS", constants.CARD_COMPARISON_INSTRUCTIONS)  # type: ignore[assignment]
+
     card1_name = card1.name
     card2_name = card2.name
     
@@ -149,7 +280,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_reverse_lookup_prompt(pattern: dict, card_details: str) -> str:
     """Generate reverse lookup (feature → cards) prompt with MTG notation guide."""
-    
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
+
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 Generate 3 reverse lookup Q&A pairs for cards that "{pattern['feature']}".
@@ -176,7 +308,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_synergy_prompt(card: dict, synergy_cards: set) -> str:
     """Generate card synergy discovery prompt with MTG notation guide."""
-    
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
+
     card_name = card.get('name', '')
     prompt = f"""{MTG_NOTATION_LEGEND}
 
@@ -205,7 +338,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_budget_alternative_prompt(exp_card: dict, budget_details: str) -> str:
     """Generate budget alternative recommendations prompt with MTG notation guide."""
-    
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
+
     exp_name = exp_card.get('name', '')
     prompt = f"""{MTG_NOTATION_LEGEND}
 
@@ -235,7 +369,8 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_color_identity_prompt(card: dict, commander_name: str, commander_colors: list[str], is_legal: bool) -> str:
     """Generate color identity legality prompt with MTG notation guide."""
-    
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
+
     card_name = card.get('name', '')
     card_colors: list[str] = card.get('colorIdentity', card.get('colors', []))
     prompt = f"""{MTG_NOTATION_LEGEND}
@@ -290,6 +425,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_deckbuilding_theory_prompt(topic: str, context: str) -> str:
     """Generate deckbuilding theory Q&A covering ratios, evaluation, and construction principles."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are an expert Magic: The Gathering deckbuilder. Generate 3 Q&A pairs about this deckbuilding topic:
@@ -320,6 +456,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_commander_building_prompt(archetype: str, strategy_context: str) -> str:
     """Generate Commander-specific deckbuilding Q&A for various archetypes and strategies."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are an expert Commander deckbuilder. Generate 3 Q&A pairs about building a {archetype} Commander deck.
@@ -351,6 +488,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_rules_scenario_prompt(scenario: str, relevant_rules: str) -> str:
     """Generate scenario-based rules Q&A that teaches rules reasoning, not just definitions."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are a Magic: The Gathering rules expert (Level 2+ judge). Generate 3 Q&A pairs about this rules scenario.
@@ -387,6 +525,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_archetype_prompt(archetype: str, archetype_context: str) -> str:
     """Generate deck archetype and strategy Q&A covering playstyles and strategic concepts."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are a Magic: The Gathering strategy expert. Generate 3 Q&A pairs about the {archetype} archetype/strategy.
@@ -417,6 +556,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_game_theory_prompt(situation: str, decision_context: str) -> str:
     """Generate game theory and decision-making Q&A covering sequencing, threat assessment, and politics."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are an expert Magic: The Gathering player. Generate 3 Q&A pairs about game theory and decision-making.
@@ -448,6 +588,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_meta_knowledge_prompt(topic: str, meta_context: str) -> str:
     """Generate meta and power level Q&A covering cEDH, pod dynamics, and format knowledge."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are an expert in Magic: The Gathering Commander meta and competitive play. Generate 3 Q&A pairs about:
@@ -479,8 +620,11 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_rule_explanation_prompt(rule_number: str, rule_text: str, template: dict[str, str]) -> str:
     """Generate natural Q&A from a specific rule, grounded in actual rule text."""
+    SYSTEM_MESSAGE = _get_scaffold("SYSTEM_MESSAGE", constants.SYSTEM_MESSAGE)  # type: ignore[assignment]
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
+    OUTPUT_FORMAT = _get_scaffold("OUTPUT_FORMAT", constants.OUTPUT_FORMAT)  # type: ignore[assignment]
     prompt = f"""
-{SYSTEM_MESSAGE}
+    {SYSTEM_MESSAGE}
 
 {MTG_NOTATION_LEGEND}
 
@@ -511,6 +655,7 @@ REQUIREMENTS:
 
 def build_rule_interaction_prompt(rule1_num: str, rule1_text: str, rule2_num: str, rule2_text: str) -> str:
     """Generate scenario Q&A where two rules interact, grounded in both rule texts."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are a Magic: The Gathering rules expert. Generate 2 scenario Q&A pairs where BOTH of these rules are relevant.
@@ -541,6 +686,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_glossary_with_examples_prompt(term: str, definition: str) -> str:
     """Generate Q&A from a glossary term with concrete in-game examples, not just the definition."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are a Magic: The Gathering rules expert. Generate 3 Q&A pairs about this MTG term.
@@ -577,6 +723,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_rule_edge_case_prompt(rule_number: str, rule_text: str, section_name: str) -> str:
     """Generate edge case and tricky interaction questions from complex rule sections."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are a Magic: The Gathering Level 2 judge. Generate 2 tricky edge case Q&A pairs from this rule.
@@ -611,6 +758,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_rule_why_prompt(rule_number: str, rule_text: str) -> str:
     """Generate 'why does this work' backward-reasoning questions from rule text."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are a Magic: The Gathering rules expert. Generate 2 Q&A pairs that ask WHY a ruling works the way it does.
@@ -644,6 +792,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_article_qa_prompt(title: str, content: str) -> str:
     """Generate Q&A from an EDHREC article, using the full content as grounding."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are a Magic: The Gathering strategy expert. Read this EDHREC article and generate 4 Q&A pairs from it.
@@ -677,6 +826,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_guide_qa_prompt(title: str, content: str) -> str:
     """Generate Q&A from an EDHREC guide, focusing on instructional content."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     prompt = f"""{MTG_NOTATION_LEGEND}
 
 You are a Magic: The Gathering expert. Read this EDHREC guide and generate 4 Q&A pairs from it.
@@ -711,6 +861,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_staple_analysis_prompt(card: dict) -> str:
     """Generate Q&A analyzing why a game-changer card is a Commander staple."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     name = card.get('name', '')
     oracle_text = card.get('oracle_text', '')
     card_type = card.get('type', '')
@@ -761,6 +912,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_color_staples_prompt(color: str, cards: list) -> str:
     """Generate Q&A about the top cards for a given color in Commander."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     card_lines = []
     for c in cards[:10]:
         name = c.get('name', '')
@@ -805,6 +957,7 @@ Output ONLY valid JSON. The answer MUST be a string and not an array of strings.
 
 def build_salt_prompt(cards: list) -> str:
     """Generate Q&A about salty/controversial cards — what they are and why players dislike them."""
+    MTG_NOTATION_LEGEND = _get_scaffold("MTG_NOTATION_LEGEND", constants.MTG_NOTATION_LEGEND)  # type: ignore[assignment]
     card_lines = []
     for c in cards[:8]:
         name = c.get('name', '')

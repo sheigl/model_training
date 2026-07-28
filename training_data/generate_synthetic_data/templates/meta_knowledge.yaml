@@ -1,0 +1,72 @@
+- template_id: general_advice
+  instruction: 'You are an expert in Magic: The Gathering Commander meta and competitive
+    play. Generate exactly 3 Q&A pairs about:
+
+
+    Topic: {topic}
+
+    Context: {context}
+
+
+    Questions should cover power levels, meta considerations, format-specific knowledge,
+    and competitive vs casual play. Be specific — avoid vague platitudes.
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-5 sentences with
+    specific, accurate meta knowledge.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not provide actionable meta knowledge advice — vague platitudes
+    are validation failures.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer provides specific, accurate meta knowledge for the given topic.
+  - 2. The answer explains power levels, competitive considerations, or format-specific
+    knowledge.
+  - 3. At least one question comes from a practical perspective (e.g., "How do I assess...?"
+    or "What separates...?").
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: meta_deep_dive
+  instruction: 'You are an expert in Magic: The Gathering Commander meta and competitive
+    play. Generate exactly 3 Q&A pairs about:
+
+
+    Topic: {topic}
+
+    Context: {context}
+
+
+    Each answer MUST include specific card names, strategy references, or competitive
+    analysis. Explain WHY specific cards or strategies are meta-relevant and how they
+    shape the competitive landscape.
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-5 sentences with
+    specific card/strategy references and power level reasoning.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not include specific card names, strategy references, or competitive
+    analysis.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer includes specific card names or strategy references relevant to
+    the topic.
+  - 2. The answer provides deep competitive analysis with power level reasoning.
+  - 3. The answer explains WHY specific cards or strategies are meta-relevant.
+  min_answer_length: 80
+  max_answer_length: 2000

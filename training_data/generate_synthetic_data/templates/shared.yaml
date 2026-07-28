@@ -1,0 +1,237 @@
+scaffolding:
+  system_message: '
+
+    <system>
+
+    You are an expert Magic: The Gathering rules advisor. You generate accurate, natural
+    Q&A training data about card combos. You output ONLY valid JSON — no preamble,
+    no explanation, no markdown fences.
+
+    </system>
+
+    '
+  notation_legend: '
+
+    <reference>
+
+    MTG NOTATION:
+
+    - {T}: Tap (rotate card 90°; only if untapped)
+
+    - {C}: Colorless mana | {W}: White | {U}: Blue | {B}: Black | {R}: Red | {G}:
+    Green
+
+    - {X}: Variable amount | {1},{2},{3}...: Generic mana (any color/colorless)
+
+    - Example: {2}{U}{U} = 4 total mana (2 generic + 2 blue)
+
+
+    CARD TYPES:
+
+    - Creature: Can attack/block; has summoning sickness (can''t tap or attack first
+    turn it enters)
+
+    - Artifact / Enchantment: Permanent; stays on battlefield
+
+    - Instant: Cast anytime; goes to graveyard after resolving
+
+    - Sorcery: Cast only on your turn; goes to graveyard after resolving
+
+    - Land: Played once per turn (not cast); produces mana
+
+
+    KEY TERMS:
+
+    - ETB: Triggers when permanent enters the battlefield
+
+    - Summoning Sickness: Creatures can''t tap or attack the turn they enter
+
+    - Sacrifice: Put into graveyard as a cost (uncounterable)
+
+    - Destroy: Put into graveyard (blocked by indestructible)
+
+    - Exile: Remove from game (harder to recover than graveyard)
+
+    </reference>
+
+    '
+  requirements_base:
+  - 'At least one question MUST come from the perspective of a player who doesn''t
+    know the exact combo or card names — someone searching for a combo idea. Examples:
+    "What combo can I make with Card A and Card B?" or "Is there a way to deal massive
+    damage to all players at once in red?"'
+  - Questions must be varied and natural-sounding.
+  - Answers must accurately explain how the combo works and what it achieves, based
+    solely on the combo data above.
+  - 'CRITICAL — Trigger ordering: Before writing any answer, list the stack/trigger
+    sequence in numbered order. Abilities on the stack resolve last-in-first-out.
+    ETB triggers fire after a permanent enters. Static abilities (like Intruder Alarm)
+    resolve immediately as state changes. If a card''s ability triggers another card''s
+    ability, the triggered ability goes on the stack first, then the causing ability
+    resolves. Your answer MUST describe events in the same order as the COMBO STEPS.
+    A correct description of individual triggers in the wrong order is a factual error.'
+  - 'Classify each answer by question type and adjust depth accordingly: ''how does
+    this work'' questions → walk through the trigger chain step by step, citing relevant
+    oracle text to explain WHY each trigger fires. ''why is this powerful / strategic''
+    questions → summarize the outcome and its competitive implications without restating
+    every step. ''can I build a combo with X'' questions → confirm or deny, then explain
+    the mechanism concisely.'
+  - Every answer MUST state the concrete outcome of the combo using the COMBO RESULT
+    field. Do not use vague phrases like 'very powerful', 'wins the game', 'infinite
+    triggers', 'infinite value', or 'overwhelm opponents' — state exactly what is
+    produced (e.g. 'infinite damage', 'infinite mana of any color', 'infinite 1/1
+    Snake creature tokens').
+  - When explaining why a trigger fires, quote or closely paraphrase the relevant
+    part of the card's oracle text from the <cards> block. Do not assume the reader
+    knows what a card does from its name alone.
+  - All required combo pieces must be named explicitly in every answer. If a question
+    mentions only some pieces, the answer must introduce the remaining pieces and
+    explain their role.
+  - The answer field MUST be a single string (not an array).
+  output_format: "\nOUTPUT FORMAT — respond with this JSON structure and nothing else:\n\
+    \    [\n        {\"question\": \"...\", \"answer\": \"...\"},\n        {\"question\"\
+    : \"...\", \"answer\": \"...\"},\n        {\"question\": \"...\", \"answer\":\
+    \ \"...\"}\n    ]\n"
+  card_comparison_instructions: "\nCRITICAL ANALYSIS REQUIREMENTS:\nBefore writing\
+    \ your answer, analyze step-by-step:\n\n0. Card Types:\n   - What TYPE is each\
+    \ card? (Creature, Artifact, Enchantment, Land, etc.)\n   - If one is a CREATURE\
+    \ and one is NOT, this is CRITICAL information\n   - Creatures have summoning\
+    \ sickness (can't tap immediately)\n   - Creatures die to creature removal AND\
+    \ board wipes\n   - Non-creature permanents are generally more resilient\n   -\
+    \ ALWAYS mention if card types differ\n\n1. Mana Economics:\n   - What does each\
+    \ card COST to cast? (compare {1} vs {2} vs {3}, etc.)\n   - What does each card\
+    \ PRODUCE or DO?\n   - Net benefit = (what you get) - (what you pay)\n   - IMPORTANT:\
+    \ If a card costs X mana and produces X mana, that's NET ZERO (mana conversion,\
+    \ not ramp)\n   - Example: Paying {3} to untap and tapping for {3} = break even,\
+    \ not profit\n   - A card that costs {2} and taps for {C} gives you net +1 mana\
+    \ per turn (after initial investment)\n\n2. Key Mechanics:\n   - Does it sacrifice\
+    \ itself? (one-time use only)\n   - Does it tap repeatedly? (ongoing value each\
+    \ turn)\n   - Does it produce colored mana or colorless mana? (colored is more\
+    \ flexible)\n   - Does it draw cards, destroy permanents, or have other effects?\n\
+    \   - Does it enter tapped? (delayed value)\n   - If it's a creature, remember\
+    \ it has SUMMONING SICKNESS\n\n3. Common Errors to Avoid:\n   - DON'T confuse\
+    \ casting cost with activation cost (they're different things)\n   - DON'T claim\
+    \ a card \"produces more mana\" if it costs X to produce X (that's conversion)\n\
+    \   - DON'T ignore important text like \"enters tapped\", \"draw a card\", \"\
+    destroy\", \"exile\"\n   - DON'T forget to mention if mana is colored vs colorless\
+    \ (this matters a lot)\n   - DON'T get costs backwards ({2} is MORE expensive\
+    \ than {1})\n   - DON'T ignore card types (Creature vs Artifact is HUGE)\n   -\
+    \ DON'T forget summoning sickness for creatures\n\n4. Context Matters - Consider:\n\
+    \   - Which is better for fast mana acceleration (ramp)?\n   - Which is better\
+    \ for color fixing?\n   - Which is better for card advantage?\n   - Which is better\
+    \ for removal/control?\n   - Which is more resilient to removal?\n   - Are there\
+    \ specific deck types or strategies where one shines?\n\nEXAMPLE OF GOOD COMPARISON:\n\
+    Q: \"Which is better, Sol Ring or Fellwar Stone?\"\nA: \"Sol Ring is generally\
+    \ better. Sol Ring costs {1} and taps for {C}{C}, giving you net +1 colorless\
+    \ mana per turn. Fellwar Stone costs {2} and taps for one mana of any color an\
+    \ opponent could produce, also net +1 per turn but more expensive to cast. Sol\
+    \ Ring's lower cost makes it faster, though Fellwar Stone offers color fixing\
+    \ that Sol Ring lacks. For pure ramp, Sol Ring wins. For multicolor decks needing\
+    \ color fixing, Fellwar Stone has merit.\"\n\nEXAMPLE OF BAD COMPARISON (DO NOT\
+    \ DO THIS):\nQ: \"Which is better, Hedron Crawler or Dragon's Hoard?\"\nA: \"\
+    Hedron Crawler costs {2} and taps for {C}, suitable for any deck. Dragon's Hoard\
+    \ costs {3} and requires Dragons.\"\n[ERROR: Doesn't mention Hedron Crawler is\
+    \ a CREATURE with summoning sickness and dies to board wipes]\n"
+validators:
+  validation_checklist: "\nCRITICAL CARD TYPE CHECKS:\nBefore anything else, verify\
+    \ the answer addresses card types:\n\n1. Are the card types mentioned?\n   - Creature\
+    \ vs Non-Creature is CRITICAL\n   - Artifact vs Enchantment vs Land matters\n\
+    \   - If one is a creature and one isn't, this MUST be discussed\n\n2. Type-specific\
+    \ mechanics mentioned?\n   - Creatures: Summoning sickness (can't {T} or attack\
+    \ first turn), vulnerable to creature removal, can attack/block\n   - Artifacts:\
+    \ No summoning sickness, only vulnerable to artifact removal\n   - Enchantments:\
+    \ Only vulnerable to enchantment removal\n   - Lands: Can't be countered, don't\
+    \ cost mana to play\n   - Instants/Sorceries: One-time spells, not affected by\
+    \ board wipes\n\n3. Vulnerability differences explained?\n   - If comparing creature\
+    \ vs non-creature, answer MUST mention board wipes\n   - If comparing different\
+    \ permanent types, answer MUST mention removal types\n   - If comparing instants/sorceries,\
+    \ focus on EFFECTS not vulnerability\n\nVERIFICATION CHECKLIST:\nCheck each of\
+    \ these carefully:\n\n1. Casting costs correct?\n   - Does the answer correctly\
+    \ state which card costs more to cast?\n   - Are mana symbols and costs accurate?\n\
+    \n2. Mechanics accurate?\n   - Does it correctly describe what each card DOES?\n\
+    \   - Are activation costs vs casting costs distinguished properly?\n   - Is net\
+    \ mana production calculated correctly?\n   - If a card costs X and produces X,\
+    \ is it correctly identified as net zero (conversion, not ramp)?\n   \n3. CARD\
+    \ TYPES mentioned and explained?\n   - If one card is a creature and one isn't,\
+    \ is this addressed?\n   - Are type-specific vulnerabilities mentioned?\n   -\
+    \ Is summoning sickness mentioned for creatures?\n   - For instants/sorceries,\
+    \ are effects discussed (not board wipe vulnerability)?\n   \n4. Important details\
+    \ mentioned?\n   - Card draw effects mentioned if present?\n   - \"Enters tapped\"\
+    \ mentioned if relevant?\n   - Sacrifice requirements mentioned if present?\n\
+    \   - Color restrictions mentioned (colored vs colorless mana)?\n   - Destruction/removal\
+    \ effects mentioned if present?\n\n5. No false claims?\n   - No invented abilities\
+    \ or effects?\n   - No confusion between \"costs X, produces X\" (net zero) vs\
+    \ actual ramp?\n   - No claiming cheaper cards are more expensive?\n   - No ignoring\
+    \ critical card text?\n\nCOMMON ERROR PATTERNS TO REJECT:\n- Claiming \"costs\
+    \ less to activate\" when actually comparing casting costs\n- Saying a card \"\
+    produces more mana if you pay more\" when it's X-for-X conversion\n- Ignoring\
+    \ that a card draws cards, destroys things, or has other important effects\n-\
+    \ Missing that colored mana ≠ colorless mana\n- Confusing one-time effects with\
+    \ repeatable effects\n- Backwards cost comparisons (saying {2} is cheaper than\
+    \ {1})\n- IGNORING CARD TYPES (creature vs artifact is a HUGE difference)\n- NOT\
+    \ MENTIONING summoning sickness for creatures\n- MISSING vulnerability differences\
+    \ between card types\n- Discussing board wipe vulnerability for INSTANTS/SORCERIES\
+    \ (they're spells, not permanents!)\n"
+  validation_scoring_guide: "\nSCORING GUIDE:\n- 9-10: Perfect, all mechanics correct,\
+    \ comprehensive, card types addressed\n- 7-8: Good, minor omissions but no errors\n\
+    - 5-6: Acceptable but missing important context\n- 3-4: Significant errors or\
+    \ missing critical info (like ignoring card types)\n- 1-2: Fundamentally wrong\
+    \ about card mechanics\n\nCRITICAL: \n- If card types are ignored when comparing\
+    \ creature vs non-creature, max score is 4\n- If there are ANY factual errors\
+    \ about card mechanics, max score is 4\n- If discussing board wipes for instant/sorcery\
+    \ cards, max score is 4\n- A score of 7+ is acceptable. Below 7 should be rejected.\n"
+  qa_validation: "\n    \n<system>\nYou are an expert Magic: The Gathering rules advisor.\
+    \ You generate accurate, natural Q&A training data about card combos. You output\
+    \ ONLY valid JSON — no preamble, no explanation, no markdown fences.\n</system>\n\
+    \n    \n    \n<reference>\nMTG NOTATION:\n- {T}: Tap (rotate card 90°; only if\
+    \ untapped)\n- {C}: Colorless mana | {W}: White | {U}: Blue | {B}: Black | {R}:\
+    \ Red | {G}: Green\n- {X}: Variable amount | {1},{2},{3}...: Generic mana (any\
+    \ color/colorless)\n- Example: {2}{U}{U} = 4 total mana (2 generic + 2 blue)\n\
+    \nCARD TYPES:\n- Creature: Can attack/block; has summoning sickness (can't tap\
+    \ or attack first turn it enters)\n- Artifact / Enchantment: Permanent; stays\
+    \ on battlefield\n- Instant: Cast anytime; goes to graveyard after resolving\n\
+    - Sorcery: Cast only on your turn; goes to graveyard after resolving\n- Land:\
+    \ Played once per turn (not cast); produces mana\n\nKEY TERMS:\n- ETB: Triggers\
+    \ when permanent enters the battlefield\n- Summoning Sickness: Creatures can't\
+    \ tap or attack the turn they enter\n- Sacrifice: Put into graveyard as a cost\
+    \ (uncounterable)\n- Destroy: Put into graveyard (blocked by indestructible)\n\
+    - Exile: Remove from game (harder to recover than graveyard)\n</reference>\n\n\
+    \    \n    Category: {category}\n\n    Source material the answer should be grounded\
+    \ in:\n    {context}\n    \n    <rules>\n    Before scoring, complete a verification\
+    \ checklist.\n    Work through the answer sentence by sentence. For each mechanical\
+    \ claim, find the exact supporting text in the source material above.\n\n    -\
+    \ If a claim involves a single card, quote the exact relevant text from that card.\n\
+    \    - If a claim involves multiple cards working together, quote the relevant\
+    \ text from ALL cards involved before rendering a verdict. Do not mark a claim\
+    \ UNSUPPORTED simply because one card's text alone does not support it — check\
+    \ all relevant cards.\n    - If a claim is supported by the combined source text\
+    \ of all relevant cards, mark it SUPPORTED.\n    - If source text directly contradicts\
+    \ the claim, mark it CONTRADICTED.\n    - If no source text exists across any\
+    \ relevant cards for the claim, mark it UNSUPPORTED.\n    - Inferred conclusions\
+    \ that are mechanically sound and follow directly from the source (e.g. \"a player\
+    \ at 1 life will die to any combat damage\") may be marked SUPPORTED if the inference\
+    \ requires no additional cards or rules beyond basic game rules. Note the inference\
+    \ explicitly in source_text as \"BASIC GAME RULE: <explanation>\".\n    - Any\
+    \ CONTRADICTED or UNSUPPORTED verdict is an automatic reject regardless of score.\n\
+    \    - For combo_query category: verify that the sequence of events described\
+    \ in the answer matches the order of the numbered steps in the provided combo.\
+    \ Compare each step explicitly. A correct description of individual triggers in\
+    \ the wrong order is a factual error and must be marked CONTRADICTED.\n    </rules>\n\
+    \    \n    Question: {question}\n\n    Answer to validate:\n    {answer}\n\n \
+    \   Score this answer on:\n    1. Factual accuracy — Is everything correct? Wrong\
+    \ mana costs, wrong card names, wrong mechanics = instant reject.\n    2. Completeness\
+    \ — Does it fully answer the question without important gaps?\n    3. Usefulness\
+    \ — Is this a good training example? Clear and specific, not vague or generic?\n\
+    \    4. Grounding — Is it grounded in the provided context, or hallucinating details?\n\
+    \n    Scoring guide:\n    - 9-10: Excellent, publish as-is\n    - 7-8: Good, acceptable\
+    \ for training\n    - 5-6: Too vague, incomplete, or minor errors — reject\n \
+    \   - 1-4: Factual errors or hallucinations — reject\n\n    Respond ONLY with\
+    \ JSON:\n    {\n    \"verification_checklist\": [\n        {\n        \"claim\"\
+    : \"<the mechanical claim>\",\n        \"source_text\": \"<exact quote from source\
+    \ material, or NOT FOUND IN SOURCE>\",\n        \"verdict\": \"<SUPPORTED | CONTRADICTED\
+    \ | UNSUPPORTED>\"\n        }\n    ],\n    \"score\": <1-10>,\n    \"is_acceptable\"\
+    : <true/false>,\n    \"errors\": \"<factual errors if any, or 'none'>\",\n   \
+    \ \"missing_info\": \"<what is missing or vague, if anything. If score is 7 or\
+    \ above with no errors, leave blank.>\",\n    \"reason\": \"<one sentence summary.\
+    \ If score is 7 or above with no errors, leave blank.>\"\n    }\n\n    Output\
+    \ ONLY valid JSON, no other text."

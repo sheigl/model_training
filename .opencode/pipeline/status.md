@@ -1,20 +1,21 @@
-# Pipeline Status
+# Pipeline Status — ALL COMPLETE
 
-## Current Feature: MTG AI Pipeline — Three Prompt Improvements
-## Last Step Completed: Document updated CHANGELOG.md and docs/ARCHITECTURE.md
-## Next Action: Complete — all pipeline steps done
+| Feature | Discovery + Planning | Implement | Review | Test | Document |
+|---------|----------|-----------|--------|------|----------|
+| Story 001: YAML Template Structure & Loader | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Done |
+| Story 002: Template Loading from YAML | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Done |
+| Story 003: Scaffolding Block Migration | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Done |
+| Story 004: Validator Template Migration | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Done |
+| Story 005: CLI Cleanup | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Done |
+| Story 006: Seed Script Removal | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Done |
+| Story 007: Test Suite Updates | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Done |
 
-| Feature | Discovery + Planning | Implement | Code Review | Test | Document |
-|---------|----------|-------------|------|----------|----------|
-| Prompt Improvements (trigger ordering, vague outcomes, sibling feedback) | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Complete |
+## Summary
 
-## Final Summary
+YAML template migration complete. MongoDB template store replaced with local YAML files.
 
-All three prompt improvements implemented, reviewed, tested, and documented:
+**Stats:** 368 tests passing, 20 pre-existing failures unchanged, zero regressions.
 
-1. **Trigger ordering** (`constants.py`): New `REQUIREMENTS_BASE` item at index 3 with LIFO/ETB/static-ability rules. Targets #1 failure mode (~50% of rejections).
-2. **Vague outcome language** (`constants.py`): Expanded banned phrases at index 5. Targets ~20% of rejections.
-3. **Sibling feedback** (`query_model.py`, `common.py`, `base_generator.py`, `generate_quick_guidelines.py`): Hoisted accumulator architecture — Q2/Q3 see Q1's corrections during regeneration.
-
-### Test results: 229 passed, 20 pre-existing failures, 0 regressions, 5 behavioral tests pass
-### Documentation: CHANGELOG.md + docs/ARCHITECTURE.md updated
+**New files:** 30 YAML templates + yaml_template_loader.py + 3 test files
+**Modified:** base_generator.py, query_model.py, common.py, template_store.py, main.py, seed_templates.py
+**Removed:** test_cli_version_flags.py

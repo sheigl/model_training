@@ -1,0 +1,6 @@
+- template_id: color_staples
+  instruction: Generate 3 Q&A pairs about the top cards for this color in Commander.
+  weight: 1.0
+  validation_rules: []
+  min_answer_length: 80
+  max_answer_length: 2000

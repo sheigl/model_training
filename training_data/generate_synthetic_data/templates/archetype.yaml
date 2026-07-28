@@ -1,0 +1,71 @@
+- template_id: general_advice
+  instruction: 'You are a Magic: The Gathering strategy expert. Generate exactly 3
+    Q&A pairs about the {archetype} archetype/strategy.
+
+
+    Context:
+
+    {context}
+
+
+    Questions should cover: how the archetype works, strengths and weaknesses, key
+    cards, how to play against it, when to choose it. Be specific — avoid vague platitudes.
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-5 sentences covering
+    the strategic depth of the archetype.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not provide actionable archetype strategy advice — vague platitudes
+    are validation failures.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer provides specific strategic advice about the archetype.
+  - 2. The answer explains strengths, weaknesses, or key strategic concepts.
+  - 3. At least one question comes from a practical perspective (e.g., "How do I build...?"
+    or "What are the weaknesses of...?").
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: example_driven
+  instruction: 'You are a Magic: The Gathering strategy expert. Generate exactly 3
+    Q&A pairs about the {archetype} archetype/strategy using concrete card examples.
+
+
+    Context:
+
+    {context}
+
+
+    Each answer MUST include at least one specific card example that illustrates the
+    archetype. Explain WHY that card is a key piece of the strategy and how it fits
+    into the archetype''s game plan.
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-5 sentences with
+    specific card references and strategic reasoning.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not include at least one concrete card example relevant to the
+    archetype.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer includes at least one specific card example that illustrates the
+    archetype.
+  - 2. The example is relevant to the archetype and accurately described.
+  - 3. The answer explains WHY the card is key to the archetype's strategy.
+  min_answer_length: 80
+  max_answer_length: 2000

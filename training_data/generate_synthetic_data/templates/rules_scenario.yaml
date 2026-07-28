@@ -1,0 +1,78 @@
+- template_id: general_advice
+  instruction: 'You are an expert Magic: The Gathering rules judge. Generate exactly
+    3 Q&A pairs about this rules topic.
+
+
+    Scenario category: {scenario}
+
+    Relevant rules context: {context}
+
+
+    Questions should cover practical in-game situations that players encounter at
+    the table.
+
+    Answers must correctly explain the relevant game rule — explain WHY it works that
+    way, not just WHAT happens. Do NOT reference specific rule numbers (e.g., "Rule
+    608.2b"). Explain mechanics conversationally.
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-5 sentences with
+    clear rules explanations.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not explain the relevant game rule — vague or incorrect rules are
+    validation failures.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references specific rule numbers directly (e.g., "Rule 608.2b") — mechanics
+    must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer correctly explains the relevant Magic game rule for the scenario
+    described.
+  - 2. The answer explains WHY the rule works that way, not just WHAT happens.
+  - 3. At least one question comes from a practical in-game perspective (e.g., "What
+    happens when...?" or "Can I...?").
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: example_driven
+  instruction: 'You are an expert Magic: The Gathering rules judge. Generate exactly
+    3 Q&A pairs about this rules topic using concrete card examples.
+
+
+    Scenario category: {scenario}
+
+    Relevant rules context: {context}
+
+
+    Each answer MUST include at least one specific card example that illustrates the
+    rule interaction. Explain WHY the rule applies in this context. Do NOT reference
+    specific rule numbers (e.g., "Rule 608.2b").
+
+
+    Output JSON array with question/answer pairs. Keep answers 3-5 sentences with
+    clear rules explanations.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not include at least one concrete card example to illustrate the
+    rule interaction.
+  - 2. Answer contains markdown formatting (bold, italics, bullet points).
+  - 3. Answer references specific rule numbers directly (e.g., "Rule 608.2b") — mechanics
+    must be explained conversationally.
+  - 4. Answer is less than 80 characters.
+  - 5. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer includes at least one concrete card example that illustrates the
+    rule interaction.
+  - 2. The example accurately demonstrates the rule being discussed.
+  - 3. The answer explains WHY the rule applies in this context.
+  min_answer_length: 80
+  max_answer_length: 2000

@@ -1,0 +1,2011 @@
+- template_id: pauper_budget
+  instruction: 'Generate exactly 3 Q&A pairs for PAUPER-LEGAL budget alternatives.
+
+    Focus on: cards legal in Pauper format (common rarity only) that provide similar
+    functionality.
+
+    At least one question must be phrased as ''What''s a pauper-legal replacement
+    for [card]?'''
+  weight: 1.0
+  validation_rules:
+  - '1'
+  - .
+  - ' '
+  - A
+  - l
+  - l
+  - ' '
+  - s
+  - u
+  - g
+  - g
+  - e
+  - s
+  - t
+  - e
+  - d
+  - ' '
+  - a
+  - l
+  - t
+  - e
+  - r
+  - n
+  - a
+  - t
+  - i
+  - v
+  - e
+  - s
+  - ' '
+  - M
+  - U
+  - S
+  - T
+  - ' '
+  - b
+  - e
+  - ' '
+  - c
+  - o
+  - m
+  - m
+  - o
+  - n
+  - ' '
+  - r
+  - a
+  - r
+  - i
+  - t
+  - y
+  - ' '
+  - (
+  - P
+  - a
+  - u
+  - p
+  - e
+  - r
+  - ' '
+  - l
+  - e
+  - g
+  - a
+  - l
+  - )
+  - '
+
+    '
+  - '2'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - e
+  - x
+  - p
+  - l
+  - a
+  - i
+  - n
+  - s
+  - ' '
+  - f
+  - u
+  - n
+  - c
+  - t
+  - i
+  - o
+  - n
+  - a
+  - l
+  - ' '
+  - s
+  - i
+  - m
+  - i
+  - l
+  - a
+  - r
+  - i
+  - t
+  - y
+  - ' '
+  - t
+  - o
+  - ' '
+  - e
+  - x
+  - p
+  - e
+  - n
+  - s
+  - i
+  - v
+  - e
+  - ' '
+  - c
+  - a
+  - r
+  - d
+  - '
+
+    '
+  - '3'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - i
+  - t
+  - e
+  - s
+  - ' '
+  - o
+  - r
+  - a
+  - c
+  - l
+  - e
+  - ' '
+  - t
+  - e
+  - x
+  - t
+  - ' '
+  - o
+  - f
+  - ' '
+  - B
+  - O
+  - T
+  - H
+  - ' '
+  - e
+  - x
+  - p
+  - e
+  - n
+  - s
+  - i
+  - v
+  - e
+  - ' '
+  - c
+  - a
+  - r
+  - d
+  - ' '
+  - a
+  - n
+  - d
+  - ' '
+  - b
+  - u
+  - d
+  - g
+  - e
+  - t
+  - ' '
+  - a
+  - l
+  - t
+  - e
+  - r
+  - n
+  - a
+  - t
+  - i
+  - v
+  - e
+  - '
+
+    '
+  - '4'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - m
+  - e
+  - n
+  - t
+  - i
+  - o
+  - n
+  - s
+  - ' '
+  - a
+  - c
+  - t
+  - u
+  - a
+  - l
+  - ' '
+  - p
+  - r
+  - i
+  - c
+  - e
+  - ' '
+  - d
+  - i
+  - f
+  - f
+  - e
+  - r
+  - e
+  - n
+  - c
+  - e
+  - ' '
+  - (
+  - u
+  - s
+  - e
+  - ' '
+  - p
+  - r
+  - o
+  - v
+  - i
+  - d
+  - e
+  - d
+  - ' '
+  - p
+  - r
+  - i
+  - c
+  - e
+  - ' '
+  - d
+  - a
+  - t
+  - a
+  - )
+  - '
+
+    '
+  - '5'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - y
+  - ' '
+  - s
+  - u
+  - g
+  - g
+  - e
+  - s
+  - t
+  - e
+  - d
+  - ' '
+  - c
+  - a
+  - r
+  - d
+  - ' '
+  - i
+  - s
+  - ' '
+  - n
+  - o
+  - t
+  - ' '
+  - c
+  - o
+  - m
+  - m
+  - o
+  - n
+  - ' '
+  - r
+  - a
+  - r
+  - i
+  - t
+  - y
+  - '
+
+    '
+  - '6'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - d
+  - o
+  - e
+  - s
+  - n
+  - ''''
+  - t
+  - ' '
+  - e
+  - x
+  - p
+  - l
+  - a
+  - i
+  - n
+  - ' '
+  - H
+  - O
+  - W
+  - ' '
+  - t
+  - h
+  - e
+  - ' '
+  - a
+  - l
+  - t
+  - e
+  - r
+  - n
+  - a
+  - t
+  - i
+  - v
+  - e
+  - ' '
+  - w
+  - o
+  - r
+  - k
+  - s
+  - ' '
+  - s
+  - i
+  - m
+  - i
+  - l
+  - a
+  - r
+  - l
+  - y
+  - '
+
+    '
+  - '7'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - o
+  - n
+  - t
+  - a
+  - i
+  - n
+  - s
+  - ' '
+  - m
+  - a
+  - r
+  - k
+  - d
+  - o
+  - w
+  - n
+  - ' '
+  - f
+  - o
+  - r
+  - m
+  - a
+  - t
+  - t
+  - i
+  - n
+  - g
+  - ' '
+  - (
+  - b
+  - o
+  - l
+  - d
+  - ','
+  - ' '
+  - b
+  - u
+  - l
+  - l
+  - e
+  - t
+  - s
+  - )
+  - '
+
+    '
+  - '8'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - m
+  - u
+  - s
+  - t
+  - ' '
+  - b
+  - e
+  - ' '
+  - a
+  - t
+  - ' '
+  - l
+  - e
+  - a
+  - s
+  - t
+  - ' '
+  - '1'
+  - '0'
+  - '0'
+  - ' '
+  - c
+  - h
+  - a
+  - r
+  - a
+  - c
+  - t
+  - e
+  - r
+  - s
+  min_answer_length: 100
+  max_answer_length: 2000
+- template_id: budget_optimized
+  instruction: 'Generate exactly 3 Q&A pairs for OPTIMIZED BUDGET replacements (under
+    $10).
+
+    Focus on: best value replacements that capture 80%+ of the expensive card''s utility.
+
+    At least one question must compare EDHREC inclusion percentages.'
+  weight: 1.0
+  validation_rules:
+  - '1'
+  - .
+  - ' '
+  - A
+  - l
+  - l
+  - ' '
+  - s
+  - u
+  - g
+  - g
+  - e
+  - s
+  - t
+  - e
+  - d
+  - ' '
+  - a
+  - l
+  - t
+  - e
+  - r
+  - n
+  - a
+  - t
+  - i
+  - v
+  - e
+  - s
+  - ' '
+  - M
+  - U
+  - S
+  - T
+  - ' '
+  - b
+  - e
+  - ' '
+  - u
+  - n
+  - d
+  - e
+  - r
+  - ' '
+  - $
+  - '1'
+  - '0'
+  - ' '
+  - (
+  - u
+  - s
+  - e
+  - ' '
+  - p
+  - r
+  - o
+  - v
+  - i
+  - d
+  - e
+  - d
+  - ' '
+  - p
+  - r
+  - i
+  - c
+  - e
+  - ' '
+  - d
+  - a
+  - t
+  - a
+  - )
+  - '
+
+    '
+  - '2'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - o
+  - m
+  - p
+  - a
+  - r
+  - e
+  - s
+  - ' '
+  - E
+  - D
+  - H
+  - R
+  - E
+  - C
+  - ' '
+  - i
+  - n
+  - c
+  - l
+  - u
+  - s
+  - i
+  - o
+  - n
+  - ' '
+  - '%'
+  - ' '
+  - o
+  - f
+  - ' '
+  - e
+  - x
+  - p
+  - e
+  - n
+  - s
+  - i
+  - v
+  - e
+  - ' '
+  - v
+  - s
+  - ' '
+  - b
+  - u
+  - d
+  - g
+  - e
+  - t
+  - ' '
+  - c
+  - a
+  - r
+  - d
+  - s
+  - '
+
+    '
+  - '3'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - e
+  - x
+  - p
+  - l
+  - a
+  - i
+  - n
+  - s
+  - ' '
+  - s
+  - p
+  - e
+  - c
+  - i
+  - f
+  - i
+  - c
+  - ' '
+  - t
+  - r
+  - a
+  - d
+  - e
+  - '-'
+  - o
+  - f
+  - f
+  - s
+  - ' '
+  - (
+  - w
+  - h
+  - a
+  - t
+  - ' '
+  - y
+  - o
+  - u
+  - ' '
+  - l
+  - o
+  - s
+  - e
+  - /
+  - g
+  - a
+  - i
+  - n
+  - )
+  - '
+
+    '
+  - '4'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - i
+  - t
+  - e
+  - s
+  - ' '
+  - o
+  - r
+  - a
+  - c
+  - l
+  - e
+  - ' '
+  - t
+  - e
+  - x
+  - t
+  - ' '
+  - f
+  - o
+  - r
+  - ' '
+  - k
+  - e
+  - y
+  - ' '
+  - a
+  - b
+  - i
+  - l
+  - i
+  - t
+  - i
+  - e
+  - s
+  - ' '
+  - o
+  - n
+  - ' '
+  - b
+  - o
+  - t
+  - h
+  - ' '
+  - c
+  - a
+  - r
+  - d
+  - s
+  - '
+
+    '
+  - '5'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - y
+  - ' '
+  - s
+  - u
+  - g
+  - g
+  - e
+  - s
+  - t
+  - e
+  - d
+  - ' '
+  - c
+  - a
+  - r
+  - d
+  - ' '
+  - i
+  - s
+  - ' '
+  - $
+  - '1'
+  - '0'
+  - ' '
+  - o
+  - r
+  - ' '
+  - m
+  - o
+  - r
+  - e
+  - '
+
+    '
+  - '6'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - d
+  - o
+  - e
+  - s
+  - n
+  - ''''
+  - t
+  - ' '
+  - m
+  - e
+  - n
+  - t
+  - i
+  - o
+  - n
+  - ' '
+  - i
+  - n
+  - c
+  - l
+  - u
+  - s
+  - i
+  - o
+  - n
+  - ' '
+  - p
+  - e
+  - r
+  - c
+  - e
+  - n
+  - t
+  - a
+  - g
+  - e
+  - ' '
+  - d
+  - i
+  - f
+  - f
+  - e
+  - r
+  - e
+  - n
+  - c
+  - e
+  - '
+
+    '
+  - '7'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - o
+  - n
+  - t
+  - a
+  - i
+  - n
+  - s
+  - ' '
+  - m
+  - a
+  - r
+  - k
+  - d
+  - o
+  - w
+  - n
+  - ' '
+  - f
+  - o
+  - r
+  - m
+  - a
+  - t
+  - t
+  - i
+  - n
+  - g
+  - '
+
+    '
+  - '8'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - m
+  - u
+  - s
+  - t
+  - ' '
+  - b
+  - e
+  - ' '
+  - a
+  - t
+  - ' '
+  - l
+  - e
+  - a
+  - s
+  - t
+  - ' '
+  - '1'
+  - '0'
+  - '0'
+  - ' '
+  - c
+  - h
+  - a
+  - r
+  - a
+  - c
+  - t
+  - e
+  - r
+  - s
+  min_answer_length: 100
+  max_answer_length: 2000
+- template_id: proxy_friendly
+  instruction: 'Generate exactly 3 Q&A pairs for PROXY-FRIENDLY casual alternatives.
+
+    Focus on: cards that are functionally similar enough for casual playgroups allowing
+    proxies.
+
+    At least one question must address ''Is it worth proxying [expensive card] or
+    should I use [budget card]?'''
+  weight: 1.0
+  validation_rules:
+  - '1'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - d
+  - i
+  - s
+  - t
+  - i
+  - n
+  - g
+  - u
+  - i
+  - s
+  - h
+  - e
+  - s
+  - ' '
+  - b
+  - e
+  - t
+  - w
+  - e
+  - e
+  - n
+  - ' '
+  - p
+  - r
+  - o
+  - x
+  - y
+  - i
+  - n
+  - g
+  - ' '
+  - v
+  - s
+  - .
+  - ' '
+  - u
+  - s
+  - i
+  - n
+  - g
+  - ' '
+  - b
+  - u
+  - d
+  - g
+  - e
+  - t
+  - ' '
+  - a
+  - l
+  - t
+  - e
+  - r
+  - n
+  - a
+  - t
+  - i
+  - v
+  - e
+  - '
+
+    '
+  - '2'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - e
+  - x
+  - p
+  - l
+  - a
+  - i
+  - n
+  - s
+  - ' '
+  - f
+  - u
+  - n
+  - c
+  - t
+  - i
+  - o
+  - n
+  - a
+  - l
+  - ' '
+  - e
+  - q
+  - u
+  - i
+  - v
+  - a
+  - l
+  - e
+  - n
+  - c
+  - e
+  - ' '
+  - f
+  - o
+  - r
+  - ' '
+  - c
+  - a
+  - s
+  - u
+  - a
+  - l
+  - ' '
+  - p
+  - l
+  - a
+  - y
+  - '
+
+    '
+  - '3'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - m
+  - e
+  - n
+  - t
+  - i
+  - o
+  - n
+  - s
+  - ' '
+  - p
+  - o
+  - w
+  - e
+  - r
+  - ' '
+  - l
+  - e
+  - v
+  - e
+  - l
+  - ' '
+  - d
+  - i
+  - f
+  - f
+  - e
+  - r
+  - e
+  - n
+  - c
+  - e
+  - ' '
+  - h
+  - o
+  - n
+  - e
+  - s
+  - t
+  - l
+  - y
+  - '
+
+    '
+  - '4'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - i
+  - t
+  - e
+  - s
+  - ' '
+  - o
+  - r
+  - a
+  - c
+  - l
+  - e
+  - ' '
+  - t
+  - e
+  - x
+  - t
+  - ' '
+  - s
+  - h
+  - o
+  - w
+  - i
+  - n
+  - g
+  - ' '
+  - k
+  - e
+  - y
+  - ' '
+  - s
+  - i
+  - m
+  - i
+  - l
+  - a
+  - r
+  - i
+  - t
+  - i
+  - e
+  - s
+  - '
+
+    '
+  - '5'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - r
+  - e
+  - c
+  - o
+  - m
+  - m
+  - e
+  - n
+  - d
+  - s
+  - ' '
+  - p
+  - r
+  - o
+  - x
+  - y
+  - i
+  - n
+  - g
+  - ' '
+  - w
+  - i
+  - t
+  - h
+  - o
+  - u
+  - t
+  - ' '
+  - c
+  - a
+  - v
+  - e
+  - a
+  - t
+  - s
+  - '
+
+    '
+  - '6'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - d
+  - o
+  - e
+  - s
+  - n
+  - ''''
+  - t
+  - ' '
+  - m
+  - e
+  - n
+  - t
+  - i
+  - o
+  - n
+  - ' '
+  - p
+  - l
+  - a
+  - y
+  - g
+  - r
+  - o
+  - u
+  - p
+  - ' '
+  - c
+  - o
+  - m
+  - m
+  - u
+  - n
+  - i
+  - c
+  - a
+  - t
+  - i
+  - o
+  - n
+  - '
+
+    '
+  - '7'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - o
+  - n
+  - t
+  - a
+  - i
+  - n
+  - s
+  - ' '
+  - m
+  - a
+  - r
+  - k
+  - d
+  - o
+  - w
+  - n
+  - ' '
+  - f
+  - o
+  - r
+  - m
+  - a
+  - t
+  - t
+  - i
+  - n
+  - g
+  - '
+
+    '
+  - '8'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - m
+  - u
+  - s
+  - t
+  - ' '
+  - b
+  - e
+  - ' '
+  - a
+  - t
+  - ' '
+  - l
+  - e
+  - a
+  - s
+  - t
+  - ' '
+  - '1'
+  - '0'
+  - '0'
+  - ' '
+  - c
+  - h
+  - a
+  - r
+  - a
+  - c
+  - t
+  - e
+  - r
+  - s
+  min_answer_length: 100
+  max_answer_length: 2000
+- template_id: upgrade_path
+  instruction: 'Generate exactly 3 Q&A pairs for UPGRADE PATH analysis.
+
+    Focus on: when and why to upgrade from budget to premium version, intermediate
+    steps.
+
+    At least one question must be phrased as ''When should I upgrade from [budget
+    card] to [expensive card]?'''
+  weight: 1.0
+  validation_rules:
+  - '1'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - i
+  - d
+  - e
+  - n
+  - t
+  - i
+  - f
+  - i
+  - e
+  - s
+  - ' '
+  - s
+  - p
+  - e
+  - c
+  - i
+  - f
+  - i
+  - c
+  - ' '
+  - m
+  - e
+  - t
+  - a
+  - ' '
+  - c
+  - o
+  - n
+  - d
+  - i
+  - t
+  - i
+  - o
+  - n
+  - s
+  - ' '
+  - w
+  - a
+  - r
+  - r
+  - a
+  - n
+  - t
+  - i
+  - n
+  - g
+  - ' '
+  - u
+  - p
+  - g
+  - r
+  - a
+  - d
+  - e
+  - '
+
+    '
+  - '2'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - m
+  - e
+  - n
+  - t
+  - i
+  - o
+  - n
+  - s
+  - ' '
+  - i
+  - n
+  - t
+  - e
+  - r
+  - m
+  - e
+  - d
+  - i
+  - a
+  - t
+  - e
+  - ' '
+  - u
+  - p
+  - g
+  - r
+  - a
+  - d
+  - e
+  - ' '
+  - s
+  - t
+  - e
+  - p
+  - s
+  - ' '
+  - i
+  - f
+  - ' '
+  - t
+  - h
+  - e
+  - y
+  - ' '
+  - e
+  - x
+  - i
+  - s
+  - t
+  - '
+
+    '
+  - '3'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - o
+  - m
+  - p
+  - a
+  - r
+  - e
+  - s
+  - ' '
+  - c
+  - o
+  - m
+  - p
+  - e
+  - t
+  - i
+  - t
+  - i
+  - v
+  - e
+  - ' '
+  - v
+  - i
+  - a
+  - b
+  - i
+  - l
+  - i
+  - t
+  - y
+  - ' '
+  - (
+  - c
+  - E
+  - D
+  - H
+  - ' '
+  - v
+  - s
+  - ' '
+  - c
+  - a
+  - s
+  - u
+  - a
+  - l
+  - )
+  - '
+
+    '
+  - '4'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - i
+  - t
+  - e
+  - s
+  - ' '
+  - o
+  - r
+  - a
+  - c
+  - l
+  - e
+  - ' '
+  - t
+  - e
+  - x
+  - t
+  - ' '
+  - s
+  - h
+  - o
+  - w
+  - i
+  - n
+  - g
+  - ' '
+  - w
+  - h
+  - a
+  - t
+  - ' '
+  - p
+  - r
+  - e
+  - m
+  - i
+  - u
+  - m
+  - ' '
+  - v
+  - e
+  - r
+  - s
+  - i
+  - o
+  - n
+  - ' '
+  - a
+  - d
+  - d
+  - s
+  - '
+
+    '
+  - '5'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - s
+  - a
+  - y
+  - s
+  - ' '
+  - ''''
+  - a
+  - l
+  - w
+  - a
+  - y
+  - s
+  - ' '
+  - u
+  - p
+  - g
+  - r
+  - a
+  - d
+  - e
+  - ' '
+  - i
+  - m
+  - m
+  - e
+  - d
+  - i
+  - a
+  - t
+  - e
+  - l
+  - y
+  - ''''
+  - '
+
+    '
+  - '6'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - d
+  - o
+  - e
+  - s
+  - n
+  - ''''
+  - t
+  - ' '
+  - m
+  - e
+  - n
+  - t
+  - i
+  - o
+  - n
+  - ' '
+  - b
+  - u
+  - d
+  - g
+  - e
+  - t
+  - ' '
+  - c
+  - o
+  - n
+  - s
+  - t
+  - r
+  - a
+  - i
+  - n
+  - t
+  - s
+  - '
+
+    '
+  - '7'
+  - .
+  - ' '
+  - H
+  - A
+  - R
+  - D
+  - ' '
+  - R
+  - E
+  - J
+  - E
+  - C
+  - T
+  - ' '
+  - i
+  - f
+  - ' '
+  - a
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - c
+  - o
+  - n
+  - t
+  - a
+  - i
+  - n
+  - s
+  - ' '
+  - m
+  - a
+  - r
+  - k
+  - d
+  - o
+  - w
+  - n
+  - ' '
+  - f
+  - o
+  - r
+  - m
+  - a
+  - t
+  - t
+  - i
+  - n
+  - g
+  - '
+
+    '
+  - '8'
+  - .
+  - ' '
+  - A
+  - n
+  - s
+  - w
+  - e
+  - r
+  - ' '
+  - m
+  - u
+  - s
+  - t
+  - ' '
+  - b
+  - e
+  - ' '
+  - a
+  - t
+  - ' '
+  - l
+  - e
+  - a
+  - s
+  - t
+  - ' '
+  - '1'
+  - '0'
+  - '0'
+  - ' '
+  - c
+  - h
+  - a
+  - r
+  - a
+  - c
+  - t
+  - e
+  - r
+  - s
+  min_answer_length: 100
+  max_answer_length: 2000

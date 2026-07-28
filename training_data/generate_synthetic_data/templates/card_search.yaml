@@ -1,0 +1,146 @@
+- template_id: competitive
+  instruction: 'Generate exactly 3 Q&A pairs for COMPETITIVE Commander players asking
+    about the best cards for this effect.
+
+    Focus on: EDHREC rank, inclusion percentage, top-tier competitive staples, and
+    why these cards dominate the meta.
+
+    At least one question must be phrased as a competitive player optimizing their
+    deck.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not cite EDHREC rank for at least one recommended card.
+  - 2. Answer does not mention inclusion percentage or deck prevalence for at least
+    one card.
+  - 3. Answer does not mention at least one top-tier competitive card (EDHREC rank
+    < 500).
+  - 4. Answer contains markdown formatting (bold, italics, bullet points).
+  - 5. Answer references rule numbers directly.
+  - 6. Answer is less than 80 characters.
+  - 7. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. At least one card's EDHREC rank is cited.
+  - 2. At least one card's inclusion percentage or deck prevalence is mentioned.
+  - 3. At least one top-tier competitive card (EDHREC rank < 500) is recommended.
+  - 4. Answer explains WHY these cards are competitive choices.
+  - 5. No markdown formatting.
+  - 6. No rule number references.
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: budget
+  instruction: 'Generate exactly 3 Q&A pairs for BUDGET-CONSCIOUS Commander players
+    asking about affordable options for this effect.
+
+    Focus on: actual USD prices (cite specific prices), cards under $5, budget alternatives,
+    and value-for-money.
+
+    At least one question must be phrased as a player with a strict budget (e.g.,
+    "under $5 per card").'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not cite actual USD prices for at least one recommended card.
+  - 2. Answer does not mention budget alternatives under $5.
+  - 3. Answer recommends cards over $5 without noting they exceed budget.
+  - 4. Answer contains markdown formatting (bold, italics, bullet points).
+  - 5. Answer references rule numbers directly.
+  - 6. Answer is less than 80 characters.
+  - 7. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. At least one card's actual price (USD) is cited.
+  - 2. All recommended cards are under $5 or explicitly noted as budget alternatives.
+  - 3. Answer explains what each budget card does and why it's a good alternative.
+  - 4. No markdown formatting.
+  - 5. No rule number references.
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: commander_specific
+  instruction: 'Generate exactly 3 Q&A pairs for players building around a SPECIFIC
+    COMMANDER asking what cards with this effect work well in that deck.
+
+    Focus on: color identity legality, commander synergy (how the effect interacts
+    with the commander''s abilities), and deck-specific strategy.
+
+    At least one question must name a specific commander and ask about synergy.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not check color identity legality for the commander.
+  - 2. Answer does not mention commander synergy or why cards work with that commander.
+  - 3. Answer recommends cards illegal in the commander's color identity.
+  - 4. Answer contains markdown formatting (bold, italics, bullet points).
+  - 5. Answer references rule numbers directly.
+  - 6. Answer is less than 80 characters.
+  - 7. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Color identity legality is explicitly checked and stated.
+  - 2. Commander synergy is explained (why these cards work with that commander).
+  - 3. All recommended cards are legal in the commander's color identity.
+  - 4. At least one card's interaction with the commander's abilities is described.
+  - 5. No markdown formatting.
+  - 6. No rule number references.
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: thematic
+  instruction: 'Generate exactly 3 Q&A pairs for players building a THEMATIC/MECHANIC-FOCUSED
+    deck asking what cards support this strategy.
+
+    Focus on: mechanic synergy, keyword interactions, how cards enable the theme,
+    and thematic coherence.
+
+    At least one question must ask about the mechanic/theme by name (e.g., "What cards
+    support a treasure strategy?").'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not explain mechanic synergy or how cards interact with the theme.
+  - 2. Answer does not cite keyword interactions or mechanic-specific synergies.
+  - 3. Answer lists cards without explaining thematic relevance.
+  - 4. Answer contains markdown formatting (bold, italics, bullet points).
+  - 5. Answer references rule numbers directly.
+  - 6. Answer is less than 80 characters.
+  - 7. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Mechanic/theme synergy is explicitly explained.
+  - 2. Keyword interactions are cited (e.g., "works with treasure tokens because...").
+  - 3. Each recommended card's thematic relevance is explained.
+  - 4. At least one specific keyword or mechanic interaction is described.
+  - 5. No markdown formatting.
+  - 6. No rule number references.
+  min_answer_length: 80
+  max_answer_length: 2000
+- template_id: beginner
+  instruction: 'Generate exactly 3 Q&A pairs for BEGINNER Commander players asking
+    what cards with this effect they should consider.
+
+    Focus on: simple explanations (no jargon or explain it), concrete card examples
+    with plain-language descriptions, budget-friendly options, and why each card is
+    good for learning.
+
+    At least one question must be phrased as a new player (e.g., "I''m new to Commander...").'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer uses MTG jargon without explanation (e.g., "ramp", "tutor", "ETB", "value"
+    without defining).
+  - 2. Answer does not give concrete card examples with simple explanations.
+  - 3. Answer assumes knowledge of competitive concepts (EDHREC rank, meta, cEDH).
+  - 4. Answer contains markdown formatting (bold, italics, bullet points).
+  - 5. Answer references rule numbers directly.
+  - 6. Answer is less than 80 characters.
+  - 7. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Jargon is either avoided or explained in simple terms.
+  - 2. At least 3 concrete card examples are given with plain-language explanations.
+  - 3. Advice is framed for a beginner (budget-friendly, easy to understand).
+  - 4. No competitive jargon (EDHREC, meta, cEDH, salt score) without explanation.
+  - 5. No markdown formatting.
+  - 6. No rule number references.
+  min_answer_length: 80
+  max_answer_length: 2000

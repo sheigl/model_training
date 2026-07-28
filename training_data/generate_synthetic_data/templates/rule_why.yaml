@@ -1,0 +1,7 @@
+- template_id: why
+  instruction: Generate 2 Q&A pairs that ask WHY a ruling works the way it does. Start
+    from a known outcome and ask why.
+  weight: 1.0
+  validation_rules: []
+  min_answer_length: 80
+  max_answer_length: 2000

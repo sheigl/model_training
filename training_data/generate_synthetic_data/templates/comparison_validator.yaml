@@ -1,0 +1,72 @@
+instruction: "\n<reference>\nMTG NOTATION:\n- {T}: Tap (rotate card 90°; only if untapped)\n\
+  - {C}: Colorless mana | {W}: White | {U}: Blue | {B}: Black | {R}: Red | {G}: Green\n\
+  - {X}: Variable amount | {1},{2},{3}...: Generic mana (any color/colorless)\n- Example:\
+  \ {2}{U}{U} = 4 total mana (2 generic + 2 blue)\n\nCARD TYPES:\n- Creature: Can\
+  \ attack/block; has summoning sickness (can't tap or attack first turn it enters)\n\
+  - Artifact / Enchantment: Permanent; stays on battlefield\n- Instant: Cast anytime;\
+  \ goes to graveyard after resolving\n- Sorcery: Cast only on your turn; goes to\
+  \ graveyard after resolving\n- Land: Played once per turn (not cast); produces mana\n\
+  \nKEY TERMS:\n- ETB: Triggers when permanent enters the battlefield\n- Summoning\
+  \ Sickness: Creatures can't tap or attack the turn they enter\n- Sacrifice: Put\
+  \ into graveyard as a cost (uncounterable)\n- Destroy: Put into graveyard (blocked\
+  \ by indestructible)\n- Exile: Remove from game (harder to recover than graveyard)\n\
+  </reference>\n\n\n    You are a Magic: The Gathering expert reviewing a comparison\
+  \ answer for accuracy.\n\n    Card 1: {card1_name}\n    Type: {card1_type}\n   \
+  \ Text: {card1_text}\n    Cost: {card1_cost}\n\n    Card 2: {card2_name}\n    Type:\
+  \ {card2_type}\n    Text: {card2_text}\n    Cost: {card2_cost}\n\n    Question:\
+  \ {question}\n\n    Answer to validate:\n    {answer}\n\n    \nCRITICAL CARD TYPE\
+  \ CHECKS:\nBefore anything else, verify the answer addresses card types:\n\n1. Are\
+  \ the card types mentioned?\n   - Creature vs Non-Creature is CRITICAL\n   - Artifact\
+  \ vs Enchantment vs Land matters\n   - If one is a creature and one isn't, this\
+  \ MUST be discussed\n\n2. Type-specific mechanics mentioned?\n   - Creatures: Summoning\
+  \ sickness (can't {T} or attack first turn), vulnerable to creature removal, can\
+  \ attack/block\n   - Artifacts: No summoning sickness, only vulnerable to artifact\
+  \ removal\n   - Enchantments: Only vulnerable to enchantment removal\n   - Lands:\
+  \ Can't be countered, don't cost mana to play\n   - Instants/Sorceries: One-time\
+  \ spells, not affected by board wipes\n\n3. Vulnerability differences explained?\n\
+  \   - If comparing creature vs non-creature, answer MUST mention board wipes\n \
+  \  - If comparing different permanent types, answer MUST mention removal types\n\
+  \   - If comparing instants/sorceries, focus on EFFECTS not vulnerability\n\nVERIFICATION\
+  \ CHECKLIST:\nCheck each of these carefully:\n\n1. Casting costs correct?\n   -\
+  \ Does the answer correctly state which card costs more to cast?\n   - Are mana\
+  \ symbols and costs accurate?\n\n2. Mechanics accurate?\n   - Does it correctly\
+  \ describe what each card DOES?\n   - Are activation costs vs casting costs distinguished\
+  \ properly?\n   - Is net mana production calculated correctly?\n   - If a card costs\
+  \ X and produces X, is it correctly identified as net zero (conversion, not ramp)?\n\
+  \   \n3. CARD TYPES mentioned and explained?\n   - If one card is a creature and\
+  \ one isn't, is this addressed?\n   - Are type-specific vulnerabilities mentioned?\n\
+  \   - Is summoning sickness mentioned for creatures?\n   - For instants/sorceries,\
+  \ are effects discussed (not board wipe vulnerability)?\n   \n4. Important details\
+  \ mentioned?\n   - Card draw effects mentioned if present?\n   - \"Enters tapped\"\
+  \ mentioned if relevant?\n   - Sacrifice requirements mentioned if present?\n  \
+  \ - Color restrictions mentioned (colored vs colorless mana)?\n   - Destruction/removal\
+  \ effects mentioned if present?\n\n5. No false claims?\n   - No invented abilities\
+  \ or effects?\n   - No confusion between \"costs X, produces X\" (net zero) vs actual\
+  \ ramp?\n   - No claiming cheaper cards are more expensive?\n   - No ignoring critical\
+  \ card text?\n\nCOMMON ERROR PATTERNS TO REJECT:\n- Claiming \"costs less to activate\"\
+  \ when actually comparing casting costs\n- Saying a card \"produces more mana if\
+  \ you pay more\" when it's X-for-X conversion\n- Ignoring that a card draws cards,\
+  \ destroys things, or has other important effects\n- Missing that colored mana ≠\
+  \ colorless mana\n- Confusing one-time effects with repeatable effects\n- Backwards\
+  \ cost comparisons (saying {2} is cheaper than {1})\n- IGNORING CARD TYPES (creature\
+  \ vs artifact is a HUGE difference)\n- NOT MENTIONING summoning sickness for creatures\n\
+  - MISSING vulnerability differences between card types\n- Discussing board wipe\
+  \ vulnerability for INSTANTS/SORCERIES (they're spells, not permanents!)\n\n\n \
+  \   Review this answer for:\n    1. Accuracy - Does it correctly describe both cards'\
+  \ mechanics AND types?\n    2. Completeness - Does it mention ALL important abilities\
+  \ AND type-specific concerns?\n    3. Usefulness - Does it give clear, context-dependent\
+  \ guidance?\n    4. Factual correctness - Are there any outright errors or misconceptions?\n\
+  \n    Respond ONLY with JSON:\n    {\n    \"score\": <1-10>,\n    \"is_acceptable\"\
+  : <true/false>,\n    \"missing_info\": \"<what critical info is missing, if any>\"\
+  ,\n    \"errors\": \"<factual errors, if any>\",\n    \"mechanical_accuracy\": \"\
+  <are the card mechanics described correctly?>\",\n    \"cost_comparison_correct\"\
+  : \"<are costs compared accurately?>\",\n    \"card_types_addressed\": \"<are card\
+  \ types mentioned and their implications explained?>\"\n    }\n\n    \nSCORING GUIDE:\n\
+  - 9-10: Perfect, all mechanics correct, comprehensive, card types addressed\n- 7-8:\
+  \ Good, minor omissions but no errors\n- 5-6: Acceptable but missing important context\n\
+  - 3-4: Significant errors or missing critical info (like ignoring card types)\n\
+  - 1-2: Fundamentally wrong about card mechanics\n\nCRITICAL: \n- If card types are\
+  \ ignored when comparing creature vs non-creature, max score is 4\n- If there are\
+  \ ANY factual errors about card mechanics, max score is 4\n- If discussing board\
+  \ wipes for instant/sorcery cards, max score is 4\n- A score of 7+ is acceptable.\
+  \ Below 7 should be rejected.\n\n\n    Output ONLY valid JSON, no other text."
