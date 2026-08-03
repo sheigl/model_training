@@ -404,8 +404,12 @@ Output ONLY valid JSON, no other text."""
         """
         if self.yaml_loader is None:
             return None
-        # 1. Generator-specific validator override
-        doc = self.yaml_loader.get_latest(category, "validator", "validator")
+        # 1. Generator-specific validator override (best historical version first)
+        active_val_version = getattr(self.yaml_loader, "get_active_validator_version", lambda c: None)(category)
+        if active_val_version and active_val_version > 1:
+            doc = self.yaml_loader.get_version(category, "validator", "validator", int(active_val_version))
+        else:
+            doc = self.yaml_loader.get_latest(category, "validator", "validator")
         if doc and isinstance(doc, dict):
             instruction = doc.get("instruction")
             if instruction:

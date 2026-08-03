@@ -48,6 +48,15 @@ class MockModel(Model):
         self.api_key = None
 
 
+def _make_loader() -> MagicMock:
+    """Build a YamlTemplateLoader mock with the new active-template methods disabled."""
+    loader = MagicMock(spec=YamlTemplateLoader)
+    loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
+    loader.load_active_templates.return_value = None
+    loader.get_active_validator_version.return_value = None
+    return loader
+
+
 def _make_yaml_doc(template_id: str, instruction: str, weight: float = 1.0,
                    validation_rules: list[str] | None = None,
                    min_answer_length: int = 80, max_answer_length: int = 2000) -> dict:
@@ -76,7 +85,7 @@ class ConcreteGenerator(BaseGenerator[dict]):
 
     def __init__(self, *args, yaml_loader: MagicMock | None = None, **kwargs):
         if yaml_loader is None:
-            yaml_loader = MagicMock(spec=YamlTemplateLoader)
+            yaml_loader = _make_loader()
             yaml_loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
             def get_latest_side(gen, tid, ttype):
                 if ttype == "generation":
@@ -131,7 +140,7 @@ class TestSelectTemplatesYaml:
 
     def test_select_templates_yaml_present(self):
         """When the yaml_loader returns entries, TemplateConfig objects are built from them."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
         loader.list_templates.return_value = ["template_a", "template_b"]
 
@@ -155,7 +164,7 @@ class TestSelectTemplatesYaml:
 
     def test_select_templates_yaml_absent_raises(self):
         """When yaml_loader returns no template IDs, ValueError is raised."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.list_templates.return_value = []
         gen = _make_generator(yaml_loader=loader)
 
@@ -164,7 +173,7 @@ class TestSelectTemplatesYaml:
 
     def test_select_templates_yaml_missing_for_some(self):
         """When the yaml_loader returns None for some template_ids, they are skipped."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
         loader.list_templates.return_value = ["template_a", "template_b"]
 
@@ -184,7 +193,7 @@ class TestSelectTemplatesYaml:
 
     def test_yaml_list_templates_called(self):
         """list_templates is called to discover template IDs."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.list_templates.return_value = ["tid1", "tid2", "tid3"]
         gen = _make_generator(yaml_loader=loader)
 
@@ -202,7 +211,7 @@ class TestValidatorResolution:
 
     def test_yaml_loader_generator_specific(self):
         """A generator-specific validator from yaml_loader takes precedence."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
         loader.get_latest.side_effect = lambda gen, tid, ttype: (
             {"template_id": tid, "instruction": f"YAML {gen}/{tid} prompt"}
@@ -219,7 +228,7 @@ class TestValidatorResolution:
 
     def test_yaml_loader_shared_fallback(self):
         """When no generator-specific YAML validator exists, shared is used."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
 
         def get_latest_side(gen, tid, ttype):
@@ -247,7 +256,7 @@ class TestValidatorResolution:
 
     def test_qa_validation_prompt_uses_yaml_template(self):
         """__build_qa_validation_prompt uses the YAML-stored template when available."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
         template_text = "VALIDATE: q={question} a={answer} ctx={context} cat={category}"
         loader.get_latest.return_value = {"template_id": "qa_validation", "instruction": template_text}
@@ -262,7 +271,7 @@ class TestValidatorResolution:
 
     def test_card_validation_prompt_uses_yaml_template(self):
         """__build_card_validation_prompt uses the YAML-stored template when available."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
         template_text = "CARD VAL: {card1_name} vs {card2_name} q={question} a={answer}"
         loader.get_latest.return_value = {"template_id": "card_validation", "instruction": template_text}
@@ -294,7 +303,7 @@ class TestScaffoldingCache:
 
     def test_init_scaffolding_from_yaml_populates_cache(self):
         """init_scaffolding populates the cache from YAML loader data."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.get_scaffolding.return_value = {
             "system_message": "YAML SYSTEM MESSAGE",
             "notation_legend": "YAML NOTATION LEGEND",
@@ -318,7 +327,7 @@ class TestScaffoldingCache:
 
     def test_init_scaffolding_yaml_missing_key_uses_fallback(self):
         """When YAML has partial data, missing keys leave the cache empty (fallback to constants)."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.get_scaffolding.return_value = {
             "system_message": "YAML SYSTEM",
             # notation_legend, output_format, etc. are missing
@@ -334,7 +343,7 @@ class TestScaffoldingCache:
 
     def test_init_scaffolding_yaml_none_is_noop(self):
         """When yaml_loader.get_scaffolding() returns None, cache stays empty."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.get_scaffolding.return_value = None
 
         init_scaffolding(yaml_loader=loader)
@@ -395,7 +404,7 @@ class TestBaseGeneratorWiring:
 
     def test_yaml_loader_wired_to_query_model(self):
         """The yaml_loader is propagated to the QueryModel instance."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         loader.SHARED_NAMESPACE = YamlTemplateLoader.SHARED_NAMESPACE
         gen = _make_generator(yaml_loader=loader)
 
@@ -420,7 +429,7 @@ class TestResolveValidatorVersion:
 
     def test_yaml_loader_returns_none_for_version(self):
         """When yaml_loader is used, _resolve_validator_version returns None."""
-        loader = MagicMock(spec=YamlTemplateLoader)
+        loader = _make_loader()
         gen = _make_generator(yaml_loader=loader)
 
         result = gen._resolve_validator_version("combo_query")

@@ -1,0 +1,21 @@
+[project]
+name = "generator-dashboard"
+version = "0.1.0"
+description = "Web dashboard for the MTG synthetic-data generators"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pymongo",
+    "python-dotenv",
+    "pydantic",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "httpx",
+]
+
+[tool.uv]
+package = false

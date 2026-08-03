@@ -4,7 +4,7 @@ import json
 import time
 from pymongo import MongoClient
 from datetime import datetime
-from pyedhrec import EDHRec
+from edhrec import EDHRec
 from custom_pyedhrec import Custom_EDHRec
 import argparse
 

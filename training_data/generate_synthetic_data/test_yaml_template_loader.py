@@ -109,7 +109,9 @@ class TestLoadCategoryFile:
         templates_dir = str(loader._templates_dir)
         yaml_files = sorted(
             f for f in os.listdir(templates_dir)
-            if f.endswith(".yaml") and f not in ("shared.yaml", "qa_validation.yaml", "comparison_validator.yaml")
+            if f.endswith(".yaml")
+            and "_validator" not in f
+            and f not in ("shared.yaml", "qa_validation.yaml", "comparison_validator.yaml")
         )
         assert len(yaml_files) == 27
         for fname in yaml_files:
@@ -375,6 +377,87 @@ class TestInvalidTemplatesDir:
     def test_nonexistent_dir_raises_valueerror(self):
         with pytest.raises(ValueError, match="Templates directory does not exist"):
             _make_loader("/nonexistent/path/that/does/not/exist")
+
+
+# ---------------------------------------------------------------------------
+# Legacy manifest version resolution
+# ---------------------------------------------------------------------------
+class TestLegacyManifestVersionResolution:
+    def _write_manifest(self, templates_dir, data):
+        import json
+        with open(__import__("os").path.join(templates_dir, "_observer_manifest.json"), "w") as f:
+            json.dump(data, f)
+
+    def test_legacy_version_routes_to_validator_file(self, tmp_path):
+        """A legacy active_version maps to the validator when only the
+        versioned validator file exists."""
+        templates_dir = _make_temp_dir(tmp_path)
+        import os
+        with open(os.path.join(templates_dir, "test_category_validator_v2.yaml"), "w") as f:
+            f.write("instruction: improved validator\n")
+        self._write_manifest(templates_dir, {
+            "categories": {
+                "test_category": {"active_version": 2, "versions": {"2": {}}},
+            }
+        })
+        loader = _make_loader(templates_dir)
+
+        assert loader.get_active_validator_version("test_category") == 2
+        # Generation namespace must NOT claim the legacy version
+        assert loader._get_active_version("test_category", "generation") is None
+        assert loader.load_active_templates("test_category") is None
+
+    def test_legacy_version_routes_to_generation_file(self, tmp_path):
+        """A legacy active_version maps to generation when only the versioned
+        generation file exists."""
+        templates_dir = _make_temp_dir(tmp_path)
+        import os
+        with open(os.path.join(templates_dir, "test_category_v2.yaml"), "w") as f:
+            yaml.dump([{
+                "template_id": "how_does_it_work",
+                "instruction": "v2 instruction",
+                "weight": 1.0,
+                "validation_rules": [],
+                "min_answer_length": 80,
+                "max_answer_length": 2000,
+            }], f, default_flow_style=False)
+        self._write_manifest(templates_dir, {
+            "categories": {
+                "test_category": {"active_version": 2, "versions": {"2": {}}},
+            }
+        })
+        loader = _make_loader(templates_dir)
+
+        assert loader._get_active_version("test_category", "generation") == 2
+        assert loader.get_active_validator_version("test_category") is None
+        active = loader.load_active_templates("test_category")
+        assert active is not None
+        assert active[0]["instruction"] == "v2 instruction"
+
+    def test_legacy_version_without_files_defaults_generation(self, tmp_path):
+        """No versioned file on disk → legacy counter defaults to generation."""
+        templates_dir = _make_temp_dir(tmp_path)
+        self._write_manifest(templates_dir, {
+            "categories": {
+                "test_category": {"active_version": 2, "versions": {"2": {}}},
+            }
+        })
+        loader = _make_loader(templates_dir)
+
+        assert loader._get_active_version("test_category", "generation") == 2
+        assert loader.get_active_validator_version("test_category") is None
+
+    def test_versioned_validator_file_is_loadable(self, tmp_path):
+        """get_version for a validator version reads the versioned file."""
+        templates_dir = _make_temp_dir(tmp_path)
+        import os
+        with open(os.path.join(templates_dir, "test_category_validator_v2.yaml"), "w") as f:
+            f.write("instruction: improved validator\n")
+        loader = _make_loader(templates_dir)
+
+        doc = loader.get_version("test_category", "validator", "validator", 2)
+        assert doc is not None
+        assert doc["instruction"] == "improved validator"
 
 
 if __name__ == "__main__":

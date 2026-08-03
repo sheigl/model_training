@@ -21,6 +21,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 
 from .common import (
     TemplateConfig,
+    _dict_to_template_config,
     validate_and_loop_with_suggested_fix,
     QuestionAnswer,
     QuestionAnswerEnhanced,
@@ -81,6 +82,7 @@ class BaseGenerator(ABC, Generic[T]):
         yaml_loader: YamlTemplateLoader | None = None,
         template_version_override: int | None = None,
         validator_template_version_override: int | None = None,
+        observer=None,
     ):
         """Initialize the base generator.
 
@@ -103,6 +105,9 @@ class BaseGenerator(ABC, Generic[T]):
                 specific version from the store instead of the latest.
             validator_template_version_override: When set, the validator template
                 lookup requests this specific version instead of the latest.
+            observer: Optional :class:`Observer` for post-generation analysis and
+                template improvement. If provided, traces are forwarded after each
+                item completes validation.
         """
         self.models = models
         self.validation_pct = validation_pct
@@ -118,6 +123,7 @@ class BaseGenerator(ABC, Generic[T]):
         self._yaml_loader = yaml_loader
         self._template_version_override = template_version_override
         self._validator_template_version_override = validator_template_version_override
+        self._observer = observer
 
         self._query_model = QueryModel()
         self._query_model.yaml_loader = yaml_loader
@@ -176,7 +182,6 @@ class BaseGenerator(ABC, Generic[T]):
         for tid in template_ids:
             doc = loader.get_latest(category, tid, "generation")
             if doc:
-                from .common import _dict_to_template_config
                 result.append(_dict_to_template_config(doc))
         return result
 
@@ -308,11 +313,23 @@ class BaseGenerator(ABC, Generic[T]):
         if not template_ids:
             logger.warning("No templates found in YAML for category %r", category)
             return None
+
+        # Resolve the template version: explicit CLI override → observer best
+        # historical version → latest. This makes --starting-template-versions
+        # and the observer's automatic revert both take effect.
+        requested_version = self._template_version_override
+        if requested_version is None:
+            active = self._yaml_loader.load_active_templates(category)
+            if active:
+                return [_dict_to_template_config(d) for d in active]
+
         result: list[TemplateConfig] = []
         for tid in template_ids:
-            doc = self._yaml_loader.get_latest(category, tid, "generation")
+            if requested_version is not None:
+                doc = self._yaml_loader.get_version(category, tid, "generation", requested_version)
+            else:
+                doc = self._yaml_loader.get_latest(category, tid, "generation")
             if doc:
-                from .common import _dict_to_template_config
                 result.append(_dict_to_template_config(doc))
             else:
                 logger.warning("No YAML entry for %s/%s — skipping", category, tid)
@@ -329,10 +346,16 @@ class BaseGenerator(ABC, Generic[T]):
     def _resolve_validator_version(self, category: str) -> int | None:
         """Resolve the validator template version.
 
-        Since YAML has no versioning, this always returns ``None`` (caller
-        treats ``None`` as "no override"). The validator prompt is loaded
-        directly from YAML via :class:`QueryModel._resolve_validator_template`.
+        Returns the best historical validator version recorded in the observer
+        manifest when one exists (``None`` means "no override"). The validator
+        prompt is loaded directly from YAML via
+        :class:`QueryModel._resolve_validator_template`, which consults the
+        same manifest.
         """
+        if self._validator_template_version_override is not None:
+            return self._validator_template_version_override
+        if self._yaml_loader is not None:
+            return self._yaml_loader.get_active_validator_version(category)
         return None
 
     def validate_answer(
@@ -479,6 +502,8 @@ class BaseGenerator(ABC, Generic[T]):
                     if self.generated_count >= self.target_count:
                         break
 
+                    _rounds_start = len(trace.validation_rounds) if trace is not None else 0
+
                     is_valid, doc = self.validate_answer(
                         qa, template, data_batch, source_data, trace=trace,
                         sibling_corrections=sibling_corrections,
@@ -489,9 +514,23 @@ class BaseGenerator(ABC, Generic[T]):
                             self.save_item(doc)
                         self.generated_count += 1
 
+                    # Forward per-QA trace to observer so its stats match metrics
+                    # (one event per QA pair, with that pair's own outcome + rounds).
+                    if self._observer and trace is not None:
+                        self._observer.on_item_processed(
+                            self.get_source_category(),
+                            {
+                                "final_outcome": trace.final_outcome,
+                                "total_rounds": trace.total_rounds,
+                                "validation_rounds": list(trace.validation_rounds[_rounds_start:]),
+                                "template_version": template.version,
+                            },
+                            self.metrics.summary() if self.metrics else None,
+                        )
+
                 # Fire trace callback after all QA pairs are processed
                 # (regardless of pass/fail) so we always capture generation traces
-                if trace and self._trace_callback:
+                if self._trace_callback and trace is not None:
                     self._trace_callback(trace)
                     trace = None  # Prevent callback from firing again for this template
 
@@ -529,7 +568,9 @@ class BaseGenerator(ABC, Generic[T]):
                 f"(category={self.get_source_category()})"
             )
 
-        console.print(f"\n[bold cyan]=== GENERATING {self.target_count:,} {self.get_source_category().upper()} ===[/bold cyan]")
+        run_id = self.metrics.run_id if self.metrics else ""
+        run_short = f" [run={run_id[:8]}...]" if run_id else ""
+        console.print(f"\n[bold cyan]=== GENERATING {self.target_count:,} {self.get_source_category().upper()}{run_short} ===[/bold cyan]")
 
         with Progress(
             SpinnerColumn(),
@@ -552,7 +593,9 @@ class BaseGenerator(ABC, Generic[T]):
                 progress.advance(task, 0)  # Update progress bar
 
         elapsed = time.time() - self._start_time
-        console.print(f"\n[green]✓ Completed {self.generated_count:,} {self.get_source_category()} in {elapsed:.1f}s[/green]")
+        run_id = self.metrics.run_id if self.metrics else ""
+        run_short = f" [run={run_id[:8]}...]" if run_id else ""
+        console.print(f"\n[green]✓ Completed {self.generated_count:,} {self.get_source_category()} in {elapsed:.1f}s{run_short}[/green]")
 
         if self.metrics:
             self.metrics.flush()

@@ -1,0 +1,143 @@
+- template_id: how_does_it_work
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works. Focus
+    on: the sequence of steps, what triggers what, and why the loop is infinite (if
+    applicable). At least one question must come from the perspective of a player
+    who has never seen this combo before. Each answer must explicitly list every combo
+    piece and its role, include the full step-by-step sequence with all required actions
+    and triggers, cite relevant oracle text or exact card wording when it clarifies
+    an interaction, and clearly state why the loop repeats or terminates. Do not omit
+    known combo steps such as ETB triggers, costs, or bounce effects. Verify that
+    each card reference, copy target, and trigger relationship is factually accurate.
+    Output strictly valid JSON with correct escaping, no trailing commas, and no unescaped
+    special characters.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not explain the sequence of steps in the correct order — a correct
+    description of individual triggers in the wrong order is a factual error.
+  - 2. Answer does not explicitly name ALL required combo pieces and explain each
+    one's role.
+  - 3. Answer does not state the concrete outcome matching the COMBO RESULT field
+    — vague phrases like "very powerful" or "wins the game" are validation failures.
+  - 4. Answer does not cite or closely paraphrase oracle text when explaining why
+    a trigger fires.
+  - 5. Answer contains markdown formatting (bold, italics, bullet points).
+  - 6. Answer references rule numbers directly — mechanics must be explained conversationally.
+  - 7. Answer is less than 80 characters.
+  - 8. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The sequence of triggers described matches the order in the provided combo
+    steps.
+  - 2. The answer explicitly names ALL required combo pieces and explains each one's
+    role.
+  - 3. The answer states the concrete outcome matching the COMBO RESULT field.
+  - 4. Oracle text is cited or closely paraphrased when explaining why a trigger fires.
+  - 5. At least one question comes from the perspective of a player who has never
+    seen this combo before.
+  min_answer_length: 80
+  max_answer_length: 2000
+  version: '1'
+- template_id: what_do_i_need
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works. Focus
+    on: the sequence of steps, what triggers what, and why the loop is infinite (if
+    applicable). At least one question must come from the perspective of a player
+    who has never seen this combo before. Each answer must explicitly list every combo
+    piece and its role, include the full step-by-step sequence with all required actions
+    and triggers, cite relevant oracle text or exact card wording when it clarifies
+    an interaction, and clearly state why the loop repeats or terminates. Do not omit
+    known combo steps such as ETB triggers, costs, or bounce effects. Verify that
+    each card reference, copy target, and trigger relationship is factually accurate.
+    Output strictly valid JSON with correct escaping, no trailing commas, and no unescaped
+    special characters.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not list ALL required cards for the combo.
+  - 2. Answer does not specify what zone each piece needs to be in (battlefield, hand,
+    command zone, etc.).
+  - 3. Answer does not state what mana or other resources are required.
+  - 4. Answer does not include at least one question phrased as "I have X, what else
+    do I need to go infinite?"
+  - 5. Answer contains markdown formatting (bold, italics, bullet points).
+  - 6. Answer references rule numbers directly.
+  - 7. Answer is less than 80 characters.
+  - 8. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. All required combo pieces are listed.
+  - 2. Zone requirements for each piece are specified.
+  - 3. Mana/resource requirements are stated.
+  - 4. At least one question is from the perspective of a player asking what else
+    they need.
+  min_answer_length: 80
+  max_answer_length: 2000
+  version: '1'
+- template_id: why_does_this_work
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works. Focus
+    on: the sequence of steps, what triggers what, and why the loop is infinite (if
+    applicable). At least one question must come from the perspective of a player
+    who has never seen this combo before. Each answer must explicitly list every combo
+    piece and its role, include the full step-by-step sequence with all required actions
+    and triggers, cite relevant oracle text or exact card wording when it clarifies
+    an interaction, and clearly state why the loop repeats or terminates. Do not omit
+    known combo steps such as ETB triggers, costs, or bounce effects. Verify that
+    each card reference, copy target, and trigger relationship is factually accurate.
+    Output strictly valid JSON with correct escaping, no trailing commas, and no unescaped
+    special characters.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not explain which specific abilities or rules interactions enable
+    the combo.
+  - 2. Answer does not explain why removing any one piece breaks the combo.
+  - 3. Answer does not address at least one potential misconception about why the
+    combo functions.
+  - 4. Answer contains markdown formatting (bold, italics, bullet points).
+  - 5. Answer references rule numbers directly.
+  - 6. Answer is less than 80 characters.
+  - 7. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. Specific abilities/rules interactions enabling the combo are identified.
+  - 2. Why each piece is essential is explained.
+  - 3. At least one misconception is addressed and corrected.
+  min_answer_length: 80
+  max_answer_length: 2000
+  version: '1'
+- template_id: what_is_the_result
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works. Focus
+    on: the sequence of steps, what triggers what, and why the loop is infinite (if
+    applicable). At least one question must come from the perspective of a player
+    who has never seen this combo before. Each answer must explicitly list every combo
+    piece and its role, include the full step-by-step sequence with all required actions
+    and triggers, cite relevant oracle text or exact card wording when it clarifies
+    an interaction, and clearly state why the loop repeats or terminates. Do not omit
+    known combo steps such as ETB triggers, costs, or bounce effects. Verify that
+    each card reference, copy target, and trigger relationship is factually accurate.
+    Output strictly valid JSON with correct escaping, no trailing commas, and no unescaped
+    special characters.'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not state the concrete outcome of the combo (what it produces).
+  - 2. Answer uses vague phrases like "very powerful" or "wins the game" instead of
+    specific outcomes.
+  - 3. Answer does not explain how the combo wins the game or what the player should
+    do once the loop is established.
+  - 4. Answer does not include at least one question from the opponent's perspective
+    asking what happened.
+  - 5. Answer contains markdown formatting (bold, italics, bullet points).
+  - 6. Answer references rule numbers directly.
+  - 7. Answer is less than 80 characters.
+  - 8. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The concrete outcome is stated explicitly (e.g., "infinite damage", "infinite
+    mana of any color", "infinite creature tokens").
+  - 2. How the combo wins the game is explained.
+  - 3. What the player should do once the loop is established is described.
+  - 4. At least one question is from the opponent's perspective.
+  min_answer_length: 80
+  max_answer_length: 2000
+  version: '1'

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MTG Generator Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⚡</span>
+      <h1>MTG Generator Dashboard</h1>
+    </div>
+    <div class="topbar-meta">
+      <span id="mongo-status" class="badge badge-idle">mongo: checking…</span>
+      <span id="conn-status" class="badge badge-idle">disconnected</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="mode-toggle">
+        <button id="mode-generators" class="mode-btn active">Generators</button>
+        <button id="mode-scrapers" class="mode-btn">Scrapers</button>
+      </div>
+      <div id="sidebar-title" class="sidebar-title">Generators</div>
+      <nav id="tabs" class="tabs"></nav>
+    </aside>
+    <main id="panel" class="panel">
+      <div class="empty">Loading generators…</div>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

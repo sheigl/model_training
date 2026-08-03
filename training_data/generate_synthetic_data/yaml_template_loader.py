@@ -31,6 +31,21 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+def legacy_version_target(templates_dir: Path, generator: str, version: int) -> str:
+    """Resolve which namespace a legacy single-counter version belongs to.
+
+    Legacy manifests recorded only a shared ``active_version`` without
+    distinguishing generation vs validator templates. The file that actually
+    exists on disk disambiguates: ``{generator}_validator_v{N}.yaml``
+    indicates a validator improvement, ``{generator}_v{N}.yaml`` a
+    generation improvement. Defaults to ``"generation"`` when neither file
+    exists.
+    """
+    if (templates_dir / f"{generator}_validator_v{version}.yaml").is_file():
+        return "validator"
+    return "generation"
+
+
 class YamlTemplateLoader:
     """Load templates from local YAML files in the ``templates/`` directory."""
 
@@ -116,6 +131,57 @@ class YamlTemplateLoader:
 
         return None
 
+    def get_version(
+        self, generator: str, template_id: str, template_type: str, version: int
+    ) -> dict | None:
+        """Load a specific historical version from ``templates/{generator}_v{N}.yaml``.
+
+        For generation templates, reads the versioned file and returns the entry
+        matching *template_id*. Falls back to the base (unversioned) file if the
+        versioned file does not exist.
+
+        For non-generation types, delegates to :meth:`get_latest`.
+        """
+        if template_type == "validator":
+            # Versioned per-generator validator override: {generator}_validator_v{N}.yaml
+            versioned_file = self._templates_dir / f"{generator}_validator_v{version}.yaml"
+            if versioned_file.is_file():
+                data = self._load_yaml(versioned_file)
+                if isinstance(data, dict) and "instruction" in data:
+                    return {"template_id": template_id, **data}
+                if isinstance(data, list):
+                    for entry in data:
+                        if entry.get("template_id") == template_id:
+                            result = dict(entry)
+                            result.setdefault("version", str(version))
+                            return result
+            # Fall through to latest validator resolution
+            return self.get_latest(generator, template_id, template_type)
+
+        if template_type != "generation":
+            return self.get_latest(generator, template_id, template_type)
+
+        filename = f"{generator}_v{version}.yaml"
+        path = self._templates_dir / filename
+        if not path.is_file():
+            # Fall back to base file
+            path = self._templates_dir / f"{generator}.yaml"
+        if not path.is_file():
+            return None
+
+        entries = self._load_yaml(path)
+        if not isinstance(entries, list):
+            return None
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("template_id") == template_id:
+                result = dict(entry)
+                result.setdefault("version", version)
+                # Normalise instruction key
+                if "instruction" not in result and "task_instruction" in result:
+                    result["instruction"] = result.pop("task_instruction")
+                return result
+        return None
+
     def list_versions(
         self, generator: str, template_id: str, template_type: str
     ) -> list:
@@ -167,6 +233,108 @@ class YamlTemplateLoader:
         if isinstance(instruction, str):
             return instruction
         return None
+
+    # ------------------------------------------------------------------
+    # Observer manifest support
+    # ------------------------------------------------------------------
+
+    def _load_observer_manifest(self) -> dict:
+        """Load ``_observer_manifest.json`` from the templates directory."""
+        import json as _json
+        manifest_path = self._templates_dir / "_observer_manifest.json"
+        if not manifest_path.is_file():
+            return {"categories": {}}
+        try:
+            with open(manifest_path, encoding="utf-8") as f:
+                data = _json.load(f)
+            if isinstance(data, dict) and "categories" in data:
+                return data
+        except (_json.JSONDecodeError, OSError):
+            pass
+        return {"categories": {}}
+
+    def _legacy_version_target(
+        self, generator: str, version: int
+    ) -> str:
+        """Resolve which namespace a legacy single-counter version belongs to.
+
+        Legacy manifests recorded only a shared ``active_version`` without
+        distinguishing generation vs validator templates. The file that actually
+        exists on disk disambiguates: ``{generator}_validator_v{N}.yaml``
+        indicates a validator improvement, ``{generator}_v{N}.yaml`` a
+        generation improvement. Defaults to ``"generation"`` when neither file
+        exists.
+        """
+        return legacy_version_target(self._templates_dir, generator, version)
+
+    def _get_active_version(
+        self, generator: str, version_type: str
+    ) -> int | None:
+        """Return the active (best historical) version for *generator*.
+
+        Reads ``active_generation_version`` or ``active_validator_version``
+        from the observer manifest, migrating the legacy single-counter
+        ``active_version`` into the generation namespace.
+
+        Args:
+            generator: Category name.
+            version_type: ``"generation"`` or ``"validator"``.
+
+        Returns:
+            Best version number (> 1 means an override exists), or ``None``
+            when no manifest/entry is present.
+        """
+        manifest = self._load_observer_manifest()
+        cat_data = manifest.get("categories", {}).get(generator, {})
+        if version_type == "generation":
+            version = cat_data.get("active_generation_version")
+            if version is None:
+                # Legacy single-counter schema — only treat it as a generation
+                # version when the generation file actually exists.
+                legacy = cat_data.get("active_version")
+                if legacy and self._legacy_version_target(generator, int(legacy)) == "generation":
+                    version = legacy
+        else:
+            version = cat_data.get("active_validator_version")
+            if version is None:
+                # Legacy single-counter schema — treat it as a validator version
+                # only when the versioned validator file actually exists.
+                legacy = cat_data.get("active_version")
+                if legacy and self._legacy_version_target(generator, int(legacy)) == "validator":
+                    version = legacy
+        if not version:
+            return None
+        return int(version)
+
+    def load_active_templates(self, generator: str) -> list[dict] | None:
+        """Check the observer manifest for a historically-best version.
+
+        If the manifest records a best generation version > 1 for *generator*,
+        loads that specific historical version instead of the latest. Falls
+        back to :meth:`get_latest` when no override is recorded or the best
+        version is 1.
+
+        Returns a list of template dicts (compatible with
+        :func:`common._dict_to_template_config`), or ``None`` to fall through.
+        """
+        best_version = self._get_active_version(generator, "generation")
+        if not best_version or best_version <= 1:
+            return None
+
+        template_ids = self.list_templates(generator)
+        if not template_ids:
+            return None
+
+        result = []
+        for tid in template_ids:
+            doc = self.get_version(generator, tid, "generation", best_version)
+            if doc:
+                result.append(doc)
+        return result if result else None
+
+    def get_active_validator_version(self, generator: str) -> int | None:
+        """Return the best historical validator version for *generator*, or ``None``."""
+        return self._get_active_version(generator, "validator")
 
     # ------------------------------------------------------------------
     # Internal helpers

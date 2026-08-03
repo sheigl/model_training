@@ -18,6 +18,23 @@ python -m training_data.generate_synthetic_data.seed_templates --to-yaml
 
 ## Recent Changes
 
+### Scraper Dashboard (generator-dashboard) — 2026-08-02
+
+Added management of the `training_data/scrape_*.py` scripts to the generator dashboard, separated from the 27 generation scripts behind a top-level **Generators | Scrapers** toggle. Scrapers get the same Start/Stop + live-log controls but a simplified panel (no validation metrics).
+
+- **New registry**: `ScraperSpec` dataclass + 9 scraper items (`edhrec_guides`, `edhrec_articles`, `edhrec_commanders`, `edhrec_game_changers`, `edhrec_top_color`, `edhrec_top_type`, `funtrivia`, `commander_spellbook`, `mtg_archetypes`) in `generator-dashboard/config.py`
+- **New wrapper scripts**: `training_data/run_<slug>.sh` (9) invoke the python scraper with `"$@"` so the dashboard can pass an editable "Extra args" field
+- **`process_manager.py`** — Added `scan_scrapers()` (matches `run_<slug>.sh` in `ps` so shared scripts stay unambiguous), `start_scraper()` (default + extra args), `stop_scraper()`; shared `_spawn`/`_stop` helpers
+- **`app.py`** — Snapshot now includes `scrapers`; new endpoints `/api/scrapers`, `/api/scrapers/{slug}/start|stop`, `/api/scraper-logs/{slug}` (SSE)
+- **Frontend** — `static/index.html` + `app.js` + `style.css`: mode toggle, scraper tabs/panel with "Extra args" field and log viewer
+- **Tests**: 23 new tests across `test_scraper_registry.py`, `test_scraper_process_manager.py`, `test_scraper_api.py` (56 dashboard tests passing)
+
+**Scraper deps:** the EDHREC scrapers need the local `pyedhrec` fork (`uv pip install -e /home/sheigl/code/pyedhrec`; already in `requirements.txt`); `mtg_archetypes` additionally needs `beautifulsoup4` + `selenium` (not installed).
+
+**New files:** 9 `run_*.sh` wrappers, 3 test files
+**Modified files:** `config.py`, `process_manager.py`, `app.py`, `static/index.html`, `static/app.js`, `static/style.css`
+**Breaking changes:** None — generator endpoints/UI unchanged.
+
 ### YAML Template Migration (Stories 001–007) — 2026-07-27
 
 Replaced the MongoDB-based template store with local YAML files. All 27 generator templates, shared scaffolding blocks, and validator prompts now live as `.yaml` files in `training_data/generate_synthetic_data/templates/`. A new `YamlTemplateLoader` class mirrors the read surface of the old `TemplateStore`, so downstream code swaps in with minimal changes.

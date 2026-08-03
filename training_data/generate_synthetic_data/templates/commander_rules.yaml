@@ -8,6 +8,16 @@
     Context: {context}
 
 
+    Use the authoritative rule text in the <rules> block as the ground truth for
+    every rules statement.
+
+    Reference real cards ONLY from the <commanders> and <key_cards> blocks when
+    giving examples.
+
+    Do NOT invent card names, card abilities, or rules that are not in the provided
+    context.
+
+
     Questions should be natural and conversational — the way players actually ask
     about Commander rules. Answers should explain the rules accurately without citing
     rule numbers.
@@ -22,10 +32,12 @@
   - 'HARD REJECT RULES:'
   - 1. Answer does not provide accurate Commander rules information — incorrect rules
     are validation failures.
-  - 2. Answer contains markdown formatting (bold, italics, bullet points).
-  - 3. Answer references rule numbers directly — rules must be explained conversationally.
-  - 4. Answer is less than 80 characters.
-  - 5. JSON parsing fails.
+  - 2. Answer references a card not listed in the provided context, or describes a
+    listed card''s abilities incorrectly.
+  - 3. Answer contains markdown formatting (bold, italics, bullet points).
+  - 4. Answer references rule numbers directly — rules must be explained conversationally.
+  - 5. Answer is less than 80 characters.
+  - 6. JSON parsing fails.
   - ''
   - 'VALIDATION CHECKLIST:'
   - 1. The answer accurately explains the Commander rules topic.
@@ -47,6 +59,11 @@
     Each answer MUST include a concrete scenario or card interaction that illustrates
     the rules. Explain what happens step by step and why.
 
+    Base every rules statement on the authoritative text in the <rules> block.
+
+    Reference ONLY real cards from the <commanders> and <key_cards> blocks — never
+    invent card names or abilities.
+
 
     Output JSON array with question/answer pairs. Keep answers 2-4 sentences with
     specific scenarios and card references.
@@ -57,15 +74,18 @@
   - 'HARD REJECT RULES:'
   - 1. Answer does not include at least one concrete scenario or card interaction
     example.
-  - 2. Answer contains markdown formatting (bold, italics, bullet points).
-  - 3. Answer references rule numbers directly — rules must be explained conversationally.
-  - 4. Answer is less than 80 characters.
-  - 5. JSON parsing fails.
+  - 2. Answer references a card not listed in the provided context, or describes a
+    listed card''s abilities incorrectly.
+  - 3. Answer contains markdown formatting (bold, italics, bullet points).
+  - 4. Answer references rule numbers directly — rules must be explained conversationally.
+  - 5. Answer is less than 80 characters.
+  - 6. JSON parsing fails.
   - ''
   - 'VALIDATION CHECKLIST:'
   - 1. The answer includes at least one concrete scenario that illustrates the rules
     interaction.
-  - 2. The answer references specific card names or game situations.
+  - 2. The answer references specific card names or game situations from the provided
+    context.
   - 3. The answer explains the rules interaction step by step.
   min_answer_length: 80
   max_answer_length: 2000

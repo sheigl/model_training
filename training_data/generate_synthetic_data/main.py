@@ -98,6 +98,7 @@ import random
 import re
 from datetime import datetime
 import argparse
+import json
 import time
 import ollama
 from pathlib import Path
@@ -320,6 +321,36 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to directory containing YAML template files (default: package templates/)",
     )
+    parser.add_argument(
+        "--observer-model",
+        type=str,
+        default=None,
+        help="Model for observer analysis (default: same as --validation-model)",
+    )
+    parser.add_argument(
+        "--first-pass-threshold",
+        type=float,
+        default=50.0,
+        help="First-pass rate threshold that triggers generation template improvement (default: 50.0)",
+    )
+    parser.add_argument(
+        "--observation-interval",
+        type=int,
+        default=10,
+        help="Items per generator before observer analysis runs (default: 10)",
+    )
+    parser.add_argument(
+        "--starting-template-versions",
+        type=str,
+        default=None,
+        help='JSON dict of category→version overrides at run start, e.g. \'{"combo_query": 2}\'',
+    )
+    parser.add_argument(
+        "--enable-observer",
+        action="store_true",
+        default=False,
+        help="Enable the observer step (template improvement after generation)",
+    )
 
     return parser
 
@@ -446,6 +477,34 @@ def main():
     # Unique run ID shared by all generators in this process
     run_id = str(uuid.uuid4())
 
+    # Create observer for post-generation template improvement (only when enabled)
+    from .observer import Observer
+    templates_dir = Path(__file__).parent / "templates"
+    if args.enable_observer:
+        obs_model_name = args.observer_model or args.validation_model
+        observer_model = Model(name=obs_model_name, type=ModelType.VALIDATION)
+        observer = Observer(
+            models=models,
+            yaml_loader=yaml_loader,
+            templates_dir=templates_dir,
+            first_pass_threshold=args.first_pass_threshold,
+            observation_interval=args.observation_interval,
+            run_id=run_id,
+            observer_model=observer_model,
+        )
+        print(f"  ✓ Observer enabled (threshold={args.first_pass_threshold}%, interval={args.observation_interval})")
+    else:
+        observer = None
+
+    # Parse starting template version overrides
+    starting_versions: dict[str, int] = {}
+    if args.starting_template_versions:
+        import json as _json
+        try:
+            starting_versions = _json.loads(args.starting_template_versions)
+        except json.JSONDecodeError as e:
+            print(f"⚠️  Invalid --starting-template-versions JSON: {e}")
+
     active_metrics: list[ValidationMetrics] = []
     all_documents: list[dict] = []
 
@@ -496,6 +555,8 @@ def main():
             metrics=make_metrics("GenerateComboQueries"),
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("combo_query"),
         ).generate()
 
     if args.card_search > 0:
@@ -509,10 +570,13 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("card_search"),
         ).generate()
     
     if args.commander > 0:
         GenerateCommanderKnowledge(
+            data_access=data_access,
             models=models,
             validation_pct=args.validation_pct,
             target_count=args.commander,
@@ -521,6 +585,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("commander_rules"),
         ).generate()
     
     if args.multi_card > 0:
@@ -534,6 +600,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("multi_card_usage"),
         ).generate()
     
     if args.comparison > 0:
@@ -547,6 +615,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("comparison"),
         ).generate()
     
     if args.reverse_lookup > 0:
@@ -560,6 +630,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("reverse_lookup"),
         ).generate()
     
     if args.synergy > 0:
@@ -573,6 +645,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("synergy"),
         ).generate()
     
     if args.budget > 0:
@@ -586,6 +660,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("budget_alternative"),
         ).generate()
     
     if args.color_identity > 0:
@@ -599,6 +675,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("color_identity"),
         ).generate()
     
     if args.guidelines > 0:
@@ -613,8 +691,10 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("quick_guideline"),
         ).generate()
-    
+
     if args.terminology > 0:
         GenerateTerminologyQuestions(
             models=models,
@@ -625,6 +705,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("terminology"),
         ).generate()
 
     # Phase 2: Strategy/Theory formats
@@ -638,6 +720,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("deckbuilding_theory"),
         ).generate()
 
     if args.commander_building > 0:
@@ -651,6 +735,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("commander_building"),
         ).generate()
 
     if args.rules_scenarios > 0:
@@ -663,6 +749,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("rules_scenario"),
         ).generate()
 
     if args.archetypes > 0:
@@ -675,6 +763,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("archetype"),
         ).generate()
 
     if args.game_theory > 0:
@@ -687,6 +777,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("game_theory"),
         ).generate()
 
     if args.meta_knowledge > 0:
@@ -699,6 +791,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("meta_knowledge"),
         ).generate()
 
     # Phase 3: Rules-grounded formats (BaseGenerator + MTGDataAccess pattern)
@@ -713,6 +807,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("rule_explanation"),
         ).generate()
 
     if args.rule_interactions > 0:
@@ -726,6 +822,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("rule_interaction"),
         ).generate()
 
     if args.glossary_examples > 0:
@@ -739,6 +837,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("glossary_with_examples"),
         ).generate()
 
     if args.rule_edge_cases > 0:
@@ -752,6 +852,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("rule_edge_case"),
         ).generate()
 
     if args.rule_why > 0:
@@ -765,6 +867,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("rule_why"),
         ).generate()
 
     # Phase 4: EDHREC-grounded formats
@@ -778,6 +882,8 @@ def main():
             metrics=make_metrics("GenerateArticleQa"),
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("article_qa"),
         ).generate()
 
     if args.guide_qa > 0:
@@ -791,6 +897,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("guide_qa"),
         ).generate()
 
     if args.staple_analysis > 0:
@@ -804,6 +912,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("staple_analysis"),
         ).generate()
 
     if args.color_staples > 0:
@@ -817,6 +927,8 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("color_staples"),
         ).generate()
 
     if args.salt_questions > 0:
@@ -830,10 +942,18 @@ def main():
             dry_run=args.dry_run if hasattr(args, 'dry_run') else False,
             trace_callback=save_trace if args.log_traces else None,
             yaml_loader=yaml_loader,
+            observer=observer,
+            template_version_override=starting_versions.get("salt_analysis"),
         ).generate()
     
+    # Flush observer for any remaining buffered traces
+    if observer:
+        observer.flush()
+
     # Summary
     print("\n" + "="*80)
+    print(f"RUN ID: {run_id}")
+    print("="*80)
     print("✓ SAVED TO MongoDB: synthetic_queries.queries")
     print("="*80)
     print(f"Total documents: {len(all_documents):,}")

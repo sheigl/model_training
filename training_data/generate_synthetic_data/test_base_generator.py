@@ -79,6 +79,8 @@ def _make_yaml_loader(template_ids: list[str], instructions: dict[str, str] | No
             "version": "1",
         }
     loader.get_latest.side_effect = get_latest
+    loader.load_active_templates.return_value = None
+    loader.get_active_validator_version.return_value = None
     return loader
 
 

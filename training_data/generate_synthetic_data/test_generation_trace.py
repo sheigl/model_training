@@ -158,6 +158,8 @@ class ConcreteGenerator(BaseGenerator[dict]):
                 return None
 
             loader.get_latest.side_effect = get_latest_side
+            loader.load_active_templates.return_value = None
+            loader.get_active_validator_version.return_value = None
             kwargs["yaml_loader"] = loader
         super().__init__(*args, **kwargs)
         self.data_batches: list[list[dict]] = []

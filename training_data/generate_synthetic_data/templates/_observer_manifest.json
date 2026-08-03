@@ -1,0 +1,33 @@
+{
+  "categories": {
+    "combo_query": {
+      "active_generation_version": 2,
+      "active_validator_version": 3,
+      "validator_versions": {
+        "2": {
+          "first_pass_rate": 57.14,
+          "total_items": 7,
+          "run_ids": [
+            "f488318b-999d-4fb7-bbc1-a06712597143"
+          ]
+        },
+        "3": {
+          "regen_rate": 40.0,
+          "total_items": 10,
+          "run_ids": [
+            "1b9e4243-e5e7-4ed4-b379-3d8da00c5ca1"
+          ]
+        }
+      },
+      "generation_versions": {
+        "2": {
+          "first_pass_rate": 40.0,
+          "total_items": 10,
+          "run_ids": [
+            "1b9e4243-e5e7-4ed4-b379-3d8da00c5ca1"
+          ]
+        }
+      }
+    }
+  }
+}
