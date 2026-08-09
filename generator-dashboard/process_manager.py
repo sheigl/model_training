@@ -132,6 +132,7 @@ def start(
     validation_model: str,
     validation_pct: float,
     dry_run: bool = False,
+    observer_model: str = "",
 ) -> int:
     """Launch ``run_<slug>.sh`` as a detached process, logging to ``logs/<slug>.log``."""
     if not spec.script.exists():
@@ -140,6 +141,8 @@ def start(
     cmd = ["bash", str(spec.script), str(count), model, validation_model, str(validation_pct)]
     if dry_run:
         cmd.append("--dry-run")
+    if observer_model:
+        cmd.extend(["--observer-model", observer_model, "--enable-observer"])
     return _spawn(spec, cmd)
 
 

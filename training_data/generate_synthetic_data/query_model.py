@@ -15,6 +15,25 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
+VALIDATION_PARSE_FAILURE_PREFIX = "Validation parse failed"
+VALIDATION_TRANSPORT_ERROR_PREFIX = "Validation error"
+
+# Validation responses get a larger token budget than generation. Reasoning
+# models used as validators (e.g. deepseek-v4-flash) emit `reasoning_content`
+# (thinking tokens) BEFORE the final JSON, and those count against the same
+# max_tokens budget on the serving backend. At the 8192 default the final JSON
+# answer got truncated mid-generation, producing "Validation parse failed:
+# Expecting value..." rejections. 16384 leaves room for thinking + full JSON.
+VALIDATION_MAX_TOKENS = 16384
+
+
+def is_transport_failure_reason(reason: str | None) -> bool:
+    """True when the rejection came from the validator itself (unparseable,
+    truncated, or errored response), not from a content-quality verdict."""
+    if not reason:
+        return False
+    return reason.startswith(VALIDATION_PARSE_FAILURE_PREFIX) or reason.startswith(VALIDATION_TRANSPORT_ERROR_PREFIX)
+
 # =============================================================================
 # MODEL QUERYING
 # =============================================================================
@@ -158,7 +177,7 @@ class QueryModel():
         validation_prompt = self.__build_card_validation_prompt(card1, card2, question, answer)
 
         try:
-            response = self.query(model, validation_prompt, purpose="VALIDATION")
+            response = self.query(model, validation_prompt, max_tokens=VALIDATION_MAX_TOKENS, purpose="VALIDATION")
             
             # Parse JSON response - handle common formatting issues
             response = response.replace("```json", "").replace("```", "").strip()
@@ -244,7 +263,7 @@ class QueryModel():
         prompt = self.__build_qa_validation_prompt(question, answer, context, category, enable_extra_validation)
 
         try:
-            response = self.query(validation_model, prompt, purpose="VALIDATION")
+            response = self.query(validation_model, prompt, max_tokens=VALIDATION_MAX_TOKENS, purpose="VALIDATION")
             response = response.replace("```json", "").replace("```", "").strip()
             if not response.startswith('{'):
                 start = response.find('{')

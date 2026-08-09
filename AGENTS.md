@@ -18,6 +18,34 @@ python -m training_data.generate_synthetic_data.seed_templates --to-yaml
 
 ## Recent Changes
 
+### Validation Token Budget Raised (Story 047) — 2026-08-06
+
+The validation path (`validate_qa` / `validate_with_model`) no longer inherits the 8192 `max_tokens` default from `QueryModel.query()`. Reasoning-model validators (e.g. `deepseek-v4-flash`) emit `reasoning_content` thinking tokens that count against the SAME budget on the serving backend, so the final JSON answer was truncated mid-generation → "Validation parse failed: Expecting value..." rejections (run `7c58c422` — the same failure mode Story 046 hardened against). Validation now passes `max_tokens=VALIDATION_MAX_TOKENS` (16384) — twice the old cap.
+
+- **`query_model.py`** — New module constant `VALIDATION_MAX_TOKENS = 16384` with explanatory comment; `validate_qa()` and `validate_with_model()` now pass `max_tokens=VALIDATION_MAX_TOKENS` to `query()`
+- **`test_generation_trace.py`** — 2 new regression tests (`test_validate_qa_passes_validation_max_tokens`, `test_validate_with_model_passes_validation_max_tokens`) asserting the validation path passes `VALIDATION_MAX_TOKENS`
+- **Deliberately unchanged** — `QueryModel.query()` default (8192), generation path (`base_generator.py` 8192), observer (`observer.py` 2048), all `run_*.sh`, YAML templates
+
+**New files:** None
+**Modified files:** `query_model.py`, `test_generation_trace.py`
+**Breaking changes:** None — no CLI flags, generator endpoints, or config changes.
+
+### Validation Transport-Failure Hardening (Story 046) — 2026-08-06
+
+Validator transport failures (unparseable/truncated/errored responses, e.g. "Validation parse failed: Expecting value...") are no longer treated as answer-quality rejections. They re-validate the SAME answer (bounded to 2 retries) without regenerating, counting a fix attempt, or appending sibling feedback — then reject without regeneration if the validator stays unparseable. Prevents mechanically-fine answers from being permanently rejected at score 0 (the observed `deepseek-v4-flash` failure mode in run `7c58c422`).
+
+- **`run_*.sh` (all 27)** — `VALIDATION_MODEL` default reconciled from `deepseek-v4-flash` → `glm-5.2` (matching `generator-dashboard/config.py`); stale `glm-5.1` comment in `run_combos.sh` updated
+- **`query_model.py`** — New `is_transport_failure_reason()` predicate matching the `"Validation parse failed"` / `"Validation error"` reason prefixes returned by `validate_qa` / `validate_with_model`
+- **`common.py`** — `validate_and_loop_with_suggested_fix`: transport-failure retry path (same answer, ≤2 retries, no regen/metrics/sibling feedback), `_upsert_sibling_correction()` per-QA dedupe helper, trace `round_num` advances on retries and `final_outcome` uses the `iteration == 0` discriminator
+- **Single-QA note** — Production callers (`base_generator.validate_answer`, `generate_quick_guidelines.validate_answer`) always pass ONE QA per call, so `enumerated_i` is always 0 and the sibling-corrections accumulator holds at most one entry (the most recent correction). Threading the batch QA index for true per-QA dedupe is a tracked follow-up.
+- **`observer.py`** — Transport-failure reasons excluded from the top-rejection stats fed to the observer LLM
+- **`batch_validate.py`** — Fixed crash from unpacking `validate_qa`'s 3-tuple as 4 values
+- **Tests**: 6 new tests (5 in `test_generation_trace.py`, 1 in `test_observer.py`)
+
+**New files:** None
+**Modified files:** 27 `run_*.sh` scripts, `query_model.py`, `common.py`, `observer.py`, `batch_validate.py`, `test_generation_trace.py`, `test_observer.py`
+**Breaking changes:** None — CLI flags, generator endpoints, and dashboard UI unchanged.
+
 ### Scraper Dashboard (generator-dashboard) — 2026-08-02
 
 Added management of the `training_data/scrape_*.py` scripts to the generator dashboard, separated from the 27 generation scripts behind a top-level **Generators | Scrapers** toggle. Scrapers get the same Start/Stop + live-log controls but a simplified panel (no validation metrics).
@@ -114,4 +142,4 @@ TrainForge files live in the separate `../trainforge/` repository — see `../tr
 pytest training_data/generate_synthetic_data/ -v
 ```
 
-Current: 368 tests passing (20 pre-existing failures unchanged).
+Current: 394 tests passing (8 pre-existing failures unchanged).

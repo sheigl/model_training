@@ -104,6 +104,43 @@ def test_start_respects_dry_run(monkeypatch, tmp_path):
     assert captured["cmd"][1].endswith("run_archetypes.sh")
 
 
+def test_start_includes_observer_model(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakeProc()
+
+    monkeypatch.setattr(config, "LOGS_DIR", tmp_path)
+    monkeypatch.setattr(process_manager.subprocess, "Popen", fake_popen)
+
+    spec = config.GENERATOR_BY_SLUG["synergy"]
+    process_manager.start(
+        spec, count=5, model="m", validation_model="v", validation_pct=1.0, observer_model="obs"
+    )
+    assert "--observer-model" in captured["cmd"]
+    assert "obs" in captured["cmd"]
+    assert "--enable-observer" in captured["cmd"]
+
+
+def test_start_excludes_observer_when_empty(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakeProc()
+
+    monkeypatch.setattr(config, "LOGS_DIR", tmp_path)
+    monkeypatch.setattr(process_manager.subprocess, "Popen", fake_popen)
+
+    spec = config.GENERATOR_BY_SLUG["synergy"]
+    process_manager.start(
+        spec, count=5, model="m", validation_model="v", validation_pct=1.0
+    )
+    assert "--observer-model" not in captured["cmd"]
+    assert "--enable-observer" not in captured["cmd"]
+
+
 def test_stop_removes_pid_file(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "LOGS_DIR", tmp_path)
     monkeypatch.setattr(process_manager, "scan_running", lambda: {})

@@ -1,0 +1,70 @@
+template_id: qa_validation
+instruction: "\n    \n<system>\nYou are an expert Magic: The Gathering rules advisor.\
+  \ You generate accurate, natural Q&A training data about card combos. You output\
+  \ ONLY valid JSON — no preamble, no explanation, no markdown fences.\n</system>\n\
+  \n    \n    \n<reference>\nMTG NOTATION:\n- {T}: Tap (rotate card 90°; only if untapped)\n\
+  - {C}: Colorless mana | {W}: White | {U}: Blue | {B}: Black | {R}: Red | {G}: Green\n\
+  - {X}: Variable amount | {1},{2},{3}...: Generic mana (any color/colorless)\n- Example:\
+  \ {2}{U}{U} = 4 total mana (2 generic + 2 blue)\n\nCARD TYPES:\n- Creature: Can\
+  \ attack/block; has summoning sickness (can't tap or attack first turn it enters)\n\
+  - Artifact / Enchantment: Permanent; stays on battlefield\n- Instant: Cast anytime;\
+  \ goes to graveyard after resolving\n- Sorcery: Cast only on your turn; goes to\
+  \ graveyard after resolving\n- Land: Played once per turn (not cast); produces mana\n\
+  \nKEY TERMS:\n- ETB: Triggers when permanent enters the battlefield\n- Summoning\
+  \ Sickness: Creatures can't tap or attack the turn they enter\n- Sacrifice: Put\
+  \ into graveyard as a cost (uncounterable)\n- Destroy: Put into graveyard (blocked\
+  \ by indestructible)\n- Exile: Remove from game (harder to recover than graveyard)\n\
+  </reference>\n\n    \n    Category: {category}\n\n    Source material the answer\
+  \ should be grounded in:\n    {context}\n    \n    <rules>\n    Before scoring,\
+  \ complete a verification checklist.\n    Work through the answer sentence by sentence.\
+  \ For each mechanical claim, find the exact supporting text in the source material\
+  \ above.\n\n    - If a claim involves a single card, quote the exact relevant text\
+  \ from that card.\n    - If a claim involves multiple cards working together, quote\
+  \ the relevant text from ALL cards involved before rendering a verdict. Do not mark\
+  \ a claim UNSUPPORTED simply because one card's text alone does not support it —\
+  \ check all relevant cards.\n    - If a claim is supported by the combined source\
+  \ text of all relevant cards, mark it SUPPORTED.\n    - If source text directly\
+  \ contradicts the claim, mark it CONTRADICTED.\n    - If no source text exists across\
+  \ any relevant cards for the claim, mark it UNSUPPORTED.\n    - Inferred conclusions\
+  \ that are mechanically sound and follow directly from the source (e.g. \"a player\
+  \ at 1 life will die to any combat damage\") may be marked SUPPORTED if the inference\
+  \ requires no additional cards or rules beyond basic game rules. Note the inference\
+  \ explicitly in source_text as \"BASIC GAME RULE: <explanation>\".\n    - Any CONTRADICTED\
+  \ or UNSUPPORTED verdict is an automatic reject regardless of score.\n    - For\
+  \ combo_query category: verify that the sequence of events described in the answer\
+  \ matches the order of the numbered steps in the provided combo. Compare each step\
+  \ explicitly. A correct description of individual triggers in the wrong order is\
+  \ a factual error and must be marked CONTRADICTED.\n    </rules>\n    \n    Question:\
+  \ {question}\n\n    Answer to validate:\n    {answer}\n\n    Score this answer on:\n\
+  \    1. Factual accuracy — Is everything correct? Wrong mana costs, wrong card names,\
+  \ wrong mechanics = instant reject.\n    2. Completeness — Does it fully answer\
+  \ the question without important gaps?\n    3. Usefulness — Is this a good training\
+  \ example? Clear and specific, not vague or generic?\n    4. Grounding — Is it grounded\
+  \ in the provided context, or hallucinating details?\n\n    Scoring guide:\n   \
+  \ - 9-10: Excellent, publish as-is\n    - 7-8: Good, acceptable for training\n \
+  \   - 5-6: Too vague, incomplete, or minor errors — reject\n    - 1-4: Factual errors\
+  \ or hallucinations — reject\n\n    Respond ONLY with JSON:\n    {\n    \"verification_checklist\"\
+  : [\n        {\n        \"claim\": \"<the mechanical claim>\",\n        \"source_text\"\
+  : \"<exact quote from source material, or NOT FOUND IN SOURCE>\",\n        \"verdict\"\
+  : \"<SUPPORTED | CONTRADICTED | UNSUPPORTED>\"\n        }\n    ],\n    \"score\"\
+  : <1-10>,\n    \"is_acceptable\": <true/false>,\n    \"errors\": \"<factual errors\
+  \ if any, or 'none'>\",\n    \"missing_info\": \"<what is missing or vague, if anything.\
+  \ If score is 7 or above with no errors, leave blank.>\",\n    \"reason\": \"<one\
+  \ sentence summary. If score is 7 or above with no errors, leave blank.>\"\n   \
+  \ }\n\n    Output ONLY valid JSON, no other text.\n\nADDITIONAL CHECKS FROM OBSERVER:\n\
+  Add the following mandatory checks to the validation criteria before approving an\
+  \ answer: (1) Card accuracy and legality: every card name, rules text, and color\
+  \ identity must match the provided reference; if the answer names a commander, that\
+  \ card must be a legal commander for the stated format. (2) Interaction validity:\
+  \ every claimed synergy must actually work under current MTG rules and must be derived\
+  \ from the supplied card text or reference; do not accept inferred or invented combos.\
+  \ (3) Source grounding: any mechanical claim about a specific card must be traceable\
+  \ to the provided source text; unsupported claims such as 'Mystic Remora triggers\
+  \ every upkeep' must be rejected. (4) Specificity: general-advice answers must include\
+  \ at least one concrete, actionable example using one of the listed commanders or\
+  \ referenced cards; vague statements that do not explain how to avoid decking or\
+  \ how to convert card draw into a win condition should be rejected. (5) Commander-pairing\
+  \ clarity: if more than one commander is mentioned, the answer must clearly state\
+  \ whether they are alternatives, variants, or partners; it must not imply that two\
+  \ different commanders can simultaneously lead the same deck unless the prompt explicitly\
+  \ asks for a pairing."

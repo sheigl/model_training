@@ -162,7 +162,7 @@ def main():
                 # Post-hoc validation: no generation context available
                 context = ""
 
-                is_valid, reason, score, suggested_fix = query_model.validate_qa(
+                is_valid, reason, score = query_model.validate_qa(
                     validation_model=validation_model,
                     question=question,
                     answer=answer,
@@ -170,6 +170,7 @@ def main():
                     category=category,
                     enable_extra_validation=True,
                 )
+                suggested_fix = None
 
                 accepted = is_valid and score is not None and score >= args.min_score
 

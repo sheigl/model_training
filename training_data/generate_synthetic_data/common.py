@@ -8,13 +8,15 @@ from dataclasses import dataclass
 
 import yaml
 
-from .query_model import QueryModel
+from .query_model import QueryModel, is_transport_failure_reason
 from .models import Card, Model, ModelType, QuestionAnswer, QuestionAnswerEnhanced, ValidationMetrics, GenerationTrace
 from . import constants
 from .constants import *
 
 
 logger = logging.getLogger(__name__)
+
+_MAX_VALIDATION_PARSE_RETRIES = 2
 
 
 # =============================================================================
@@ -994,6 +996,22 @@ def clean_html(raw: str) -> str:
 from .card_utils import map_card, map_card_with_zones  # noqa: PLC0415 
 
 
+def _upsert_sibling_correction(sibling_corrections: list[str], q_index: int, reason: str) -> None:
+    """Add or replace the correction entry for QA *q_index* so repeated
+    corrections for the same QA never stack up in the accumulator."""
+    prefix = f"Q{q_index + 1} was rejected for: "
+    correction = (
+        f"{prefix}{reason}. "
+        f"The corrected answer now fixes that issue. "
+        f"Apply the same fix to any similar errors in your answer."
+    )
+    for i, existing in enumerate(sibling_corrections):
+        if existing.startswith(prefix):
+            sibling_corrections[i] = correction
+            return
+    sibling_corrections.append(correction)
+
+
 def validate_and_loop_with_suggested_fix(
     query_model: QueryModel,
     models: dict[ModelType, Model],
@@ -1007,6 +1025,7 @@ def validate_and_loop_with_suggested_fix(
     metrics: ValidationMetrics | None = None,
     trace: GenerationTrace | None = None,
     sibling_corrections: list[str] | None = None) -> tuple[bool, QuestionAnswerEnhanced | None]:
+    result: tuple[bool, QuestionAnswerEnhanced | None] = (False, None)
     for enumerated_i, qa in enumerate(qa_pairs):
 
         if metrics:
@@ -1025,6 +1044,7 @@ def validate_and_loop_with_suggested_fix(
         is_valid: bool = True
         reason: str | None = None
         score: float | None = None
+        parse_retries_left = _MAX_VALIDATION_PARSE_RETRIES
 
         while should_validate:
             if metrics:
@@ -1044,6 +1064,18 @@ def validate_and_loop_with_suggested_fix(
             )
 
             if not is_valid:
+                if is_transport_failure_reason(reason):
+                    if parse_retries_left > 0:
+                        parse_retries_left -= 1
+                        print(f"    ⚠️  Validator produced unparseable response — re-validating same answer (retries left {parse_retries_left})")
+                        if trace is not None:
+                            trace.validation_rounds.append(round_data)
+                        round_num += 1
+                        continue
+                    print(f"    ✗ REJECTED — validator produced no parseable response after retries (score: {score}/10): {qa.question[:80]}")
+                    if trace is not None:
+                        trace.validation_rounds.append(round_data)
+                    break
                 print(f"    ✗ REJECTED [attempt {iteration + 1}/3] (score: {score}/10, {reason}): {qa.question[:80]}")
                 print(f"    → Passing back to generation model for correction...")
                 regen_data = {}
@@ -1060,12 +1092,16 @@ def validate_and_loop_with_suggested_fix(
                 )
                 round_data["regeneration"] = regen_data
                 if new_answer:
-                    if sibling_corrections is not None:
-                        sibling_corrections.append(
-                            f"Q{enumerated_i + 1} was rejected for: {reason}. "
-                            f"The corrected answer now fixes that issue. "
-                            f"Apply the same fix to any similar errors in your answer."
-                        )
+                    # NOTE: production callers (base_generator.validate_answer,
+                    # generate_quick_guidelines.validate_answer) always pass a
+                    # single QA, so enumerated_i is always 0 here and the
+                    # accumulator holds at most one entry — the most recent
+                    # correction. That bounded behavior is intentional (keeps
+                    # sibling feedback noise-free); threading the batch QA index
+                    # through for true per-QA dedupe is a tracked follow-up.
+                    parse_retries_left = _MAX_VALIDATION_PARSE_RETRIES
+                    if sibling_corrections is not None and not is_transport_failure_reason(reason):
+                        _upsert_sibling_correction(sibling_corrections, enumerated_i, reason)
                     qa.answer = new_answer
                 else:
                     print(f"    ✗ Regeneration failed, moving on.")
@@ -1095,7 +1131,7 @@ def validate_and_loop_with_suggested_fix(
             if not should_validate:
                 trace.final_outcome = "skipped"
             elif is_valid:
-                trace.final_outcome = "accepted_first_attempt" if round_num == 0 else "accepted_after_fix"
+                trace.final_outcome = "accepted_first_attempt" if iteration == 0 else "accepted_after_fix"
             else:
                 trace.final_outcome = "rejected"
 
@@ -1124,17 +1160,18 @@ def validate_and_loop_with_suggested_fix(
                 metrics.flush()
                 metrics.print_rolling_summary()
 
-            return is_valid, doc
+            result = (is_valid, doc)
         else:
+            result = (False, None)
             if should_validate and metrics:
                 if iteration == 0:
                     metrics.record_failed_first_attempt(source_category, source_template)
                 else:
                     metrics.record_failed_after_fixes(source_category, source_template)
-            print(f"    ✗ REJECTED (missing question/answer keys): {qa}")
+            print(f"    ✗ REJECTED (after {iteration} fix attempt(s), reason: {reason or 'unknown'}): {qa.question[:80]}")
 
         if metrics:
             metrics.flush()
             metrics.print_rolling_summary()
 
-    return False, None
+    return result

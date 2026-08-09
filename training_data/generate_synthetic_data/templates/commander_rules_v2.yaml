@@ -1,0 +1,109 @@
+- template_id: general_advice
+  instruction: 'You are a Magic: The Gathering Commander rules expert. Generate exactly
+    3 Q&A pairs about this Commander topic.
+
+
+    Topic: {topic}
+
+    Context: {context}
+
+
+    Use the authoritative rule text in the <rules> block as the ground truth for every
+    rules statement.
+
+    Reference real cards ONLY from the <commanders> and <key_cards> blocks when giving
+    examples.
+
+    Do NOT invent card names, card abilities, or rules that are not in the provided
+    context.
+
+    Do NOT rely on any card''s characteristics (such as color, color identity, card
+    type, mana cost, or abilities) unless that characteristic is explicitly stated
+    in <commanders>, <key_cards>, or <rules>. If a correct answer would require such
+    unprovided information, either state that the answer depends on that missing information
+    or limit the answer to what the provided information supports.
+
+    Questions should be natural and conversational — the way players actually ask
+    about Commander rules. Answers should explain the rules accurately without citing
+    rule numbers.
+
+
+    Output JSON array with question/answer pairs. Keep answers 2-3 sentences, accurate
+    and concise.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not provide accurate Commander rules information — incorrect rules
+    are validation failures.
+  - 2. Answer references a card not listed in the provided context, or describes a
+    listed card''s abilities incorrectly.
+  - 3. Answer contains markdown formatting (bold, italics, bullet points).
+  - 4. Answer references rule numbers directly — rules must be explained conversationally.
+  - 5. Answer is less than 80 characters.
+  - 6. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer accurately explains the Commander rules topic.
+  - 2. The answer uses a conversational tone without citing rule numbers.
+  - 3. At least one question comes from a practical perspective (e.g., "How does...?"
+    or "What happens when...?").
+  min_answer_length: 80
+  max_answer_length: 2000
+  version: '1'
+- template_id: example_driven
+  instruction: 'You are a Magic: The Gathering Commander rules expert. Generate exactly
+    3 Q&A pairs about this Commander topic.
+
+
+    Topic: {topic}
+
+    Context: {context}
+
+
+    Use the authoritative rule text in the <rules> block as the ground truth for every
+    rules statement.
+
+    Reference real cards ONLY from the <commanders> and <key_cards> blocks when giving
+    examples.
+
+    Do NOT invent card names, card abilities, or rules that are not in the provided
+    context.
+
+    Do NOT rely on any card''s characteristics (such as color, color identity, card
+    type, mana cost, or abilities) unless that characteristic is explicitly stated
+    in <commanders>, <key_cards>, or <rules>. If a correct answer would require such
+    unprovided information, either state that the answer depends on that missing information
+    or limit the answer to what the provided information supports.
+
+    Questions should be natural and conversational — the way players actually ask
+    about Commander rules. Answers should explain the rules accurately without citing
+    rule numbers.
+
+
+    Output JSON array with question/answer pairs. Keep answers 2-3 sentences, accurate
+    and concise.
+
+    {output_format}'
+  weight: 1.0
+  validation_rules:
+  - 'HARD REJECT RULES:'
+  - 1. Answer does not include at least one concrete scenario or card interaction
+    example.
+  - 2. Answer references a card not listed in the provided context, or describes a
+    listed card''s abilities incorrectly.
+  - 3. Answer contains markdown formatting (bold, italics, bullet points).
+  - 4. Answer references rule numbers directly — rules must be explained conversationally.
+  - 5. Answer is less than 80 characters.
+  - 6. JSON parsing fails.
+  - ''
+  - 'VALIDATION CHECKLIST:'
+  - 1. The answer includes at least one concrete scenario that illustrates the rules
+    interaction.
+  - 2. The answer references specific card names or game situations from the provided
+    context.
+  - 3. The answer explains the rules interaction step by step.
+  min_answer_length: 80
+  max_answer_length: 2000
+  version: '1'

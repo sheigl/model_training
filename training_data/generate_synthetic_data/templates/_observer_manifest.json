@@ -2,7 +2,7 @@
   "categories": {
     "combo_query": {
       "active_generation_version": 2,
-      "active_validator_version": 3,
+      "active_validator_version": 4,
       "validator_versions": {
         "2": {
           "first_pass_rate": 57.14,
@@ -17,14 +17,122 @@
           "run_ids": [
             "1b9e4243-e5e7-4ed4-b379-3d8da00c5ca1"
           ]
+        },
+        "4": {
+          "regen_rate": 63.64,
+          "total_items": 11,
+          "run_ids": [
+            "6cb99f73-0725-43fe-9793-1297563e1072"
+          ]
+        },
+        "5": {
+          "regen_rate": 49.46,
+          "total_items": 31924,
+          "run_ids": [
+            "6cb99f73-0725-43fe-9793-1297563e1072"
+          ]
         }
       },
       "generation_versions": {
         "2": {
-          "first_pass_rate": 40.0,
-          "total_items": 10,
+          "first_pass_rate": 28.87,
+          "total_items": 33455,
           "run_ids": [
-            "1b9e4243-e5e7-4ed4-b379-3d8da00c5ca1"
+            "1b9e4243-e5e7-4ed4-b379-3d8da00c5ca1",
+            "6cb99f73-0725-43fe-9793-1297563e1072"
+          ]
+        }
+      }
+    },
+    "commander_building": {
+      "active_generation_version": 2,
+      "active_validator_version": 4,
+      "generation_versions": {
+        "2": {
+          "first_pass_rate": 31.99,
+          "total_items": 8391,
+          "run_ids": [
+            "f754d729-f892-454c-a291-693db35f0d53"
+          ]
+        }
+      },
+      "validator_versions": {
+        "2": {
+          "regen_rate": 45.0,
+          "total_items": 20,
+          "run_ids": [
+            "f754d729-f892-454c-a291-693db35f0d53"
+          ]
+        },
+        "3": {
+          "regen_rate": 45.71,
+          "total_items": 70,
+          "run_ids": [
+            "f754d729-f892-454c-a291-693db35f0d53"
+          ]
+        },
+        "4": {
+          "regen_rate": 54.0,
+          "total_items": 50,
+          "run_ids": [
+            "f754d729-f892-454c-a291-693db35f0d53"
+          ]
+        },
+        "5": {
+          "regen_rate": 11.84,
+          "total_items": 6528,
+          "run_ids": [
+            "f754d729-f892-454c-a291-693db35f0d53"
+          ]
+        }
+      }
+    },
+    "commander_rules": {
+      "active_generation_version": 2,
+      "active_validator_version": 5,
+      "generation_versions": {
+        "2": {
+          "first_pass_rate": 49.27,
+          "total_items": 965,
+          "run_ids": [
+            "ce5000db-cd1f-42e1-943b-a0e96f992c1f"
+          ]
+        }
+      },
+      "validator_versions": {
+        "2": {
+          "regen_rate": 23.33,
+          "total_items": 30,
+          "run_ids": [
+            "ce5000db-cd1f-42e1-943b-a0e96f992c1f"
+          ]
+        },
+        "3": {
+          "regen_rate": 23.42,
+          "total_items": 794,
+          "run_ids": [
+            "ce5000db-cd1f-42e1-943b-a0e96f992c1f"
+          ]
+        },
+        "4": {
+          "regen_rate": 28.9,
+          "total_items": 173,
+          "run_ids": [
+            "ce5000db-cd1f-42e1-943b-a0e96f992c1f"
+          ]
+        },
+        "5": {
+          "regen_rate": 28.96,
+          "total_items": 183,
+          "run_ids": [
+            "ce5000db-cd1f-42e1-943b-a0e96f992c1f"
+          ]
+        },
+        "6": {
+          "regen_rate": 22.67,
+          "total_items": 6008,
+          "run_ids": [
+            "ce5000db-cd1f-42e1-943b-a0e96f992c1f"
           ]
         }
       }

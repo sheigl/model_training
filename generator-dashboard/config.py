@@ -18,6 +18,7 @@ LOGS_DIR = Path(__file__).resolve().parent / "logs"
 
 DEFAULT_MODEL = "https://server.tailc63ae8.ts.net:4444/v1,openai,gemma4:31b,$LITELLM_API_KEY"
 DEFAULT_VALIDATION_MODEL = "https://server.tailc63ae8.ts.net:4444/v1,openai,glm-5.2,$LITELLM_API_KEY"
+DEFAULT_OBSERVER_MODEL = DEFAULT_VALIDATION_MODEL
 
 MONGO_URI = "mongodb://localhost:27017/"
 MONGO_USER = "root"
@@ -183,22 +184,23 @@ SCRAPERS: list[ScraperSpec] = [
 SCRAPER_BY_SLUG: dict[str, ScraperSpec] = {s.slug: s for s in SCRAPERS}
 
 
-_SCRIPT_DEFAULT_RE = re.compile(r"^\s*(MODEL|VALIDATION_MODEL)=\$\{(2|3):-([^}]*)\}\s*$")
-_SCRIPT_MODEL_DEFAULTS_CACHE: dict[str, tuple[str | None, str | None]] = {}
+_SCRIPT_DEFAULT_RE = re.compile(r"^\s*(MODEL|VALIDATION_MODEL|OBSERVER_MODEL)=\$\{(2|3|6):-([^}]*)\}\s*$")
+_SCRIPT_MODEL_DEFAULTS_CACHE: dict[str, tuple[str | None, str | None, str | None]] = {}
 
 
-def script_model_defaults(spec: GeneratorSpec) -> tuple[str | None, str | None]:
-    """Return the ``$2``/``$3`` default values from ``run_<slug>.sh``.
+def script_model_defaults(spec: GeneratorSpec) -> tuple[str | None, str | None, str | None]:
+    """Return the ``$2``/``$3``/``$6`` default values from ``run_<slug>.sh``.
 
-    Reads ``MODEL=${2:-...}`` and ``VALIDATION_MODEL=${3:-...}`` from the
-    controlling shell script so the dashboard shows exactly which models the
-    script would load. Returns ``(None, None)`` if the script is missing or
-    does not define the defaults.
+    Reads ``MODEL=${2:-...}``, ``VALIDATION_MODEL=${3:-...}`` and
+    ``OBSERVER_MODEL=${6:-...}`` from the controlling shell script so the
+    dashboard shows exactly which models the script would load. Returns
+    ``(None, None, None)`` if the script is missing or does not define the defaults.
     """
     if spec.slug in _SCRIPT_MODEL_DEFAULTS_CACHE:
         return _SCRIPT_MODEL_DEFAULTS_CACHE[spec.slug]
     model: str | None = None
     validation_model: str | None = None
+    observer_model: str | None = None
     if spec.script.exists():
         for line in spec.script.read_text().splitlines():
             m = _SCRIPT_DEFAULT_RE.match(line)
@@ -208,6 +210,8 @@ def script_model_defaults(spec: GeneratorSpec) -> tuple[str | None, str | None]:
                     model = default
                 elif var == "VALIDATION_MODEL":
                     validation_model = default
-    result = (model, validation_model)
+                elif var == "OBSERVER_MODEL":
+                    observer_model = default
+    result = (model, validation_model, observer_model)
     _SCRIPT_MODEL_DEFAULTS_CACHE[spec.slug] = result
     return result

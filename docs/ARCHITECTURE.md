@@ -225,6 +225,7 @@ All class-level `TEMPLATES` constants are retained as the ultimate fallback. The
 3. **Fix**: If score is low, regeneration prompt includes feedback
 4. **Hard Reject**: Universal rules (no markdown, no rule numbers, minimum length) plus template-specific rules
 5. **Retry**: Up to `max_regeneration_attempts` (default 3) before accepting or rejecting
+6. **Transport-failure re-validation**: validator parse/transport errors (empty, truncated, or unparseable responses) are not answer-quality rejections — they re-validate the same answer up to 2 times without burning a regeneration or recording a fix attempt, then reject if the validator stays unparseable (see Sibling Feedback Threading)
 
 ### Sibling Feedback Threading
 
@@ -233,10 +234,14 @@ When a single template iteration produces multiple Q&A pairs (e.g., the 3 siblin
 **Threading path:**
 1. `BaseGenerator._process_item` declares `sibling_corrections: list[str] = []` **before** the QA loop and passes it to `validate_answer`
 2. `BaseGenerator.validate_answer` (and the `generate_quick_guidelines.py` override) accept `sibling_corrections: list[str] | None = None` and forward it to `validate_and_loop_with_suggested_fix`
-3. `common.py` `validate_and_loop_with_suggested_fix` accepts `sibling_corrections`, passes `sibling_feedback` (joined corrections) to `regenerate_answer`, and appends the new correction to the accumulator on a successful fix (guarded by `if sibling_corrections is not None`)
+3. `common.py` `validate_and_loop_with_suggested_fix` accepts `sibling_corrections`, passes `sibling_feedback` (joined corrections) to `regenerate_answer`, and records corrections via `_upsert_sibling_correction()` — a **per-QA dedupe** that replaces (rather than appends) the entry for the same QA index, so the accumulated list never grows unbounded (guarded by `if sibling_corrections is not None`)
 4. `query_model.py` `regenerate_answer` accepts `sibling_feedback: str = ""` and conditionally inserts a `sibling_block` into the prompt f-string after the context block
 
 **Why the accumulator is hoisted into `_process_item`:** `validate_and_loop_with_suggested_fix` is always called with `qa_pairs` of length 1. The 3 sibling Q&As from one combo generation are iterated by `_process_item`'s own loop, so the accumulator must live in that scope to persist across siblings. Placing it inside `validate_and_loop_with_suggested_fix` would reset it on every call.
+
+**Validator transport failures are not sibling feedback:** unparseable/truncated validator responses (e.g. "Validation parse failed...") are detected by `query_model.is_transport_failure_reason()` and never enter the accumulator. They re-validate the SAME answer up to `_MAX_VALIDATION_PARSE_RETRIES` (2) times — no regeneration, no fix-attempt accounting, no sibling feedback — then reject without regeneration if the validator stays unparseable.
+
+**Single-QA contract (bounded accumulator):** production callers (`base_generator.validate_answer`, `generate_quick_guidelines.validate_answer`) always pass a single QA per call, so `enumerated_i` is always 0 and the accumulator holds at most one entry — the most recent correction. Threading the batch QA index through for true per-QA dedupe across siblings is a tracked follow-up.
 
 ### Generator Prompt Requirements (`REQUIREMENTS_BASE`)
 

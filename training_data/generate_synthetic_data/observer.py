@@ -30,7 +30,7 @@ from typing import Any
 import yaml
 
 from .models import Model, ModelType
-from .query_model import QueryModel
+from .query_model import QueryModel, is_transport_failure_reason
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +338,8 @@ class Observer:
                 r0 = rounds[0]
                 reason = r0.get("reason") or r0.get("errors") or ""
                 if reason and reason.lower() not in ("none", "n/a", ""):
+                    if is_transport_failure_reason(reason):
+                        continue
                     # Normalise short reasons for grouping
                     reason = self._normalise_reason(reason)
                     reason_counts[reason] = reason_counts.get(reason, 0) + 1

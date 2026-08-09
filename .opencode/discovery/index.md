@@ -37,9 +37,21 @@ generation/validator templates from a single versioned store.
 
 > **Note:** Story 043 (TrainForge Template Loading) was moved to the `trainforge` repo.
 
+## Milestone: Validation Pipeline Hardening (Story 046)
+
+| # | Story | File | Plan | Priority | Dependencies | Status |
+|---|-------|------|------|----------|--------------|--------|
+| 46 | Filter Validator Transport Failures Out of the Fix Loop | story-046-parse-failure-fix-loop.md | plans/story-046-parse-failure-fix-loop-plan.md | High | none | ✅ Complete |
+
+> **Follow-up (tracked, not scheduled):** Thread the batch QA index through
+> `validate_answer` → `validate_and_loop_with_suggested_fix` so the
+> sibling-corrections accumulator can hold one entry per QA in the batch
+> (currently production passes a single QA per call, so it holds at most the
+> most recent correction).
+
 ## Story Count
-- Total in this repo: 22 stories (15 legacy + 7 YAML migration)
-- Complete: 22
+- Total in this repo: 23 stories (15 legacy + 7 YAML migration + 1 validation hardening)
+- Complete: 23
 - In progress: 0
 
 ## Moved Stories

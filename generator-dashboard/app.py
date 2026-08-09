@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import re
+import time
 import sys
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from pydantic import BaseModel, Field
 
 from config import (
     DEFAULT_MODEL,
+    DEFAULT_OBSERVER_MODEL,
     DEFAULT_VALIDATION_MODEL,
     GENERATORS,
     GENERATOR_BY_SLUG,
@@ -43,12 +45,14 @@ from config import (
     ScraperSpec,
     script_model_defaults,
 )
+from dotenv import load_dotenv
 from log_tailer import LogTailer
 from metrics_store import MetricsStore
 import process_manager
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 REPO_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(REPO_ROOT / ".env")
 
 app = FastAPI(title="MTG Generator Dashboard")
 
@@ -58,6 +62,11 @@ if STATIC_DIR.exists():
 metrics_store = MetricsStore(MONGO_URI, MONGO_USER, MONGO_PASS)
 
 ENV_REF_RE = re.compile(r"\$\{(\w+)\}|\$(\w+)")
+
+# Cache for snapshot to reduce MongoDB queries
+_snapshot_cache = {}
+_snapshot_cache_time = 0
+_SNAPSHOT_CACHE_TTL = 1  # seconds
 
 
 def _resolve_env_refs(value: str) -> str:
@@ -79,12 +88,18 @@ def _instance_summary(insts: list[process_manager.RunningInstance]) -> list[dict
 
 
 def _snapshot() -> dict:
+    global _snapshot_cache, _snapshot_cache_time
+    
+    now = time.time()
+    if now - _snapshot_cache_time < _SNAPSHOT_CACHE_TTL:
+        return _snapshot_cache
+    
     running = process_manager.scan_running()
     generators = []
     for spec in GENERATORS:
         insts = running.get(spec.slug, [])
         log_path = spec.log_path
-        script_model, script_validation = script_model_defaults(spec)
+        script_model, script_validation, script_observer = script_model_defaults(spec)
         generators.append(
             {
                 "slug": spec.slug,
@@ -95,10 +110,10 @@ def _snapshot() -> dict:
                 "default_count": spec.default_count,
                 "default_model": _resolve_env_refs(script_model or DEFAULT_MODEL),
                 "default_validation_model": _resolve_env_refs(script_validation or DEFAULT_VALIDATION_MODEL),
+                "default_observer_model": _resolve_env_refs(script_observer or DEFAULT_OBSERVER_MODEL),
                 "running": bool(insts),
                 "instances": _instance_summary(insts),
                 "log_exists": log_path.exists(),
-                "log_size": log_path.stat().st_size if log_path.exists() else 0,
                 "metrics": metrics_store.latest(spec.class_name),
             }
         )
@@ -121,12 +136,16 @@ def _snapshot() -> dict:
                 "log_size": log_path.stat().st_size if log_path.exists() else 0,
             }
         )
-    return {
+    
+    result = {
         "generators": generators,
         "scrapers": scrapers,
         "mongo_connected": metrics_store.connected,
         "tick": True,
     }
+    _snapshot_cache = result
+    _snapshot_cache_time = now
+    return result
 
 
 # =============================================================================
@@ -148,6 +167,7 @@ class StartPayload(BaseModel):
     count: int = Field(default=100, ge=1, le=1_000_000)
     model: str | None = None
     validation_model: str | None = None
+    observer_model: str | None = None
     validation_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     dry_run: bool = False
 
@@ -164,6 +184,7 @@ def start_generator(slug: str, payload: StartPayload) -> dict:
     validation_model = (
         _resolve_env_refs(payload.validation_model) if payload.validation_model else _default_validation_model()
     )
+    observer_model = _resolve_env_refs(payload.observer_model) if payload.observer_model else ""
     try:
         pid = process_manager.start(
             spec,
@@ -172,6 +193,7 @@ def start_generator(slug: str, payload: StartPayload) -> dict:
             validation_model=validation_model,
             validation_pct=payload.validation_pct,
             dry_run=payload.dry_run,
+            observer_model=observer_model,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

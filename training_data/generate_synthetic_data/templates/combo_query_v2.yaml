@@ -1,15 +1,17 @@
 - template_id: how_does_it_work
-  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works. Focus
-    on: the sequence of steps, what triggers what, and why the loop is infinite (if
-    applicable). At least one question must come from the perspective of a player
-    who has never seen this combo before. Each answer must explicitly list every combo
-    piece and its role, include the full step-by-step sequence with all required actions
-    and triggers, cite relevant oracle text or exact card wording when it clarifies
-    an interaction, and clearly state why the loop repeats or terminates. Do not omit
-    known combo steps such as ETB triggers, costs, or bounce effects. Verify that
-    each card reference, copy target, and trigger relationship is factually accurate.
-    Output strictly valid JSON with correct escaping, no trailing commas, and no unescaped
-    special characters.'
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works.
+
+    Focus on: the sequence of steps, what triggers what, and why the loop is infinite
+    (if applicable).
+
+    At least one question must come from the perspective of a player who has never
+    seen this combo before.
+
+    Strict constraints: Attribute all abilities, mana generation, and triggers exclusively
+    to the specific cards listed in the combo. Do not invent mana types, misassign
+    triggered abilities to the wrong cards, or contradict the provided combo steps.
+    All explanations must accurately reflect the actual card mechanics and the established
+    sequence.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -39,17 +41,19 @@
   max_answer_length: 2000
   version: '1'
 - template_id: what_do_i_need
-  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works. Focus
-    on: the sequence of steps, what triggers what, and why the loop is infinite (if
-    applicable). At least one question must come from the perspective of a player
-    who has never seen this combo before. Each answer must explicitly list every combo
-    piece and its role, include the full step-by-step sequence with all required actions
-    and triggers, cite relevant oracle text or exact card wording when it clarifies
-    an interaction, and clearly state why the loop repeats or terminates. Do not omit
-    known combo steps such as ETB triggers, costs, or bounce effects. Verify that
-    each card reference, copy target, and trigger relationship is factually accurate.
-    Output strictly valid JSON with correct escaping, no trailing commas, and no unescaped
-    special characters.'
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works.
+
+    Focus on: the sequence of steps, what triggers what, and why the loop is infinite
+    (if applicable).
+
+    At least one question must come from the perspective of a player who has never
+    seen this combo before.
+
+    Strict constraints: Attribute all abilities, mana generation, and triggers exclusively
+    to the specific cards listed in the combo. Do not invent mana types, misassign
+    triggered abilities to the wrong cards, or contradict the provided combo steps.
+    All explanations must accurately reflect the actual card mechanics and the established
+    sequence.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -74,17 +78,19 @@
   max_answer_length: 2000
   version: '1'
 - template_id: why_does_this_work
-  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works. Focus
-    on: the sequence of steps, what triggers what, and why the loop is infinite (if
-    applicable). At least one question must come from the perspective of a player
-    who has never seen this combo before. Each answer must explicitly list every combo
-    piece and its role, include the full step-by-step sequence with all required actions
-    and triggers, cite relevant oracle text or exact card wording when it clarifies
-    an interaction, and clearly state why the loop repeats or terminates. Do not omit
-    known combo steps such as ETB triggers, costs, or bounce effects. Verify that
-    each card reference, copy target, and trigger relationship is factually accurate.
-    Output strictly valid JSON with correct escaping, no trailing commas, and no unescaped
-    special characters.'
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works.
+
+    Focus on: the sequence of steps, what triggers what, and why the loop is infinite
+    (if applicable).
+
+    At least one question must come from the perspective of a player who has never
+    seen this combo before.
+
+    Strict constraints: Attribute all abilities, mana generation, and triggers exclusively
+    to the specific cards listed in the combo. Do not invent mana types, misassign
+    triggered abilities to the wrong cards, or contradict the provided combo steps.
+    All explanations must accurately reflect the actual card mechanics and the established
+    sequence.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -106,17 +112,19 @@
   max_answer_length: 2000
   version: '1'
 - template_id: what_is_the_result
-  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works. Focus
-    on: the sequence of steps, what triggers what, and why the loop is infinite (if
-    applicable). At least one question must come from the perspective of a player
-    who has never seen this combo before. Each answer must explicitly list every combo
-    piece and its role, include the full step-by-step sequence with all required actions
-    and triggers, cite relevant oracle text or exact card wording when it clarifies
-    an interaction, and clearly state why the loop repeats or terminates. Do not omit
-    known combo steps such as ETB triggers, costs, or bounce effects. Verify that
-    each card reference, copy target, and trigger relationship is factually accurate.
-    Output strictly valid JSON with correct escaping, no trailing commas, and no unescaped
-    special characters.'
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works.
+
+    Focus on: the sequence of steps, what triggers what, and why the loop is infinite
+    (if applicable).
+
+    At least one question must come from the perspective of a player who has never
+    seen this combo before.
+
+    Strict constraints: Attribute all abilities, mana generation, and triggers exclusively
+    to the specific cards listed in the combo. Do not invent mana types, misassign
+    triggered abilities to the wrong cards, or contradict the provided combo steps.
+    All explanations must accurately reflect the actual card mechanics and the established
+    sequence.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'

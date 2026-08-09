@@ -39,7 +39,7 @@ def test_list_generators(client):
 def test_start_generator(monkeypatch, client):
     captured = {}
 
-    def fake_start(spec, count, model, validation_model, validation_pct, dry_run):
+    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model=""):
         captured["slug"] = spec.slug
         captured["count"] = count
         captured["dry_run"] = dry_run
@@ -56,7 +56,7 @@ def test_start_generator(monkeypatch, client):
 def test_start_resolves_default_models(monkeypatch, client):
     captured = {}
 
-    def fake_start(spec, count, model, validation_model, validation_pct, dry_run):
+    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model=""):
         captured["model"] = model
         captured["validation_model"] = validation_model
         return 1
@@ -66,6 +66,19 @@ def test_start_resolves_default_models(monkeypatch, client):
     assert captured["model"]
     assert captured["validation_model"]
     assert "$" not in captured["model"]
+
+
+def test_start_passes_observer_model(monkeypatch, client):
+    captured = {}
+
+    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model=""):
+        captured["observer_model"] = observer_model
+        return 1
+
+    monkeypatch.setattr(app.process_manager, "start", fake_start)
+    r = client.post("/api/generators/synergy/start", json={"count": 1, "observer_model": "obs-model"})
+    assert r.status_code == 200
+    assert captured["observer_model"] == "obs-model"
 
 
 def test_stop_generator(monkeypatch, client):

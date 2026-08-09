@@ -33,7 +33,7 @@ from training_data.generate_synthetic_data.common import (
     TemplateConfig,
 )
 from training_data.generate_synthetic_data.base_generator import BaseGenerator
-from training_data.generate_synthetic_data.query_model import QueryModel
+from training_data.generate_synthetic_data.query_model import QueryModel, VALIDATION_MAX_TOKENS
 
 
 # =============================================================================
@@ -61,6 +61,7 @@ class MockQueryModel(QueryModel):
         self.query_responses: list[str] = []
         self.validate_responses: list[tuple[bool, str | None, float | None]] = []
         self.regenerate_responses: list[str | None] = []
+        self.sibling_feedbacks: list[str] = []
         self.query_call_count = 0
         self.validate_call_count = 0
         self.regenerate_call_count = 0
@@ -115,6 +116,7 @@ class MockQueryModel(QueryModel):
         sibling_feedback: str = "",
         trace_regeneration: dict | None = None,
     ) -> str | None:
+        self.sibling_feedbacks.append(sibling_feedback)
         self.regenerate_call_count += 1
         if self.regenerate_responses:
             new_answer = self.regenerate_responses.pop(0)
@@ -697,6 +699,175 @@ class TestValidationLoopTraceAccumulation:
         assert trace.final_outcome == "rejected"
         assert trace.total_rounds >= 3
 
+    def test_parse_failure_revalidates_same_answer(self):
+        """A validator parse failure must re-validate the SAME answer: no
+        regeneration, no fix-attempt accounting, sibling list untouched."""
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [
+            (False, "Validation parse failed: Expecting value: line 1 column 1 (char 0)", 0),
+            (True, "OK", 8.0),
+        ]
+        trace = GenerationTrace(item_id="test", run_id="test-run")
+        qa = QuestionAnswer("What is Magic?", "Magic is a card game.")
+        metrics = Mock()
+        metrics.run_id = "test-run"
+        metrics.record_candidate = Mock()
+        metrics.record_validation_attempt = Mock()
+        metrics.record_skip = Mock()
+        metrics.record_first_attempt_pass = Mock()
+        metrics.record_pass_after_fix = Mock()
+        metrics.record_failed_first_attempt = Mock()
+        metrics.record_failed_after_fixes = Mock()
+        metrics.record_fix_attempt = Mock()
+        metrics.flush = Mock()
+        metrics.print_rolling_summary = Mock()
+        sibling_corrections: list[str] = []
+
+        is_valid, doc = validate_and_loop_with_suggested_fix(
+            query_model=qm, models=models, qa_pairs=[qa], validation_pct=1.0,
+            enable_extra_validation=False, build_context=lambda: "ctx",
+            source_category="test_cat", source_data=[], source_template="t",
+            metrics=metrics, trace=trace, sibling_corrections=sibling_corrections,
+        )
+
+        assert is_valid is True
+        assert doc is not None
+        assert qm.regenerate_call_count == 0
+        assert qm.validate_call_count == 2
+        metrics.record_fix_attempt.assert_not_called()
+        assert sibling_corrections == []
+        assert trace.final_outcome == "accepted_first_attempt"
+        assert len(trace.validation_rounds) == 2
+        assert trace.validation_rounds[0]["round"] == 0
+        assert trace.validation_rounds[1]["round"] == 1
+        assert trace.total_rounds == 2
+
+    def test_parse_failure_exhausted_retries_rejects_without_regeneration(self):
+        """Persistent parse failures reject WITHOUT burning regeneration."""
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [
+            (False, "Validation parse failed: Expecting value: line 1 column 1 (char 0)", 0),
+            (False, "Validation parse failed: Unterminated string starting at line 1", 0),
+            (False, "Validation parse failed: Expecting value: line 1 column 1 (char 0)", 0),
+        ]
+        trace = GenerationTrace(item_id="test", run_id="test-run")
+        qa = QuestionAnswer("What is Magic?", "Magic is a card game.")
+        metrics = Mock()
+        metrics.run_id = "test-run"
+        metrics.record_candidate = Mock()
+        metrics.record_validation_attempt = Mock()
+        metrics.record_skip = Mock()
+        metrics.record_first_attempt_pass = Mock()
+        metrics.record_pass_after_fix = Mock()
+        metrics.record_failed_first_attempt = Mock()
+        metrics.record_failed_after_fixes = Mock()
+        metrics.record_fix_attempt = Mock()
+        metrics.flush = Mock()
+        metrics.print_rolling_summary = Mock()
+
+        is_valid, doc = validate_and_loop_with_suggested_fix(
+            query_model=qm, models=models, qa_pairs=[qa], validation_pct=1.0,
+            enable_extra_validation=False, build_context=lambda: "ctx",
+            source_category="test_cat", source_data=[], source_template="t",
+            metrics=metrics, trace=trace,
+        )
+
+        assert is_valid is False
+        assert doc is None
+        assert qm.regenerate_call_count == 0
+        metrics.record_fix_attempt.assert_not_called()
+        metrics.record_failed_first_attempt.assert_called_once()
+        assert trace.final_outcome == "rejected"
+        assert len(trace.validation_rounds) == 3
+        assert trace.total_rounds == 3
+
+    def test_parse_failure_not_in_sibling_feedback(self):
+        """Sibling feedback for later QAs must never contain parse-failure noise."""
+        models = self._make_models()
+        qm = MockQueryModel()
+        qa1 = QuestionAnswer("Q1?", "Answer one with enough length.")
+        qa2 = QuestionAnswer("Q2?", "Answer two with enough length.")
+        qm.validate_responses = [
+            (False, "Validation parse failed: Expecting value: line 1 column 1 (char 0)", 0),
+            (True, "OK", 8.0),          # Q1 re-validated, accepted
+            (False, "Missing trigger ordering", 4.0),  # Q2 genuine rejection
+            (True, "OK", 8.0),          # Q2 fixed, accepted
+        ]
+        qm.regenerate_responses = ["Fixed answer two with enough length."]
+        metrics = Mock()
+        metrics.run_id = "test-run"
+        metrics.record_candidate = Mock()
+        metrics.record_validation_attempt = Mock()
+        metrics.record_skip = Mock()
+        metrics.record_first_attempt_pass = Mock()
+        metrics.record_pass_after_fix = Mock()
+        metrics.record_failed_first_attempt = Mock()
+        metrics.record_failed_after_fixes = Mock()
+        metrics.record_fix_attempt = Mock()
+        metrics.flush = Mock()
+        metrics.print_rolling_summary = Mock()
+        sibling_corrections: list[str] = []
+
+        validate_and_loop_with_suggested_fix(
+            query_model=qm, models=models, qa_pairs=[qa1, qa2], validation_pct=1.0,
+            enable_extra_validation=False, build_context=lambda: "ctx",
+            source_category="test_cat", source_data=[], source_template="t",
+            metrics=metrics, sibling_corrections=sibling_corrections,
+        )
+
+        assert "Validation parse failed" not in sibling_corrections[0]
+        for feedback in qm.sibling_feedbacks:
+            assert "Validation parse failed" not in feedback
+
+    def test_sibling_corrections_dedupe_per_qa(self):
+        """Only the latest correction per QA index is kept in the accumulator."""
+        models = self._make_models()
+        qm = MockQueryModel()
+        qa = QuestionAnswer("Q1?", "Answer with enough length.")
+        qm.validate_responses = [
+            (False, "Wrong mana cost", 3.0),
+            (False, "Missing trigger ordering", 4.0),
+            (True, "OK", 8.0),
+        ]
+        qm.regenerate_responses = [
+            "Fixed attempt one with enough length.",
+            "Fixed attempt two with enough length.",
+        ]
+        metrics = Mock()
+        metrics.run_id = "test-run"
+        metrics.record_candidate = Mock()
+        metrics.record_validation_attempt = Mock()
+        metrics.record_skip = Mock()
+        metrics.record_first_attempt_pass = Mock()
+        metrics.record_pass_after_fix = Mock()
+        metrics.record_failed_first_attempt = Mock()
+        metrics.record_failed_after_fixes = Mock()
+        metrics.record_fix_attempt = Mock()
+        metrics.flush = Mock()
+        metrics.print_rolling_summary = Mock()
+        sibling_corrections: list[str] = []
+
+        validate_and_loop_with_suggested_fix(
+            query_model=qm, models=models, qa_pairs=[qa], validation_pct=1.0,
+            enable_extra_validation=False, build_context=lambda: "ctx",
+            source_category="test_cat", source_data=[], source_template="t",
+            metrics=metrics, sibling_corrections=sibling_corrections,
+        )
+
+        assert len(sibling_corrections) == 1
+        assert "Missing trigger ordering" in sibling_corrections[0]
+        assert "Wrong mana cost" not in sibling_corrections[0]
+
+    def test_is_transport_failure_reason(self):
+        from training_data.generate_synthetic_data.query_model import is_transport_failure_reason
+        assert is_transport_failure_reason("Validation parse failed: Expecting value: line 1 column 1 (char 0)") is True
+        assert is_transport_failure_reason("Validation error: connection reset") is True
+        assert is_transport_failure_reason("Missing trigger ordering") is False
+        assert is_transport_failure_reason("") is False
+        assert is_transport_failure_reason(None) is False
+
     def test_regeneration_failure(self):
         """Trace should have the failed round_data appended when regeneration fails."""
         models = self._make_models()
@@ -927,6 +1098,48 @@ class TestBackwardCompatibility:
             assert "parsed_ok" in trace_round
             assert trace_round["parsed_ok"] is True
             assert trace_round["score"] == 8.0
+
+    def test_validate_qa_passes_validation_max_tokens(self):
+        """validate_qa() must pass VALIDATION_MAX_TOKENS as max_tokens to query().
+
+        Regression guard: reasoning-model validators (deepseek-v4-flash) emit
+        thinking tokens against the same budget; an 8192 cap truncated the
+        final JSON, causing "Validation parse failed" rejections.
+        """
+        qm = QueryModel()
+        qm._last_elapsed_ms = 100
+        with patch.object(qm, 'query', return_value='{"score": 8, "is_acceptable": true, "errors": "none", "reason": "OK"}') as mock_query:
+            is_valid, reason, score = qm.validate_qa(
+                validation_model=MockModel(),
+                question="Test?",
+                answer="A sufficiently long test answer.",
+            )
+            assert is_valid is True
+            assert mock_query.call_args.kwargs["max_tokens"] == VALIDATION_MAX_TOKENS
+            assert mock_query.call_args.kwargs["max_tokens"] == 16384
+
+    def test_validate_with_model_passes_validation_max_tokens(self):
+        """validate_with_model() must pass VALIDATION_MAX_TOKENS as max_tokens to query()."""
+        qm = QueryModel()
+        qm._last_elapsed_ms = 100
+        card1 = {"name": "Llanowar Elves", "type": "Creature — Elf Druid", "text": "{T}: Add {G}.", "manaCost": "{G}"}
+        card2 = {"name": "Birds of Paradise", "type": "Creature — Bird", "text": "Flying. {T}: Add one mana of any color.", "manaCost": "{G}"}
+        qa = {"question": "Which is better?", "answer": "A sufficiently long test answer."}
+        with patch.object(
+            qm, 'query',
+            return_value='{"score": 8, "is_acceptable": true, "missing_info": "", '
+                         '"errors": "", "mechanical_accuracy": "correct", '
+                         '"cost_comparison_correct": "yes"}',
+        ) as mock_query:
+            is_valid, reason, score = qm.validate_with_model(
+                model=MockModel(),
+                card1=card1,
+                card2=card2,
+                qa=qa,
+            )
+            assert is_valid is True
+            assert mock_query.call_args.kwargs["max_tokens"] == VALIDATION_MAX_TOKENS
+            assert mock_query.call_args.kwargs["max_tokens"] == 16384
 
     def test_regenerate_answer_without_trace(self):
         """query_model.regenerate_answer() should work without trace_regeneration."""

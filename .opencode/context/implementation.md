@@ -1,3 +1,91 @@
+# Implementation Summary — Raise Validation Token Cap (VALIDATION_MAX_TOKENS=16384)
+
+## What was implemented
+
+`QueryModel.validate_qa()` and `validate_with_model()` (the two VALIDATION entry points) were silently inheriting `query()`'s default `max_tokens=8192`. Reasoning-model validators (e.g. `deepseek-v4-flash`) emit `reasoning_content` thinking tokens that count against the SAME max_tokens budget on the serving backend, so the final JSON answer was getting truncated mid-generation → "Validation parse failed: Expecting value..." rejections (run `7c58c422`).
+
+### Files Modified
+
+1. **`query_model.py`**
+   - Added module constant `VALIDATION_MAX_TOKENS = 16384` (after `VALIDATION_TRANSPORT_ERROR_PREFIX`, line ~27) with a comment explaining the deepseek-v4-flash reasoning-token rationale.
+   - `validate_with_model()` (~line 180): `self.query(model, validation_prompt, max_tokens=VALIDATION_MAX_TOKENS, purpose="VALIDATION")`
+   - `validate_qa()` (~line 266): `self.query(validation_model, prompt, max_tokens=VALIDATION_MAX_TOKENS, purpose="VALIDATION")`
+   - NOT changed: `query()` default `max_tokens=8192` (generation path), observer's `max_tokens=2048`, `run_*.sh` scripts, YAML templates.
+
+2. **`test_generation_trace.py`** (follow-up, code-review requested) — Two regression-guard tests in `TestBackwardCompatibility` proving the max_tokens passthrough on the validation path:
+   - `test_validate_qa_passes_validation_max_tokens` — patches `qm.query` via `patch.object`, calls `validate_qa`, asserts `call_args.kwargs["max_tokens"] == VALIDATION_MAX_TOKENS` and `== 16384`.
+   - `test_validate_with_model_passes_validation_max_tokens` — same pattern for `validate_with_model` with a full card-comparison validation JSON (score/is_acceptable/missing_info/errors/mechanical_accuracy/cost_comparison_correct) so the call parses cleanly.
+   - Import updated: `from ...query_model import QueryModel, VALIDATION_MAX_TOKENS`.
+
+3. **`CHANGELOG.md`** — Added entry under `# Changelog`.
+
+### Grep verification for max_tokens assertions
+- Mock `query()` methods in test files (`test_generation_trace.py`, `test_base_generator.py`, `test_generate_reverse_lookup_questions.py`, `test_generate_quick_guidelines.py`, `test_generate_color_identity_questions.py`) define `max_tokens: int = 8192` as the default param — they ACCEPT any value passed, so no test asserts the 8192 value in a VALIDATION context. No test changes required.
+
+### Test Results
+- test_generation_trace.py: 37 passed / 0 failed (35 pre-existing + 2 new)
+- Full suite: 394 passed / 8 pre-existing failed (test_data_access.py ×7, test_yaml_template_loader.py ×1 — unchanged baseline), zero new failures
+- Lint: 4 pre-existing ruff errors in query_model.py (unused imports `Iterator`/`yaml`/`Stream`, f-string at line 64) — all pre-existing, none in touched lines, left untouched
+
+---
+
+# Implementation Summary — Story 046 (Code Review round 2): 8 Review Fixes
+
+## What was implemented
+
+Code Review returned CHANGES REQUESTED on the Story 046 implementation. All 8 review findings were addressed as targeted fixes to the existing work.
+
+### Fixes Applied
+
+1. **Fix 1 (blocking A-1)** — `common.py`: `round_num += 1` added inside the parse-retry branch (after the trace-append guard, before `continue`), so retry rounds are recorded with incrementing round numbers in `trace.validation_rounds`. NOTE: initial application landed with a 4-space indentation error in the block; detected via `ast.parse` + indentation dump and corrected.
+2. **Fix 2 (blocking A-2)** — `common.py`: `final_outcome` discriminator changed from `round_num == 0` to `iteration == 0` so a retry-accepted (never-regenerated) answer is correctly `accepted_first_attempt`.
+3. **Fix 3 (blocking A-3)** — `test_generation_trace.py`: added trace-fidelity assertions to the two retry tests (round numbers 0,1 and `total_rounds == 2` for the revalidate test; 3 rounds and `total_rounds == 3` for the exhausted-retries test).
+4. **Fix 4 (minor #2)** — `common.py`: reject branch now sets `result = (False, None)` explicitly so a trailing rejection overrides an earlier accepted doc.
+5. **Fix 5 (minor #3)** — `common.py`: `parse_retries_left = _MAX_VALIDATION_PARSE_RETRIES` reset after successful regeneration so a newly regenerated answer gets the full retry allowance.
+6. **Fix 6 (minor #4)** — `common.py`: generic rejection print changed to `✗ REJECTED (after {iteration} fix attempt(s), reason: {reason or 'unknown'}): {qa.question[:80]}` (metrics logic untouched).
+7. **Fix 7 (minor #1)** — `test_observer.py`: new `test_transport_failure_reason_excluded_from_top_reasons` in `TestAnalysisTriggering` — patches `_llm_analyze_generation_template`/`_llm_analyze_validation_template` to capture `top_reasons` (arg index 6 in both), calls `_analyze` directly (interval=10 avoids auto-trigger before the mocks install), asserts the parse-failure reason is absent and the genuine content reason is present.
+8. **Fix 8 (orchestrator decision)** — `common.py`: added the NOTE comment above the `_upsert_sibling_correction` call site documenting the single-QA production contract and the bounded accumulator behavior.
+
+### Test Results
+- test_generation_trace.py: 35 passed / 0 failed
+- test_observer.py: 31 passed / 0 failed (30 existing + 1 new)
+- Full suite: 392 passed / 8 pre-existing failed (test_data_access.py ×7, test_yaml_template_loader.py ×1 — unchanged from baseline), zero new failures
+- Lint: 23 pre-existing ruff errors on the 3 touched files, unchanged after fixes (zero new)
+
+---
+
+# Implementation Summary — Story 046: Filter Validator Transport Failures Out of the Fix Loop
+
+## What was implemented
+
+Stopped validator transport failures (unparseable/truncated/errored responses) from being treated as answer-quality rejections. They no longer burn regeneration attempts, inflate fix metrics, permanently reject good answers, or flood sibling feedback. Also reconciled the drifted `VALIDATION_MODEL` default in all 27 `run_*.sh` scripts.
+
+### Files Modified
+
+1. **27 × `run_*.sh`** — Replaced `deepseek-v4-flash` → `glm-5.2` in the `VALIDATION_MODEL` default line (matching `generator-dashboard/config.py`). Updated the stale `glm-5.1` usage comment in `run_combos.sh` line 3 → `glm-5.2`. `MODEL`/`OBSERVER_MODEL` defaults untouched.
+
+2. **`query_model.py`** — Added `VALIDATION_PARSE_FAILURE_PREFIX`, `VALIDATION_TRANSPORT_ERROR_PREFIX`, and `is_transport_failure_reason(reason)` recognizing the `"Validation parse failed"` / `"Validation error"` prefixes returned by `validate_qa` / `validate_with_model`.
+
+3. **`common.py`** — Imported `is_transport_failure_reason`; added `_MAX_VALIDATION_PARSE_RETRIES = 2`; added `_upsert_sibling_correction()` helper (per-QA dedup/replace). In `validate_and_loop_with_suggested_fix`: transport-failure rejections re-validate the SAME answer up to 2 times (no regeneration, no fix-attempt metric, no sibling feedback), then reject without regeneration. Sibling-correction append replaced with dedup helper. Restructured the tail so all `qa_pairs` are processed (no early return after the first accepted QA) — a no-op for production (always called with 1 QA) but required for multi-QA sibling-feedback tests.
+
+4. **`observer.py`** — Imported `is_transport_failure_reason`; `_analyze`'s reason-counting loop skips transport-failure reasons so observer stats/templates exclude validator noise.
+
+5. **`batch_validate.py`** — Fixed 4-tuple unpack of `validate_qa` (returns 3-tuple) → `is_valid, reason, score = ...; suggested_fix = None`.
+
+6. **`test_generation_trace.py`** — `MockQueryModel` records `sibling_feedbacks`; 5 new tests: parse-failure retry (no regen, no fix metric, `accepted_first_attempt`), exhausted-retry rejection (no regen, `record_failed_first_attempt`), parse failures excluded from sibling feedback, per-QA dedupe, and the `is_transport_failure_reason` predicate.
+
+### Test Results
+- New tests: 5 passed, 0 failed (test_generation_trace.py: 35/35)
+- Full suite: 391 passed (baseline 386 + 5), same 8 pre-existing failures unchanged (test_data_access.py ×7, test_yaml_template_loader.py ×1 — confirmed failing at HEAD), zero new failures
+- Lint: 26 pre-existing ruff errors unchanged, zero new
+
+### Deviations from plan
+- Dropped `round_num += 1` from the transport-retry path: with it, the existing trace logic would classify a retry-accepted (never-regenerated) answer as `accepted_after_fix`, contradicting the plan's own test asserting `final_outcome == "accepted_first_attempt"`.
+- Restructured the loop tail to process all QAs (see above) — the plan's multi-QA test (`test_parse_failure_not_in_sibling_feedback`) requires it.
+- Kept the predicate's local import inside `test_is_transport_failure_reason` (as specified) instead of extending the top-level import, avoiding a new F401/F811 lint error.
+
+---
+
 # Implementation Summary — Story 007: Test Suite Updates for YAML Template System
 
 ## What was implemented

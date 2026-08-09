@@ -10,6 +10,45 @@ const state = {
   refs: null,           // DOM refs for the active panel
 };
 
+// Diagnostics
+let _tickCount = 0;
+let _renderLogCount = 0;
+let _lastTickTime = 0;
+let _activeConnections = 0;
+let _touchCount = 0;
+console.log("[dashboard] booting, tick limit will be imposed");
+
+// Track touch events to diagnose mobile issues
+document.addEventListener("touchstart", (e) => {
+  _touchCount++;
+  console.log("[dashboard] touch #", _touchCount, "target:", e.target.tagName, e.target.className || e.target.id);
+}, { passive: true });
+
+// Watchdog: if no progress for 10 seconds, assume hang and recover
+let _lastProgressTime = Date.now();
+function updateProgress() {
+  _lastProgressTime = Date.now();
+}
+
+setInterval(() => {
+  const elapsed = Date.now() - _lastProgressTime;
+  if (elapsed > 10000 && !_stalled) {
+    console.error("[dashboard] watchdog: no progress for", elapsed, "ms, recovering");
+    _stalled = true;
+    if (state.logSSE) { state.logSSE.close(); state.logSSE = null; }
+    const btn = document.getElementById("stop-all-btn");
+    if (btn) { btn.textContent = "HUNG - tap to restart"; btn.disabled = false; }
+  }
+}, 2000);
+
+// Global error handlers
+window.addEventListener("error", (e) => {
+  console.error("[dashboard] uncaught error:", e.message, "at", e.filename + ":" + e.lineno);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  console.error("[dashboard] unhandled promise rejection:", e.reason);
+});
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const el = (tag, cls, text) => {
   const node = document.createElement(tag);
@@ -50,10 +89,10 @@ function renderTabs() {
   tabsEl.replaceChildren();
   for (const item of sortedItems()) {
     const tab = el("div", "tab" + (item.slug === state.active ? " active" : ""));
+    tab.dataset.slug = item.slug;
     const dot = el("span", "dot" + (item.running ? " on" : ""));
     tab.appendChild(dot);
     tab.appendChild(el("span", null, displayName(item)));
-    tab.addEventListener("click", () => selectTab(item.slug));
     tabsEl.appendChild(tab);
   }
 }
@@ -61,6 +100,7 @@ function renderTabs() {
 function selectTab(slug) {
   state.active = slug;
   state.refs = null;
+  _lastMetricsKey = "";
   renderTabs();
   const item = activeList().get(slug);
   buildPanel(item);
@@ -89,7 +129,9 @@ function buildGeneratorPanel(g) {
 
   const actions = el("div", "gen-actions");
   refs.startBtn = el("button", "btn btn-start", "Start");
+  refs.startBtn.dataset.action = "start";
   refs.stopBtn = el("button", "btn btn-stop", "Stop");
+  refs.stopBtn.dataset.action = "stop";
   refs.stopBtn.disabled = true;
   actions.appendChild(refs.startBtn);
   actions.appendChild(refs.stopBtn);
@@ -115,6 +157,8 @@ function buildGeneratorPanel(g) {
   modelField.querySelector("input").placeholder = "blank = script default";
   const valModelField = makeField("Validation model", "ctl-valmodel", g.default_validation_model || "");
   valModelField.querySelector("input").placeholder = "blank = script default";
+  const obsModelField = makeField("Observer model", "ctl-obsmodel", g.default_observer_model || "");
+  obsModelField.querySelector("input").placeholder = "blank = validation model";
   const pctField = makeField("Validation %", "ctl-pct", "1.0", "number", 0.1);
   const dryRow = el("div", "checkbox-row");
   const dryBox = el("input", null);
@@ -125,7 +169,7 @@ function buildGeneratorPanel(g) {
   dryRow.querySelector("label").style.fontSize = "12px";
   dryRow.querySelector("label").style.color = "var(--text-dim)";
 
-  controls.append(countField, modelField, valModelField, pctField, dryRow);
+  controls.append(countField, modelField, valModelField, obsModelField, pctField, dryRow);
 
   // Metrics
   refs.metricsGrid = el("div", "metrics-grid");
@@ -153,6 +197,7 @@ function buildGeneratorPanel(g) {
   const scrollBox = el("input", null);
   scrollBox.type = "checkbox";
   scrollBox.checked = true;
+  scrollBox.dataset.action = "autoscroll";
   autoscroll.appendChild(scrollBox);
   autoscroll.appendChild(document.createTextNode(" auto-scroll"));
   logBar.appendChild(autoscroll);
@@ -170,10 +215,6 @@ function buildGeneratorPanel(g) {
 
   panelEl.replaceChildren(head, refs.statusLine, refs.progress, controls, refs.metricsGrid, sections, logSection);
   state.refs = refs;
-
-  refs.startBtn.addEventListener("click", () => onStart(g.slug));
-  refs.stopBtn.addEventListener("click", () => onStop(g.slug));
-  scrollBox.addEventListener("change", () => renderLog(g.slug));
 
   updateGeneratorPanel(g);
   renderLog(g.slug);
@@ -193,7 +234,9 @@ function buildScraperPanel(item) {
 
   const actions = el("div", "gen-actions");
   refs.startBtn = el("button", "btn btn-start", "Start");
+  refs.startBtn.dataset.action = "start";
   refs.stopBtn = el("button", "btn btn-stop", "Stop");
+  refs.stopBtn.dataset.action = "stop";
   refs.stopBtn.disabled = true;
   actions.appendChild(refs.startBtn);
   actions.appendChild(refs.stopBtn);
@@ -222,6 +265,7 @@ function buildScraperPanel(item) {
   const scrollBox = el("input", null);
   scrollBox.type = "checkbox";
   scrollBox.checked = true;
+  scrollBox.dataset.action = "autoscroll";
   autoscroll.appendChild(scrollBox);
   autoscroll.appendChild(document.createTextNode(" auto-scroll"));
   logBar.appendChild(autoscroll);
@@ -230,10 +274,6 @@ function buildScraperPanel(item) {
 
   panelEl.replaceChildren(head, refs.statusLine, controls, logSection);
   state.refs = refs;
-
-  refs.startBtn.addEventListener("click", () => onScraperStart(item.slug));
-  refs.stopBtn.addEventListener("click", () => onScraperStop(item.slug));
-  scrollBox.addEventListener("change", () => renderLog(item.slug));
 
   updateScraperPanel(item);
   renderLog(item.slug);
@@ -249,6 +289,7 @@ function onStart(slug) {
     count: parseInt($("#ctl-count", panelEl).value, 10) || 100,
     model: $("#ctl-model", panelEl).value || null,
     validation_model: $("#ctl-valmodel", panelEl).value || null,
+    observer_model: $("#ctl-obsmodel", panelEl).value || null,
     validation_pct: parseFloat($("#ctl-pct", panelEl).value) || 1.0,
     dry_run: $("#ctl-dryrun", panelEl).checked,
   };
@@ -353,7 +394,53 @@ function onScraperStop(slug) {
 // Snapshot updates (from /api/events SSE)
 // ---------------------------------------------------------------------------
 
+let _panelUpdateTimer = null;
+function schedulePanelUpdate(item) {
+  if (_panelUpdateTimer !== null) return;
+  _panelUpdateTimer = setTimeout(() => {
+    _panelUpdateTimer = null;
+    if (state.active) updateActivePanel(activeList().get(state.active));
+  }, 250);
+}
+
+let _lastMetricsKey = "";
+function metricsKey(m, running, instances) {
+  if (!m) return "none";
+  const inst = instances || [];
+  return `${running}|${inst.length}|${m.total_candidates}|${m.total_validated}|${m.total_passed}|${m.total_failed}`;
+}
+
+// Tick limiter: prevent runaway processes from freezing the page
+const MAX_TICKS_PER_SECOND = 10;
+let _stalled = false;
+function checkTickLimit() {
+  const now = Date.now();
+  if (now - _lastTickTime < 1000) {
+    _tickCount++;
+    if (_tickCount > MAX_TICKS_PER_SECOND && !_stalled) {
+      console.error("[dashboard] tick limit exceeded, stopping updates");
+      _stalled = true;
+      // Stop all SSE connections
+      if (state.logSSE) { state.logSSE.close(); state.logSSE = null; }
+      return false;
+    }
+  } else {
+    _tickCount = 0;
+    _lastTickTime = now;
+    _stalled = false;
+  }
+  return true;
+}
+
+let _lastUpdateSnapshotTime = 0;
 function updateSnapshot(snap) {
+  const now = Date.now();
+  console.log("[dashboard] updateSnapshot called, tick:", _tickCount, "connections:", _activeConnections);
+  if (performance.memory) {
+    const mb = performance.memory.usedJSHeapSize / 1048576;
+    console.log("[dashboard] JS heap: " + mb.toFixed(2) + " MB");
+  }
+  _lastUpdateSnapshotTime = now;
   mongoBadge.textContent = snap.mongo_connected ? "mongo: connected" : "mongo: unavailable";
   mongoBadge.classList.toggle("badge-ok", snap.mongo_connected);
   mongoBadge.classList.toggle("badge-fail", !snap.mongo_connected);
@@ -377,7 +464,7 @@ function updateSnapshot(snap) {
 
   if (state.active) {
     const item = activeList().get(state.active);
-    if (item) updateActivePanel(item);
+    if (item) schedulePanelUpdate(item);
   }
 }
 
@@ -434,6 +521,10 @@ function updateGeneratorPanel(g) {
     : `STOPPED — target ${fmt(target)}`;
 
   const m = g.metrics ? g.metrics.metrics : null;
+  const mk = metricsKey(m, g.running, inst);
+  if (mk === _lastMetricsKey) return;
+  _lastMetricsKey = mk;
+
   if (!m) {
     refs.metricsGrid.replaceChildren(el("div", "empty", "No metrics yet"));
     refs.progressBar.value = 0;
@@ -513,19 +604,23 @@ function openLogSSE(slug) {
   const url = state.mode === "scrapers" ? `/api/scraper-logs/${slug}` : `/api/logs/${slug}`;
   const src = new EventSource(url);
   state.logSSE = src;
+  _activeConnections++;
+  updateProgress(); console.log("[dashboard] opened log SSE for", slug, "total connections:", _activeConnections);
 
   src.addEventListener("message", (ev) => {
     if (state.active !== slug) return;
     let data;
     try { data = JSON.parse(ev.data); } catch { return; }
     if (data.type === "init") {
-      state.logBuf.set(key, data.lines);
+      state.logBuf.set(key, data.lines.slice(-20));
+      _renderLogCount++;
       renderLog(slug);
     } else if (data.type === "lines") {
       const buf = state.logBuf.get(key) || [];
       buf.push(...data.lines);
-      if (buf.length > 3000) buf.splice(0, buf.length - 3000);
+      if (buf.length > 50) buf.splice(0, buf.length - 50);
       state.logBuf.set(key, buf);
+      _renderLogCount++;
       renderLog(slug);
     } else if (data.type === "traces") {
       renderTraces(data.traces);
@@ -533,19 +628,35 @@ function openLogSSE(slug) {
   });
 
   src.addEventListener("error", () => {
+    _activeConnections--;
+    console.log("[dashboard] log SSE error for", slug, "total connections:", _activeConnections);
     if (state.active !== slug) return;
     if (refs) refs.logBox.textContent = "log stream disconnected — retrying…";
   });
+
+  src.addEventListener("close", () => {
+    _activeConnections--;
+    console.log("[dashboard] log SSE closed for", slug, "total connections:", _activeConnections);
+  });
 }
 
+let _lastRenderLogTime = 0;
 function renderLog(slug) {
+  const now = Date.now();
+  console.log("[dashboard] renderLog called for", slug, "tick:", _tickCount);
+  _lastRenderLogTime = now;
   const refs = state.refs;
   if (!refs || state.active !== slug) return;
   const key = `${state.mode}:${slug}`;
   const buf = state.logBuf.get(key) || [];
-  const atBottom = refs.logBox.scrollTop + refs.logBox.clientHeight >= refs.logBox.scrollHeight - 40;
-  refs.logBox.textContent = buf.length ? buf.join("\n") : "(empty)";
-  if (atBottom) refs.logBox.scrollTop = refs.logBox.scrollHeight;
+  const text = buf.length ? buf.join("\n") : "(empty)";
+  if (refs.logBox.textContent === text) return;
+  requestAnimationFrame(() => {
+    if (!checkTickLimit()) return;
+    const atBottom = refs.logBox.scrollTop + refs.logBox.clientHeight >= refs.logBox.scrollHeight - 40;
+    refs.logBox.textContent = text;
+    if (atBottom) refs.logBox.scrollTop = refs.logBox.scrollHeight;
+  });
 }
 
 function renderTraces(traces) {
@@ -555,8 +666,9 @@ function renderTraces(traces) {
     refs.traceFeed.replaceChildren(el("div", "empty", "No traces yet"));
     return;
   }
+  const shown = traces.slice(-50);
   refs.traceFeed.replaceChildren(
-    ...traces.map((t) => {
+    ...shown.map((t) => {
       const row = el("div", "trace-row");
       const badge = el("span", `outcome outcome-${t.final_outcome}`, t.final_outcome);
       row.appendChild(badge);
@@ -576,6 +688,7 @@ function setMode(mode) {
   state.mode = mode;
   state.active = null;
   state.refs = null;
+  _lastMetricsKey = "";
   modeGenBtn.classList.toggle("active", mode === "generators");
   modeScrapBtn.classList.toggle("active", mode === "scrapers");
   sidebarTitle.textContent = mode === "scrapers" ? "Scrapers" : "Generators";
@@ -600,8 +713,11 @@ modeScrapBtn.addEventListener("click", () => setMode("scrapers"));
 // ---------------------------------------------------------------------------
 
 async function boot() {
+  console.log("[dashboard] boot() starting");
   try {
+    console.log("[dashboard] fetching generators...");
     const snap = await fetch("/api/generators").then((r) => r.json());
+    console.log("[dashboard] got snapshot with", snap.generators?.length || 0, "generators");
     for (const g of snap.generators) state.snapshots.set(g.slug, g);
     for (const s of snap.scrapers || []) state.scrapers.set(s.slug, s);
     mongoBadge.textContent = snap.mongo_connected ? "mongo: connected" : "mongo: unavailable";
@@ -615,20 +731,75 @@ async function boot() {
       openLogSSE(state.active);
     }
   } catch (e) {
+    console.error("[dashboard] boot error:", e);
     panelEl.replaceChildren(el("div", "empty", `Failed to load dashboard: ${e}`));
   }
+  console.log("[dashboard] boot() complete"); updateProgress();
 
   const snapSrc = new EventSource("/api/events");
+  _activeConnections++;
+  updateProgress(); console.log("[dashboard] opened snapshot SSE, total connections:", _activeConnections);
+  
+  snapSrc.addEventListener("open", () => {
+    console.log("[dashboard] snapshot SSE open event fired");
+  });
+  snapSrc.addEventListener("close", () => {
+    _activeConnections--;
+    console.log("[dashboard] snapshot SSE close event fired, total connections:", _activeConnections);
+  });
   snapSrc.addEventListener("message", (ev) => {
-    try { updateSnapshot(JSON.parse(ev.data)); } catch { /* ignore */ }
+    if (!checkTickLimit()) {
+      console.warn("[dashboard] tick limit hit, dropping snapshot");
+      return;
+    }
+    try { updateSnapshot(JSON.parse(ev.data)); } catch (e) { console.error("[dashboard] snapshot error:", e); }
   });
   snapSrc.addEventListener("error", () => {
+    _activeConnections--;
+    console.log("[dashboard] snapshot SSE error, total connections:", _activeConnections);
     connBadge.textContent = "disconnected";
     connBadge.classList.add("badge-fail");
   });
   snapSrc.addEventListener("open", () => {
     connBadge.textContent = "live";
     connBadge.classList.remove("badge-fail");
+  });
+}
+
+panelEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn || !state.active) return;
+  const action = btn.dataset.action;
+  if (action === "start") {
+    state.mode === "scrapers" ? onScraperStart(state.active) : onStart(state.active);
+  } else if (action === "stop") {
+    state.mode === "scrapers" ? onScraperStop(state.active) : onStop(state.active);
+  }
+});
+
+function handleTabClick(e) {
+  const tab = e.target.closest("[data-slug]");
+  if (!tab) return;
+  selectTab(tab.dataset.slug);
+}
+
+tabsEl.addEventListener("click", handleTabClick);
+
+panelEl.addEventListener("change", (e) => {
+  const cb = e.target.closest("[data-action='autoscroll']");
+  if (!cb || !state.active) return;
+  renderLog(state.active);
+});
+
+// Stop all updates (for debugging hangs)
+const stopBtn = document.getElementById("stop-all-btn");
+if (stopBtn) {
+  stopBtn.addEventListener("click", () => {
+    console.warn("[dashboard] STOP ALL clicked, closing all connections");
+    if (state.logSSE) { state.logSSE.close(); state.logSSE = null; }
+    _stalled = true;
+    stopBtn.textContent = "STOPPED";
+    stopBtn.disabled = true;
   });
 }
 

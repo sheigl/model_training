@@ -280,6 +280,41 @@ class TestAnalysisTriggering:
         written_val = list((tmp_path / "templates").glob("test_category_validator_v*.yaml"))
         assert len(written_val) == 0  # LLM returns None so no write, but analysis ran
 
+    def test_transport_failure_reason_excluded_from_top_reasons(self, tmp_path):
+        """Validator transport-failure reasons never reach the observer LLM."""
+        obs = _make_observer(tmp_path, interval=10, threshold=50.0)
+        # One trace with a transport-failure round-0 reason, one with a genuine
+        # content-quality reason. Both are "rejected"/"needs fix" so the rate is
+        # 0% < threshold and regeneration_count > 0 → both LLM analyses run.
+        traces = [
+            _make_trace("rejected", rounds=1, reasons=["Validation parse failed: Expecting value: line 1 column 1 (char 0)"]),
+            _make_trace("accepted_after_fix", rounds=1, reasons=["Missing trigger ordering"]),
+        ]
+        for t in traces:
+            obs.on_item_processed("cat1", t)
+
+        captured = {}
+
+        def mock_gen_analyze(*args):
+            captured["gen_top_reasons"] = args[6]
+            return None
+
+        def mock_val_analyze(*args):
+            captured["val_top_reasons"] = args[6]
+            return None
+
+        obs._llm_analyze_generation_template = mock_gen_analyze
+        obs._llm_analyze_validation_template = mock_val_analyze
+
+        obs._analyze("cat1", None)
+
+        all_reasons = captured.get("gen_top_reasons", []) + captured.get("val_top_reasons", [])
+        reason_texts = [r for r, _ in all_reasons]
+        # Transport-failure reason must be filtered out before reaching the LLM
+        assert not any("parse failed" in r for r in reason_texts)
+        # Genuine content reason still reaches the LLM (normalised lowercase)
+        assert "missing trigger ordering" in reason_texts
+
 
 # ---------------------------------------------------------------------------
 # Versioned YAML writing

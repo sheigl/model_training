@@ -1,5 +1,40 @@
 # Changelog
 
+### Raise Validation Token Cap (VALIDATION_MAX_TOKENS=16384) — 2026-08-06
+
+The VALIDATION query path (`validate_qa` / `validate_with_model`) no longer inherits the 8192 `max_tokens` default from `QueryModel.query()`. Reasoning-model validators (e.g. `deepseek-v4-flash`) emit `reasoning_content` thinking tokens that count against the same budget on the serving backend, truncating the final JSON and causing "Validation parse failed: Expecting value..." rejections (run `7c58c422`). Validation now passes `max_tokens=VALIDATION_MAX_TOKENS` (16384) — twice the old cap. Generation (8192) and observer (2048) budgets are unchanged.
+
+- **`query_model.py`** — New module constant `VALIDATION_MAX_TOKENS = 16384` with explanatory comment; `validate_qa()` and `validate_with_model()` now pass `max_tokens=VALIDATION_MAX_TOKENS` to `query()`
+- **`test_generation_trace.py`** — Two regression-guard tests (`test_validate_qa_passes_validation_max_tokens`, `test_validate_with_model_passes_validation_max_tokens`) asserting the validation path passes `VALIDATION_MAX_TOKENS` to `query()`
+- **Unchanged** — `QueryModel.query()` default `max_tokens=8192`, `base_generator.py` explicit 8192, `observer.py` explicit 2048, all `run_*.sh`, all YAML templates
+
+**Test results:** 394 passing (392 + 2 new tests), same 8 pre-existing failures unchanged (test_data_access.py ×7, test_yaml_template_loader.py ×1), zero new failures.
+
+### Story 046 (Code Review round 2): Parse-Failure Fix-Loop Refinements — 2026-08-06
+
+Addressed all 8 code-review findings on the Story 046 transport-failure fix loop: parse retries now advance `round_num` in the trace, `final_outcome` discriminates on regeneration attempts (`iteration`) rather than validation rounds, retry tests assert exact round/`total_rounds` fidelity, the reject branch sets an explicit result, the parse-retry budget resets after a successful regeneration, the rejection print is accurate for all causes, the observer excludes transport-failure reasons from LLM top-rejection stats (new test), and a comment documents the single-QA sibling-accumulator contract.
+
+- **`common.py`** — `round_num += 1` on parse-retry; `final_outcome` uses `iteration == 0`; `result = (False, None)` in reject branch; `parse_retries_left` reset on successful regeneration; accurate rejection print; NOTE comment on `_upsert_sibling_correction` call site
+- **`test_generation_trace.py`** — trace-fidelity assertions added to the two parse-retry tests
+- **`test_observer.py`** — new test asserting transport-failure reasons never reach the observer LLM while genuine reasons still do
+
+**Test results:** 392 passing (391 + 1 new observer test), same 8 pre-existing failures unchanged, zero new failures.
+
+### Story 046: Filter Validator Transport Failures Out of the Fix Loop — 2026-08-06
+
+Validator transport failures (unparseable/truncated/errored responses, e.g. "Validation parse failed: Expecting value...") are no longer treated as answer-quality rejections. They re-validate the same answer (bounded 2 retries) without regenerating, counting a fix attempt, or appending sibling feedback — then reject without regeneration if the validator stays unparseable. Sibling corrections are deduped per QA so the accumulated list never grows unbounded, and transport-failure reasons are excluded from observer rejection stats.
+
+- **`run_*.sh` (all 27)** — `VALIDATION_MODEL` default reconciled from `deepseek-v4-flash` → `glm-5.2` (matching `generator-dashboard/config.py`); stale `glm-5.1` comment in `run_combos.sh` updated
+- **`query_model.py`** — New `is_transport_failure_reason()` predicate matching the `"Validation parse failed"` / `"Validation error"` reason prefixes
+- **`common.py`** — `validate_and_loop_with_suggested_fix`: transport-failure retry path (same answer, ≤2 retries, no regen/metrics/sibling feedback), `_upsert_sibling_correction()` per-QA dedup helper, all `qa_pairs` processed (no early return)
+- **`observer.py`** — Top-rejection stats exclude transport-failure reasons
+- **`batch_validate.py`** — Fixed crash from unpacking `validate_qa`'s 3-tuple as 4 values
+- **Tests**: 5 new unit tests in `test_generation_trace.py` (parse-failure retry, exhausted retries, sibling-feedback exclusion, per-QA dedupe, predicate)
+
+**Test results:** 391 passing (baseline 386 + 5 new), same 8 pre-existing failures unchanged, zero new failures.
+
+**Breaking changes:** None — CLI flags, generator endpoints, and dashboard UI unchanged.
+
 ### Test Suite Updates for YAML Template System (Story 007) — 2026-07-27
 
 Trimmed obsolete MongoDB-specific tests and verified zero regressions across the YAML template migration.

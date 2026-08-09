@@ -66,8 +66,6 @@ body {
   flex: none;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
-  position: sticky;
-  top: 52px;
   height: calc(100vh - 52px);
   overflow-y: auto;
 }
@@ -186,10 +184,14 @@ body {
   background: var(--bg-card);
   color: var(--text);
   border-radius: 8px;
-  padding: 8px 16px;
+  padding: 10px 16px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .btn:hover { border-color: var(--accent); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -284,4 +286,12 @@ td.fail { color: var(--red); }
   }
   .tabs { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; }
   .tab { width: auto; white-space: nowrap; }
+}
+
+@media (max-width: 480px) {
+  .panel { padding: 12px 12px; }
+  .controls { grid-template-columns: 1fr; padding: 12px; }
+  .log-box { height: 150px; }
+  .gen-title h2 { font-size: 17px; }
+  .metric-card .v { font-size: 15px; }
 }
