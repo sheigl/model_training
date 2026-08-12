@@ -13,9 +13,15 @@
       <h1>MTG Generator Dashboard</h1>
     </div>
     <div class="topbar-meta">
-      <span id="mongo-status" class="badge badge-idle">mongo: checking…</span>
-      <span id="conn-status" class="badge badge-idle">disconnected</span>
-      <button id="stop-all-btn" class="btn btn-stop" style="padding: 4px 12px; font-size: 11px;">STOP ALL</button>
+      <span id="mongo-status" class="badge badge-idle">
+        <span class="badge-dot"></span>
+        mongo: checking…
+      </span>
+      <span id="conn-status" class="badge badge-idle">
+        <span class="badge-dot"></span>
+        disconnected
+      </span>
+      <button id="stop-all-btn" class="btn btn-stop">STOP ALL</button>
     </div>
   </header>
 

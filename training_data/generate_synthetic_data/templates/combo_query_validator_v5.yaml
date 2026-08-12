@@ -52,18 +52,14 @@ instruction: "\n    \n<system>\nYou are an expert Magic: The Gathering rules adv
   \ If score is 7 or above with no errors, leave blank.>\",\n    \"reason\": \"<one\
   \ sentence summary. If score is 7 or above with no errors, leave blank.>\"\n   \
   \ }\n\n    Output ONLY valid JSON, no other text.\n\nADDITIONAL CHECKS FROM OBSERVER:\n\
-  Add to the combo_query verification checklist:\n5. ABILITY ATTRIBUTION: Verify each\
-  \ ability mentioned is attributed to the correct card. Misattributing an ability\
-  \ (e.g., saying card A has a blink ability when card B actually has it) is a factual\
-  \ error, even if the overall combo description is otherwise correct.\n6. INTERNAL\
-  \ CONSISTENCY & CONTRADICTION CHECK: The answer must NOT contradict the provided\
-  \ combo steps. Specifically:\n   - Mana colors/types claimed in the answer must\
-  \ match the combo steps (e.g., if steps say 'infinite colorless mana,' answer must\
-  \ not say 'infinite red mana').\n   - Trigger source and mechanism must match steps\
-  \ (e.g., if soulbond is described in the steps as how two creatures pair, the answer\
-  \ must not describe it as a triggered ability firing on resolution).\n   - If the\
-  \ answer describes a cause-effect chain, each link must be consistent with the COMBO\
-  \ STEPS field.\n7. SCOPE DISCIPLINE: The answer must ONLY explain abilities directly\
-  \ relevant to the combo. Mentioning abilities or interactions not used in the combo\
-  \ and making claims about them counts as a factual error if those claims are incorrect,\
-  \ even if the core combo is described accurately."
+  Add an explicit rule: check the final summary separately from the step-by-step loop.\
+  \ If the loop is accurate but the final summary uses a mechanically incorrect term,\
+  \ reject it. In particular, enforce the cost-vs-trigger distinction: sacrificing\
+  \ a permanent to pay an activated ability such as Phyrexian Altar's mana ability\
+  \ is a cost, not a sacrifice trigger. Therefore reject phrases like 'infinite sacrifice\
+  \ triggers' or 'sacrifice outlet' when the loop has only one activated sacrifice\
+  \ per iteration; require 'activated ability cost' or 'sacrifice cost' instead. Also\
+  \ require the payoff statement to state the exact game-state result (e.g., 'infinite\
+  \ creature death triggers' or 'infinite ETB triggers') rather than vague phrases\
+  \ like 'very powerful' or 'wins the game.' When rejecting, quote the offending phrase\
+  \ and state the correct mechanical description."

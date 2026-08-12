@@ -26,20 +26,23 @@
           ]
         },
         "5": {
-          "regen_rate": 49.46,
-          "total_items": 31924,
+          "regen_rate": 48.89,
+          "total_items": 33004,
           "run_ids": [
-            "6cb99f73-0725-43fe-9793-1297563e1072"
+            "6cb99f73-0725-43fe-9793-1297563e1072",
+            "237dcfe5-8ff7-40a1-811b-71e14aaf8c1d",
+            "a113efe7-c680-4bfc-b51f-0a979b55370d"
           ]
         }
       },
       "generation_versions": {
         "2": {
-          "first_pass_rate": 28.87,
-          "total_items": 33455,
+          "first_pass_rate": 29.34,
+          "total_items": 34475,
           "run_ids": [
             "1b9e4243-e5e7-4ed4-b379-3d8da00c5ca1",
-            "6cb99f73-0725-43fe-9793-1297563e1072"
+            "6cb99f73-0725-43fe-9793-1297563e1072",
+            "237dcfe5-8ff7-40a1-811b-71e14aaf8c1d"
           ]
         }
       }

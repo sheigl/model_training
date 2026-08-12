@@ -4,7 +4,7 @@
 
 
 NUM=${1:-1}
-MODEL=${2:-https://server.tailc63ae8.ts.net:4444/v1,openai,gemma4:31b-small,$LITELLM_API_KEY}
+MODEL=${2:-https://server.tailc63ae8.ts.net:4444/v1,openai,muse:30b,$LITELLM_API_KEY}
 VALIDATION_MODEL=${3:-https://server.tailc63ae8.ts.net:4444/v1,openai,deepseek-v4-flash,$LITELLM_API_KEY}
 VALIDATION_PCT=${4:-1}
 DRY_RUN=${5:-}

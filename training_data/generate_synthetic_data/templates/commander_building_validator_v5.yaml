@@ -52,10 +52,13 @@ instruction: "\n    \n<system>\nYou are an expert Magic: The Gathering rules adv
   \ If score is 7 or above with no errors, leave blank.>\",\n    \"reason\": \"<one\
   \ sentence summary. If score is 7 or above with no errors, leave blank.>\"\n   \
   \ }\n\n    Output ONLY valid JSON, no other text.\n\nADDITIONAL CHECKS FROM OBSERVER:\n\
-  Before approving, step through the proposed combo in exact MTG timing order. Verify\
-  \ each triggered/activated ability is legal and correctly classified (especially\
-  \ mana abilities vs. non-mana abilities), respect summoning sickness and turn/phase\
-  \ restrictions, and count trigger abilities precisely (e.g., 'second time this ability\
-  \ has resolved'). Flag any unsupported absolute claims such as 'ensures no depletion',\
-  \ 'infinite', or 'single turn' unless the rules unambiguously guarantee them. If\
-  \ any step fails, state exactly which step fails and why in the feedback."
+  Add explicit validation rules: (1) Completeness: If the answer describes a game\
+  \ plan or combo, it must include every key enabler required for that plan to function.\
+  \ A mechanically correct interaction is still incomplete if it omits necessary pieces,\
+  \ such as a way to cast noncreature spells when the strategy depends on doing so.\
+  \ Flag these as 'needs regeneration' with a note naming the missing enabler. (2)\
+  \ Grounding: Every claim about player choice, targeting, or optional actions must\
+  \ match the referenced card text. If a card says 'target opponent', do not accept\
+  \ language suggesting that opponent chooses or that the controller chooses differently.\
+  \ Reject unsupported assertions and identify the exact unsupported phrase in regeneration\
+  \ feedback."

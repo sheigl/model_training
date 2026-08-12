@@ -152,14 +152,46 @@ function buildGeneratorPanel(g) {
     return f;
   };
 
+  // Split a connection string "url,provider,model,key" into 4 parts (padded to 4)
+  function splitConn(s) {
+    if (!s) return ["", "", "", ""];
+    const p = s.split(",");
+    while (p.length < 4) p.push("");
+    return p.slice(0, 4);
+  }
+
+  // Recombine 4 parts back into "url,provider,model,key"
+  function joinConn(parts) {
+    return parts.map(p => (p || "").trim()).join(",");
+  }
+
   const countField = makeField("Target count", "ctl-count", g.default_count, "number", 1);
-  const modelField = makeField("Generation model", "ctl-model", g.default_model || "");
-  modelField.querySelector("input").placeholder = "blank = script default";
-  const valModelField = makeField("Validation model", "ctl-valmodel", g.default_validation_model || "");
-  valModelField.querySelector("input").placeholder = "blank = script default";
-  const obsModelField = makeField("Observer model", "ctl-obsmodel", g.default_observer_model || "");
-  obsModelField.querySelector("input").placeholder = "blank = validation model";
   const pctField = makeField("Validation %", "ctl-pct", "1.0", "number", 0.1);
+
+  // Build a model connection string field group with 4 sub-inputs
+  function makeModelGroup(label, prefix, defaultStr) {
+    const [url, provider, model, key] = splitConn(defaultStr || "");
+    const wrap = el("div", "model-group");
+    wrap.appendChild(el("div", "model-group-label", label));
+    const grid = el("div", "model-grid");
+    const fields = [
+      ["URL", `${prefix}-url`, url],
+      ["Endpoint", `${prefix}-provider`, provider],
+      ["Model", `${prefix}-name`, model],
+      ["API Key", `${prefix}-key`, key],
+    ];
+    for (const [flabel, fid, fval] of fields) {
+      const f = makeField(flabel, fid, fval);
+      grid.appendChild(f);
+    }
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
+  const genModelGroup = makeModelGroup("Generation model", "ctl-model", g.default_model || "");
+  const valModelGroup = makeModelGroup("Validation model", "ctl-valmodel", g.default_validation_model || "");
+  const obsModelGroup = makeModelGroup("Observer model", "ctl-obsmodel", g.default_observer_model || "");
+
   const dryRow = el("div", "checkbox-row");
   const dryBox = el("input", null);
   dryBox.type = "checkbox";
@@ -169,7 +201,7 @@ function buildGeneratorPanel(g) {
   dryRow.querySelector("label").style.fontSize = "12px";
   dryRow.querySelector("label").style.color = "var(--text-dim)";
 
-  controls.append(countField, modelField, valModelField, obsModelField, pctField, dryRow);
+  controls.append(countField, genModelGroup, valModelGroup, obsModelGroup, pctField, dryRow);
 
   // Metrics
   refs.metricsGrid = el("div", "metrics-grid");
@@ -285,11 +317,19 @@ function buildScraperPanel(item) {
 
 function onStart(slug) {
   const refs = state.refs;
+  // Recombine split connection string fields into "url,provider,model,key"
+  function recon(prefix) {
+    const url = ($("#" + prefix + "-url", panelEl).value || "").trim();
+    const provider = ($("#" + prefix + "-provider", panelEl).value || "").trim();
+    const model = ($("#" + prefix + "-name", panelEl).value || "").trim();
+    const key = ($("#" + prefix + "-key", panelEl).value || "").trim();
+    return [url, provider, model, key].filter(p => p).join(",") || null;
+  }
   const payload = {
     count: parseInt($("#ctl-count", panelEl).value, 10) || 100,
-    model: $("#ctl-model", panelEl).value || null,
-    validation_model: $("#ctl-valmodel", panelEl).value || null,
-    observer_model: $("#ctl-obsmodel", panelEl).value || null,
+    model: recon("ctl-model"),
+    validation_model: recon("ctl-valmodel"),
+    observer_model: recon("ctl-obsmodel"),
     validation_pct: parseFloat($("#ctl-pct", panelEl).value) || 1.0,
     dry_run: $("#ctl-dryrun", panelEl).checked,
   };
@@ -608,6 +648,7 @@ function openLogSSE(slug) {
   updateProgress(); console.log("[dashboard] opened log SSE for", slug, "total connections:", _activeConnections);
 
   src.addEventListener("message", (ev) => {
+    updateProgress();
     if (state.active !== slug) return;
     let data;
     try { data = JSON.parse(ev.data); } catch { return; }
@@ -748,6 +789,7 @@ async function boot() {
     console.log("[dashboard] snapshot SSE close event fired, total connections:", _activeConnections);
   });
   snapSrc.addEventListener("message", (ev) => {
+    updateProgress();
     if (!checkTickLimit()) {
       console.warn("[dashboard] tick limit hit, dropping snapshot");
       return;

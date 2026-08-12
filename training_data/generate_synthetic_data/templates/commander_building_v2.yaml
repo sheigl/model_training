@@ -5,28 +5,26 @@
 
     Use the provided commanders, key cards, and strategy context to give specific,
     grounded advice. Reference actual card names from the <key_cards> and <commanders>
-    blocks. Explain WHY specific cards fit this archetype in Commander.
+    blocks, and explicitly name the key enablers needed for the archetype''s core
+    game plan. Explain WHY each referenced card fits this archetype in Commander.
 
 
-    Before writing any answer, verify each interaction against the literal printed
-    text of the cards provided. Do not invent card names, abilities, or rule interactions
-    not present in the context. Do not claim that a combo is deterministic, infinite,
-    or a one-turn kill unless every step is fully supported by the provided cards
-    and the stated board state. Avoid absolute or predictive claims such as ''always'',
-    ''never'', ''ensures'', or ''cannot be stopped'' unless the card text says so.
-    If an effect depends on a timing condition (e.g., ''while the commander is on
-    the battlefield'', ''if the creature has haste'', ''after blockers are declared''),
-    state that condition explicitly.
-
-
-    Questions should be specific to Commander format construction challenges. Cover
+    Questions must be specific to Commander format construction challenges. Cover
     topics like: choosing a commander, building around themes, threat density, political
     considerations, power level calibration. Answers must address Commander-specific
     constraints (100-card singleton, multiplayer dynamics).
 
 
+    Do NOT invent cards that are not in the provided context. Do NOT make rules or
+    gameplay claims that are not directly supported by the provided card text and
+    strategy context; if a card''s effect involves an opponent''s choice, describe
+    that effect exactly as written and avoid unsupported extrapolation.
+
+
     Output JSON array with question/answer pairs. Keep answers 3-6 sentences with
-    Commander-specific advice and reasoning.
+    Commander-specific advice and reasoning. Every answer should reference at least
+    one distinct card from the provided context and should not omit the enablers that
+    make the archetype function.
 
     {output_format}'
   weight: 1.0
@@ -58,28 +56,26 @@
 
     Use the provided commanders, key cards, and strategy context to give specific,
     grounded advice. Reference actual card names from the <key_cards> and <commanders>
-    blocks. Explain WHY specific cards fit this archetype in Commander.
+    blocks, and explicitly name the key enablers needed for the archetype''s core
+    game plan. Explain WHY each referenced card fits this archetype in Commander.
 
 
-    Before writing any answer, verify each interaction against the literal printed
-    text of the cards provided. Do not invent card names, abilities, or rule interactions
-    not present in the context. Do not claim that a combo is deterministic, infinite,
-    or a one-turn kill unless every step is fully supported by the provided cards
-    and the stated board state. Avoid absolute or predictive claims such as ''always'',
-    ''never'', ''ensures'', or ''cannot be stopped'' unless the card text says so.
-    If an effect depends on a timing condition (e.g., ''while the commander is on
-    the battlefield'', ''if the creature has haste'', ''after blockers are declared''),
-    state that condition explicitly.
-
-
-    Questions should be specific to Commander format construction challenges. Cover
+    Questions must be specific to Commander format construction challenges. Cover
     topics like: choosing a commander, building around themes, threat density, political
     considerations, power level calibration. Answers must address Commander-specific
     constraints (100-card singleton, multiplayer dynamics).
 
 
+    Do NOT invent cards that are not in the provided context. Do NOT make rules or
+    gameplay claims that are not directly supported by the provided card text and
+    strategy context; if a card''s effect involves an opponent''s choice, describe
+    that effect exactly as written and avoid unsupported extrapolation.
+
+
     Output JSON array with question/answer pairs. Keep answers 3-6 sentences with
-    Commander-specific advice and reasoning.
+    Commander-specific advice and reasoning. Every answer should reference at least
+    one distinct card from the provided context and should not omit the enablers that
+    make the archetype function.
 
     {output_format}'
   weight: 1.0

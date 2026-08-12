@@ -7,11 +7,10 @@
     At least one question must come from the perspective of a player who has never
     seen this combo before.
 
-    Strict constraints: Attribute all abilities, mana generation, and triggers exclusively
-    to the specific cards listed in the combo. Do not invent mana types, misassign
-    triggered abilities to the wrong cards, or contradict the provided combo steps.
-    All explanations must accurately reflect the actual card mechanics and the established
-    sequence.'
+    CRITICAL: Ensure strict factual accuracy regarding the combo''s final outcome.
+    Do not overstate the result or claim an unsupported infinite resource (e.g., infinite
+    +1/+1 counters, tokens, or mana) unless the exact sequence of steps and card interactions
+    strictly prove it.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -49,11 +48,10 @@
     At least one question must come from the perspective of a player who has never
     seen this combo before.
 
-    Strict constraints: Attribute all abilities, mana generation, and triggers exclusively
-    to the specific cards listed in the combo. Do not invent mana types, misassign
-    triggered abilities to the wrong cards, or contradict the provided combo steps.
-    All explanations must accurately reflect the actual card mechanics and the established
-    sequence.'
+    CRITICAL: Ensure strict factual accuracy regarding the combo''s final outcome.
+    Do not overstate the result or claim an unsupported infinite resource (e.g., infinite
+    +1/+1 counters, tokens, or mana) unless the exact sequence of steps and card interactions
+    strictly prove it.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -86,11 +84,10 @@
     At least one question must come from the perspective of a player who has never
     seen this combo before.
 
-    Strict constraints: Attribute all abilities, mana generation, and triggers exclusively
-    to the specific cards listed in the combo. Do not invent mana types, misassign
-    triggered abilities to the wrong cards, or contradict the provided combo steps.
-    All explanations must accurately reflect the actual card mechanics and the established
-    sequence.'
+    CRITICAL: Ensure strict factual accuracy regarding the combo''s final outcome.
+    Do not overstate the result or claim an unsupported infinite resource (e.g., infinite
+    +1/+1 counters, tokens, or mana) unless the exact sequence of steps and card interactions
+    strictly prove it.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -120,11 +117,10 @@
     At least one question must come from the perspective of a player who has never
     seen this combo before.
 
-    Strict constraints: Attribute all abilities, mana generation, and triggers exclusively
-    to the specific cards listed in the combo. Do not invent mana types, misassign
-    triggered abilities to the wrong cards, or contradict the provided combo steps.
-    All explanations must accurately reflect the actual card mechanics and the established
-    sequence.'
+    CRITICAL: Ensure strict factual accuracy regarding the combo''s final outcome.
+    Do not overstate the result or claim an unsupported infinite resource (e.g., infinite
+    +1/+1 counters, tokens, or mana) unless the exact sequence of steps and card interactions
+    strictly prove it.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
