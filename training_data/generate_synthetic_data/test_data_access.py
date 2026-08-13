@@ -523,10 +523,10 @@ class TestLookupMethods:
         """Test get_articles returns articles."""
         da = data_access
         mock_articles = MagicMock()
-        mock_articles.find.return_value.sort.return_value.limit.return_value = [
+        mock_articles.aggregate.return_value = iter([
             {"title": "Article 1", "content": "Content 1", "tags": ["commander"]},
             {"title": "Article 2", "content": "Content 2", "tags": ["deckbuilding"]}
-        ]
+        ])
         da._collections["edhrec.articles"] = mock_articles
         da._databases["edhrec"].list_collection_names.return_value = ["articles"]
 
@@ -540,9 +540,9 @@ class TestLookupMethods:
         da._databases["edhrec"].list_collection_names.return_value = ["guides"]
         
         mock_guides = MagicMock()
-        mock_guides.find.return_value.limit.return_value = [
+        mock_guides.aggregate.return_value = iter([
             {"title": "Guide 1", "chapters": [{"title": "Ch1", "content": "Content"}], "tags": ["beginner"]}
-        ]
+        ])
         da._collections["edhrec.guides"] = mock_guides
 
         result = da.get_guides(limit=10)
@@ -553,9 +553,9 @@ class TestLookupMethods:
         """Test get_game_states returns game states."""
         da = data_access
         mock_games = MagicMock()
-        mock_games.find.return_value.limit.return_value = [
+        mock_games.aggregate.return_value = iter([
             {"turn": 5, "phase": "combat", "player_state": {}, "decision_point": "attack", "optimal_action": "attack with all"}
-        ]
+        ])
         da._collections["mtg_training.games"] = mock_games
         da._databases["mtg_training"].list_collection_names.return_value = ["games"]
 
@@ -567,9 +567,9 @@ class TestLookupMethods:
         """Test get_rules returns rules."""
         da = data_access
         mock_rules = MagicMock()
-        mock_rules.find.return_value = [
+        mock_rules.aggregate.return_value = iter([
             {"ruleNumber": "101.1", "section": "General", "text": "Magic is a game...", "category": "general"}
-        ]
+        ])
         da._collections["mtg_rules.rules"] = mock_rules
         da._databases["mtg_rules"].list_collection_names.return_value = ["rules"]
 
@@ -582,9 +582,9 @@ class TestLookupMethods:
         """Test get_glossary returns glossary terms."""
         da = data_access
         mock_glossary = MagicMock()
-        mock_glossary.find.return_value = [
+        mock_glossary.aggregate.return_value = iter([
             {"term": "Mana", "definition": "Magical energy", "relatedTerms": ["Mana cost"]}
-        ]
+        ])
         da._collections["mtg_rules.glossary"] = mock_glossary
         da._databases["mtg_rules"].list_collection_names.return_value = ["glossary"]
 
@@ -775,9 +775,9 @@ class TestPipelineBuilders:
 
         assert isinstance(pipeline, list)
         stages = [list(stage.keys())[0] for stage in pipeline]
-        # Pipeline: $match -> $limit -> $addFields (uses transform) -> $addFields (produces transform) -> $project
+        # Pipeline: $match -> $sample -> $addFields (uses transform) -> $addFields (produces transform) -> $project
         assert "$match" in stages
-        assert "$limit" in stages
+        assert "$sample" in stages
         assert "$addFields" in stages
         assert "$project" in stages
 
@@ -786,9 +786,9 @@ class TestPipelineBuilders:
         assert match_stage["status"] == "OK"
         assert match_stage["tags"] == "infinite"
 
-        # Verify limit value
-        limit_stage = [s for s in pipeline if "$limit" in s][0]["$limit"]
-        assert limit_stage == 20
+        # Verify sample size value
+        sample_stage = [s for s in pipeline if "$sample" in s][0]["$sample"]
+        assert sample_stage["size"] == 20
 
     def test_build_commander_pipeline(self, data_access):
         """Test _build_commander_pipeline returns valid pipeline."""
@@ -797,18 +797,18 @@ class TestPipelineBuilders:
 
         assert isinstance(pipeline, list)
         stages = [list(stage.keys())[0] for stage in pipeline]
-        # Pipeline: $match -> $project (with field mapping) -> $limit
+        # Pipeline: $match -> $sample -> $project (with field mapping)
         assert "$match" in stages
+        assert "$sample" in stages
         assert "$project" in stages
-        assert "$limit" in stages
 
         # Verify match stage passes through filters
         match_stage = [s for s in pipeline if "$match" in s][0]["$match"]
         assert match_stage["colorIdentity"] == ["W", "U"]
 
-        # Verify limit value
-        limit_stage = [s for s in pipeline if "$limit" in s][0]["$limit"]
-        assert limit_stage == 15
+        # Verify sample size value
+        sample_stage = [s for s in pipeline if "$sample" in s][0]["$sample"]
+        assert sample_stage["size"] == 15
 
         # Verify project stage maps fields correctly
         project_stage = [s for s in pipeline if "$project" in s][0]["$project"]

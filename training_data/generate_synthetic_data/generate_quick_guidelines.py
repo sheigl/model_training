@@ -407,5 +407,6 @@ KEY TERMS:
             source_data=source_data,
             source_template=template.template_id,
             metrics=self.metrics,
+            trace=trace,
             sibling_corrections=sibling_corrections,
         )

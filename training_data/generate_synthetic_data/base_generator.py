@@ -7,6 +7,7 @@ metrics tracking, and MongoDB saving for all synthetic data generators.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import copy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, ClassVar, Generic, Iterator, TypeVar
@@ -498,14 +499,23 @@ class BaseGenerator(ABC, Generic[T]):
 
                 sibling_corrections: list[str] = []
 
-                for qa in qa_pairs:
+                for qa_index, qa in enumerate(qa_pairs):
                     if self.generated_count >= self.target_count:
                         break
 
-                    _rounds_start = len(trace.validation_rounds) if trace is not None else 0
+                    # Emit one trace per QA pair (Story 048). The template-level
+                    # trace is a generation scaffold: each QA deep-copies it so
+                    # its validation_rounds hold only that pair's rounds, then
+                    # gets a fresh item_id and its own question/answer/outcome.
+                    qa_trace = None
+                    if self._trace_callback and trace is not None:
+                        qa_trace = copy.deepcopy(trace)
+                        qa_trace.item_id = str(uuid.uuid4())
+                        qa_trace.qa_index = qa_index
+                        qa_trace.question = qa.question
 
                     is_valid, doc = self.validate_answer(
-                        qa, template, data_batch, source_data, trace=trace,
+                        qa, template, data_batch, source_data, trace=qa_trace,
                         sibling_corrections=sibling_corrections,
                     )
 
@@ -514,25 +524,25 @@ class BaseGenerator(ABC, Generic[T]):
                             self.save_item(doc)
                         self.generated_count += 1
 
-                    # Forward per-QA trace to observer so its stats match metrics
-                    # (one event per QA pair, with that pair's own outcome + rounds).
-                    if self._observer and trace is not None:
-                        self._observer.on_item_processed(
-                            self.get_source_category(),
-                            {
-                                "final_outcome": trace.final_outcome,
-                                "total_rounds": trace.total_rounds,
-                                "validation_rounds": list(trace.validation_rounds[_rounds_start:]),
-                                "template_version": template.version,
-                            },
-                            self.metrics.summary() if self.metrics else None,
-                        )
+                    if qa_trace is not None:
+                        qa_trace.answer = qa.answer  # final answer (post-regeneration)
 
-                # Fire trace callback after all QA pairs are processed
-                # (regardless of pass/fail) so we always capture generation traces
-                if self._trace_callback and trace is not None:
-                    self._trace_callback(trace)
-                    trace = None  # Prevent callback from firing again for this template
+                        if self._trace_callback:
+                            self._trace_callback(qa_trace)
+
+                        # Forward per-QA trace to observer so its stats match metrics
+                        # (one event per QA pair, with that pair's own outcome + rounds).
+                        if self._observer:
+                            self._observer.on_item_processed(
+                                self.get_source_category(),
+                                {
+                                    "final_outcome": qa_trace.final_outcome,
+                                    "total_rounds": qa_trace.total_rounds,
+                                    "validation_rounds": list(qa_trace.validation_rounds),
+                                    "template_version": template.version,
+                                },
+                                self.metrics.summary() if self.metrics else None,
+                            )
 
             except json.JSONDecodeError as e:
                 console.print(f"[red]  ✗ JSON parse error: {e}[/red]")

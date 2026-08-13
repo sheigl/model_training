@@ -1,6 +1,5 @@
 """API tests for scraper start/stop/logs endpoints."""
 
-import asyncio
 import json
 
 import pytest
@@ -8,6 +7,7 @@ from fastapi.testclient import TestClient
 
 import app
 import config
+from conftest import run_async
 
 
 @pytest.fixture
@@ -82,7 +82,7 @@ def test_scraper_logs_stream_yields_init(monkeypatch, tmp_path):
         agen = app._scraper_log_stream(spec)
         return await agen.__anext__()
 
-    payload = json.loads(asyncio.run(first()).removeprefix("data: "))
+    payload = json.loads(run_async(first()).removeprefix("data: "))
     assert payload["type"] == "init"
     assert payload["lines"] == []
     assert payload["log_path"].endswith("mtg_archetypes.log")

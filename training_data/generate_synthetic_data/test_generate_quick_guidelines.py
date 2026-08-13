@@ -14,6 +14,7 @@ from training_data.generate_synthetic_data.generate_quick_guidelines import (
     ARCHETYPE_COMMANDERS,
 )
 from training_data.generate_synthetic_data.models import (
+    GenerationTrace,
     Model,
     ModelType,
     ModelProvider,
@@ -41,6 +42,7 @@ class MockQueryModel(QueryModel):
         super().__init__()
         self.query_responses = []
         self.validate_responses = []
+        self.shadow_validate_responses = []
         self.regenerate_responses = []
         self.query_call_count = 0
         self.validate_call_count = 0
@@ -54,15 +56,45 @@ class MockQueryModel(QueryModel):
 
     def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True, trace_round: dict | None = None):
         self.validate_call_count += 1
-        if self.validate_responses:
-            return self.validate_responses.pop(0)
-        return True, "OK", 8.0
+        if getattr(validation_model, "type", None) == ModelType.SHADOW_VALIDATION:
+            if self.shadow_validate_responses:
+                is_valid, reason, score = self.shadow_validate_responses.pop(0)
+            else:
+                is_valid, reason, score = True, "OK", 8.0
+        elif self.validate_responses:
+            is_valid, reason, score = self.validate_responses.pop(0)
+        else:
+            is_valid, reason, score = True, "OK", 8.0
+        if trace_round is not None:
+            trace_round.update({
+                "prompt": f"validation prompt for {question[:30]}",
+                "response": '{"score": 8, "is_acceptable": true}',
+                "parsed_ok": True,
+                "score": score,
+                "is_acceptable": is_valid,
+                "errors": "",
+                "missing_info": "",
+                "reason": reason or "",
+                "verification_checklist": None,
+                "latency_ms": 100,
+            })
+        return is_valid, reason, score
 
-    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "", sibling_feedback: str = "") -> str | None:
+    def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "", sibling_feedback: str = "", trace_regeneration: dict | None = None) -> str | None:
         self.regenerate_call_count += 1
         if self.regenerate_responses:
-            return self.regenerate_responses.pop(0)
-        return "Regenerated answer with sufficient length to pass validation."
+            new_answer = self.regenerate_responses.pop(0)
+        else:
+            new_answer = "Regenerated answer with sufficient length to pass validation."
+        if trace_regeneration is not None:
+            trace_regeneration.update({
+                "prompt": f"regeneration prompt for {question[:30]}",
+                "response": '{"answer": "regenerated answer"}',
+                "parsed_ok": True,
+                "new_answer": new_answer,
+                "latency_ms": 100,
+            })
+        return new_answer
 
 
 class MockDataAccess:
@@ -421,6 +453,106 @@ class TestGenerateQuickGuidelines:
 
         weights = [t.weight for t in generator.TEMPLATES]
         assert all(w == 1.0 for w in weights)
+
+    def test_validate_answer_populates_trace(self):
+        """validate_answer must thread the trace into the validation loop so
+        per-QA traces carry validation rounds + outcome (Story 048 regression)."""
+        generator = GenerateQuickGuidelines(
+            data_access=self.data_access,
+            models=self.models,
+            validation_pct=1.0,
+            target_count=5,
+            save_item=self.save_item,
+            metrics=self.metrics,
+            dry_run=True,
+        )
+        generator.query_model = MockQueryModel()
+        generator.query_model.validate_responses = [
+            (False, "Too vague", 4.0),
+            (True, "OK", 8.0),
+        ]
+        generator.query_model.regenerate_responses = [
+            "Fixed answer with enough length to pass validation now.",
+        ]
+
+        data_batch = {
+            "archetype": "aristocrats",
+            "strategy": "Sacrifice creatures for value.",
+            "commanders": ["Teysa Karlov"],
+            "key_cards": ["Teysa Karlov"],
+            "top_cards": ["Sol Ring"],
+            "avg_cmc": 3.0,
+            "color_identity": ["W", "B"],
+            "deck_stats": {"avg_lands": 37, "avg_ramp": 10, "avg_removal": 10, "avg_card_draw": 8, "avg_win_cons": 3},
+        }
+        template = generator.TEMPLATES[0]
+        trace = GenerationTrace(item_id="test-item", run_id="test-run")
+
+        is_valid, doc = generator.validate_answer(
+            QuestionAnswer("How many lands?", "Initial answer with enough length."),
+            template,
+            data_batch,
+            source_data=["archetype:aristocrats"],
+            trace=trace,
+        )
+
+        assert is_valid is True
+        assert doc is not None
+        # The trace must be populated by the validation loop (was previously dropped)
+        assert len(trace.validation_rounds) >= 2
+        assert trace.final_outcome == "accepted_after_fix"
+        assert trace.total_rounds >= 2
+        assert trace.final_score == 8.0
+
+    def test_shadow_validation_recorded_on_trace(self):
+        """Story 049: shadow validator verdict is recorded on the trace through
+        the quick-guidelines validate_answer path; real outcome unaffected."""
+        self.models[ModelType.SHADOW_VALIDATION] = MockModel("shadow-model", ModelType.SHADOW_VALIDATION)
+        generator = GenerateQuickGuidelines(
+            data_access=self.data_access,
+            models=self.models,
+            validation_pct=1.0,
+            target_count=5,
+            save_item=self.save_item,
+            metrics=self.metrics,
+            dry_run=True,
+        )
+        generator.query_model = MockQueryModel()
+        generator.query_model.validate_responses = [
+            (True, "OK", 8.0),
+        ]
+        generator.query_model.shadow_validate_responses = [
+            (False, "Too strict", 4.0),
+        ]
+
+        data_batch = {
+            "archetype": "aristocrats",
+            "strategy": "Sacrifice creatures for value.",
+            "commanders": ["Teysa Karlov"],
+            "key_cards": ["Teysa Karlov"],
+            "top_cards": ["Sol Ring"],
+            "avg_cmc": 3.0,
+            "color_identity": ["W", "B"],
+            "deck_stats": {"avg_lands": 37, "avg_ramp": 10, "avg_removal": 10, "avg_card_draw": 8, "avg_win_cons": 3},
+        }
+        template = generator.TEMPLATES[0]
+        trace = GenerationTrace(item_id="test-item", run_id="test-run")
+
+        is_valid, doc = generator.validate_answer(
+            QuestionAnswer("How many lands?", "Initial answer with enough length."),
+            template,
+            data_batch,
+            source_data=["archetype:aristocrats"],
+            trace=trace,
+        )
+
+        assert is_valid is True
+        assert doc.validation_score == 8.0
+        assert trace.final_outcome == "accepted_first_attempt"
+        assert trace.shadow_validation_model == "shadow-model"
+        assert len(trace.shadow_validation_rounds) == 1
+        assert trace.shadow_validation_rounds[0]["shadow"] is True
+        assert trace.shadow_validation_rounds[0]["score"] == 4.0
 
 
 if __name__ == "__main__":

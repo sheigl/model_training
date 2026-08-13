@@ -15,3 +15,4 @@ unsloth_compiled_cache/
 **/llama.cpp/*
 qwen_training/llama.cpp
 .env
+.pid

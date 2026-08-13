@@ -18,6 +18,41 @@ python -m training_data.generate_synthetic_data.seed_templates --to-yaml
 
 ## Recent Changes
 
+### Shadow Validator — Trace-Only Second Validator (Story 049) — 2026-08-12
+
+`main.py` accepts an optional `--shadow-validation-model`. When set, every answer passed to the real validator is ALSO validated by the shadow model using the identical validation template/context. The shadow verdict is recorded on the trace's new `shadow_validation_rounds` field (each round tagged `"shadow": True`, `"model"`, and the matching `"round"` index for joining to `validation_rounds`) plus the `shadow_validation_model` field — it NEVER affects acceptance, regeneration, metrics, or the observer. This enables trace analysis comparing real vs shadow validator verdicts (same template, different model) to tune the validation template for a future validator swap. Skipped items (`validation_pct`) and `--no-log-traces` runs produce no shadow rounds; `batch_validate.py` (no traces) is unaffected.
+
+- **`models.py`** — `ModelType.SHADOW_VALIDATION`; `GenerationTrace` gains defaulted `shadow_validation_model: str = ""` and `shadow_validation_rounds: list` (backward compatible, `asdict`-serialized to MongoDB automatically)
+- **`common.py`** — New `_run_shadow_validation()` invoked after every real `validate_qa` inside `validate_and_loop_with_suggested_fix`; reads the shadow model from the shared `models` dict (`.get(ModelType.SHADOW_VALIDATION)`), no-ops when unset or no trace; prints `👤 SHADOW VALIDATION (<model>): accepted/rejected (score x/10)`
+- **`main.py`** — New `--shadow-validation-model` flag; injects the shadow `Model` into the shared `models` dict so all 27 generators pick it up with zero per-generator changes; banner + run summary print it
+- **`run_common.sh` (new)** — Shared POSIX-sh named-argument parser (`--count/--model/--validation-model/--validation-pct/--dry-run/--observer-model/--shadow-validation-model`) making run-script argument order irrelevant; per-script `DEFAULT_MODEL`/`DEFAULT_VALIDATION_MODEL` are overridable variables
+- **`run_*.sh` (all 27)** — Refactored off positional `$2..$6` onto `run_common.sh` + named flags; added `--shadow-validation-model $SHADOW_VALIDATION_MODEL` pass-through; legacy count shorthand (`run_combos.sh 1000`) still works
+- **`generator-dashboard/process_manager.py`** — `start()` gains `shadow_validation_model`; command built from named flags instead of raw positional tokens (also fixes a latent bug where a dashboard run with an observer model silently forced `--dry-run`)
+- **`generator-dashboard/config.py`** — `DEFAULT_SHADOW_VALIDATION_MODEL = ""` (opt-in); `script_model_defaults()` parses `DEFAULT_MODEL`/`DEFAULT_VALIDATION_MODEL` and returns a 4-tuple
+- **`generator-dashboard/app.py`** — `StartPayload.shadow_validation_model` pass-through; snapshot exposes `default_shadow_validation_model`
+- **`generator-dashboard/static/app.js`** — "Shadow validation model" field group in the generator panel (blank = disabled) + hint text
+- **Tests** — 8 new: `test_generation_trace.py` (`TestShadowValidation` ×6 + dataclass/CLI assertions), `test_base_generator.py` + `test_generate_quick_guidelines.py` (end-to-end shadow-trace tests), dashboard process_manager/API shadow pass-through + registry 4-tuple
+
+**New files:** `run_common.sh`
+**Modified files:** `models.py`, `common.py`, `main.py`, 27 `run_*.sh`, `generator-dashboard/{process_manager.py,config.py,app.py,static/app.js}`, `test_generation_trace.py`, `test_base_generator.py`, `test_generate_quick_guidelines.py`, 3 dashboard test files
+**Breaking changes:** None — CLI flags and dashboard UI are additive. Run-script positional args beyond the leading count move to named flags (documented in each script header); a lone leading integer still works as the legacy count shorthand.
+
+### Per-QA Trace Emission + Generation-Error Collection Split (Story 048) — 2026-08-12
+
+`generation_traces` used to hold ONE trace per template/data-batch: every QA in the batch mutated the same trace, so `final_outcome`/`final_score`/`total_rounds` reflected only the LAST QA while `validation_rounds` conflated all QAs' rounds (all labeled `round: 0`, no attribution). That made per-QA validator analysis (verdict stats, false-accept/false-reject, score distributions) impossible from stored data. Traces are now emitted **per QA pair**; `generation_error` traces move to a separate `generation_errors` collection so validator analysis isn't polluted by the 2,692 generation JSON-parse failures (72% of the old collection — top block 1,349 `commander_building` × `gemma4:31b-small`).
+
+- **`models.py`** — `GenerationTrace` gains `qa_index: int = 0`, `question: str = ""`, `answer: str = ""` (final answer text as a first-class field, post-regeneration); additive defaulted fields, backward compatible
+- **`base_generator.py`** — `_process_item` emits one trace per QA pair: template-level trace is now a generation scaffold, each QA deep-copies it (fresh `item_id`, sets `qa_index`/`question`, then `answer` after validation), fires `trace_callback` per QA, and the observer receives that trace's own rounds (per-QA `_rounds_start` slicing removed); `generation_error` handlers unchanged (they fire the scaffold once)
+- **`generate_quick_guidelines.py`** — `validate_answer()` now passes `trace=trace` into `validate_and_loop_with_suggested_fix` (it previously dropped the trace, which would have persisted `pending` traces with zero rounds)
+- **`main.py`** — New `synthetic_metrics.generation_errors` collection from `get_mongo_collections()`; `save_trace`/`flush_traces` route by `final_outcome == "generation_error"`; indexes on the new collection; summary print updated
+- **Tests**: 2 new tests (`test_trace_callback_called_per_qa_with_own_rounds` asserting per-QA emission with no round bleed, `test_validate_answer_populates_trace` for quick_guidelines); existing trace tests extended for new fields
+
+**New files:** None
+**Modified files:** `models.py`, `base_generator.py`, `generate_quick_guidelines.py`, `main.py`, `test_generation_trace.py`, `test_generate_quick_guidelines.py`
+**Breaking changes:** None — no CLI flags, generator endpoints, or dashboard changes. Old traces remain conflated in `generation_traces`; new runs produce clean per-QA traces (distinguishable by `question != ""`), errors go to `generation_errors`.
+
+**Also fixed** — 8 stale tests reconciled with the newer implementations they had drifted from: `test_data_access.py` lookup tests mocked `find()` but the methods now use `aggregate()` pipelines; pipeline-builder tests asserted `$limit` but the builders use `$sample`; `test_load_all_27_category_files` didn't account for observer-generated versioned files (`{category}_vN.yaml`) and now validates them separately.
+
 ### Validation Token Budget Raised (Story 047) — 2026-08-06
 
 The validation path (`validate_qa` / `validate_with_model`) no longer inherits the 8192 `max_tokens` default from `QueryModel.query()`. Reasoning-model validators (e.g. `deepseek-v4-flash`) emit `reasoning_content` thinking tokens that count against the SAME budget on the serving backend, so the final JSON answer was truncated mid-generation → "Validation parse failed: Expecting value..." rejections (run `7c58c422` — the same failure mode Story 046 hardened against). Validation now passes `max_tokens=VALIDATION_MAX_TOKENS` (16384) — twice the old cap.
@@ -142,4 +177,4 @@ TrainForge files live in the separate `../trainforge/` repository — see `../tr
 pytest training_data/generate_synthetic_data/ -v
 ```
 
-Current: 394 tests passing (8 pre-existing failures unchanged).
+Current: 413 tests passing.

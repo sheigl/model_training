@@ -52,14 +52,16 @@ instruction: "\n    \n<system>\nYou are an expert Magic: The Gathering rules adv
   \ If score is 7 or above with no errors, leave blank.>\",\n    \"reason\": \"<one\
   \ sentence summary. If score is 7 or above with no errors, leave blank.>\"\n   \
   \ }\n\n    Output ONLY valid JSON, no other text.\n\nADDITIONAL CHECKS FROM OBSERVER:\n\
-  Add an explicit rule: check the final summary separately from the step-by-step loop.\
-  \ If the loop is accurate but the final summary uses a mechanically incorrect term,\
-  \ reject it. In particular, enforce the cost-vs-trigger distinction: sacrificing\
-  \ a permanent to pay an activated ability such as Phyrexian Altar's mana ability\
-  \ is a cost, not a sacrifice trigger. Therefore reject phrases like 'infinite sacrifice\
-  \ triggers' or 'sacrifice outlet' when the loop has only one activated sacrifice\
-  \ per iteration; require 'activated ability cost' or 'sacrifice cost' instead. Also\
-  \ require the payoff statement to state the exact game-state result (e.g., 'infinite\
-  \ creature death triggers' or 'infinite ETB triggers') rather than vague phrases\
-  \ like 'very powerful' or 'wins the game.' When rejecting, quote the offending phrase\
-  \ and state the correct mechanical description."
+  Add two mandatory pre-checks before sequence validation: (A) Oracle-ability check:\
+  \ For every keyword or triggered/activated ability used in the answer, verify that\
+  \ the named card actually has that ability in its current Oracle text. If the answer\
+  \ relies on an ability the card does not have (e.g., Voracious Wurm having persist),\
+  \ reject it immediately as a decisive factual error, even if the rest of the sequence\
+  \ follows the provided steps. (B) Completeness-of-setup check: Verify that every\
+  \ card/effect needed for the loop is explicitly named as a required combo piece\
+  \ and is accounted for in the starting board state. In particular, if the loop depends\
+  \ on a creature-type-setting effect (e.g., Rukarumel, Arcane Adaptation) or any\
+  \ other unlisted permanent, the answer must include it; omitting it and treating\
+  \ the loop as functional is an illegal interaction and must be rejected. Also require\
+  \ the post-loop board state to state exact permanent counts, zones, counters, and\
+  \ mana amounts, with no contradictions of the last known state."

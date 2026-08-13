@@ -27,22 +27,24 @@
         },
         "5": {
           "regen_rate": 48.89,
-          "total_items": 33004,
+          "total_items": 33014,
           "run_ids": [
             "6cb99f73-0725-43fe-9793-1297563e1072",
             "237dcfe5-8ff7-40a1-811b-71e14aaf8c1d",
-            "a113efe7-c680-4bfc-b51f-0a979b55370d"
+            "a113efe7-c680-4bfc-b51f-0a979b55370d",
+            "c320655f-e146-471a-b270-a8ad864f87b8"
           ]
         }
       },
       "generation_versions": {
         "2": {
           "first_pass_rate": 29.34,
-          "total_items": 34475,
+          "total_items": 34485,
           "run_ids": [
             "1b9e4243-e5e7-4ed4-b379-3d8da00c5ca1",
             "6cb99f73-0725-43fe-9793-1297563e1072",
-            "237dcfe5-8ff7-40a1-811b-71e14aaf8c1d"
+            "237dcfe5-8ff7-40a1-811b-71e14aaf8c1d",
+            "c320655f-e146-471a-b270-a8ad864f87b8"
           ]
         }
       }
@@ -52,10 +54,12 @@
       "active_validator_version": 4,
       "generation_versions": {
         "2": {
-          "first_pass_rate": 31.99,
-          "total_items": 8391,
+          "first_pass_rate": 31.3,
+          "total_items": 9241,
           "run_ids": [
-            "f754d729-f892-454c-a291-693db35f0d53"
+            "f754d729-f892-454c-a291-693db35f0d53",
+            "6c29c5b3-b973-4219-8c6a-ddf823d6ce23",
+            "e85e65a5-3b75-473e-a4eb-80fc3f1ef3b8"
           ]
         }
       },
@@ -82,10 +86,12 @@
           ]
         },
         "5": {
-          "regen_rate": 11.84,
-          "total_items": 6528,
+          "regen_rate": 15.51,
+          "total_items": 7248,
           "run_ids": [
-            "f754d729-f892-454c-a291-693db35f0d53"
+            "f754d729-f892-454c-a291-693db35f0d53",
+            "6c29c5b3-b973-4219-8c6a-ddf823d6ce23",
+            "e85e65a5-3b75-473e-a4eb-80fc3f1ef3b8"
           ]
         }
       }

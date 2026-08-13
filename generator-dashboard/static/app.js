@@ -191,6 +191,7 @@ function buildGeneratorPanel(g) {
   const genModelGroup = makeModelGroup("Generation model", "ctl-model", g.default_model || "");
   const valModelGroup = makeModelGroup("Validation model", "ctl-valmodel", g.default_validation_model || "");
   const obsModelGroup = makeModelGroup("Observer model", "ctl-obsmodel", g.default_observer_model || "");
+  const shadowModelGroup = makeModelGroup("Shadow validation model", "ctl-shadowmodel", g.default_shadow_validation_model || "");
 
   const dryRow = el("div", "checkbox-row");
   const dryBox = el("input", null);
@@ -201,7 +202,9 @@ function buildGeneratorPanel(g) {
   dryRow.querySelector("label").style.fontSize = "12px";
   dryRow.querySelector("label").style.color = "var(--text-dim)";
 
-  controls.append(countField, genModelGroup, valModelGroup, obsModelGroup, pctField, dryRow);
+  controls.append(countField, genModelGroup, valModelGroup, obsModelGroup, shadowModelGroup, pctField, dryRow);
+  controls.appendChild(el("div", "field-hint",
+    "Shadow validation model runs in parallel with the real validator; its verdict is recorded on traces only (never affects acceptance). Leave blank to disable."));
 
   // Metrics
   refs.metricsGrid = el("div", "metrics-grid");
@@ -330,6 +333,7 @@ function onStart(slug) {
     model: recon("ctl-model"),
     validation_model: recon("ctl-valmodel"),
     observer_model: recon("ctl-obsmodel"),
+    shadow_validation_model: recon("ctl-shadowmodel"),
     validation_pct: parseFloat($("#ctl-pct", panelEl).value) || 1.0,
     dry_run: $("#ctl-dryrun", panelEl).checked,
   };

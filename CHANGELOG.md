@@ -1,5 +1,20 @@
 # Changelog
 
+### Story 049: Shadow Validator — Trace-Only Second Validator — 2026-08-12
+
+Added an optional second validator ("shadow") configurable as a separate model from the real validation model. Every answer passed to the real validator is ALSO validated by the shadow model using the identical validation template/context, and the shadow verdict is recorded on the trace (`shadow_validation_rounds` + `shadow_validation_model`) ONLY — it never affects acceptance, regeneration, metrics, or the observer. Purpose: compare real-vs-shadow verdicts (same template, different model) on stored traces to tune the validation template for a future validator swap.
+
+- **`models.py`** — `ModelType.SHADOW_VALIDATION`; `GenerationTrace` gains defaulted `shadow_validation_model` and `shadow_validation_rounds` (rounds tagged `"shadow": True`, `"model"`, matching `"round"` index)
+- **`common.py`** — `_run_shadow_validation()` mirrors every real `validate_qa` call; reads the shadow model from the shared `models` dict, no-ops when unset or no trace
+- **`main.py`** — `--shadow-validation-model` flag; shadow `Model` injected into the shared `models` dict so all 27 generators pick it up with zero per-generator changes
+- **`run_common.sh`** — New shared named-argument parser; all 27 `run_*.sh` refactored off positional `$2..$6` onto named flags with `--shadow-validation-model` pass-through (legacy count shorthand preserved)
+- **Dashboard** — `process_manager.start()`/`StartPayload`/snapshot/frontend gain `shadow_validation_model`; process command now built from named flags (also fixes a latent bug where a dashboard observer run silently forced `--dry-run`); `config.script_model_defaults()` parses the new `DEFAULT_*` script format
+- **Tests** — 8 new across `test_generation_trace.py`, `test_base_generator.py`, `test_generate_quick_guidelines.py`, and the dashboard suite
+
+**Test results:** 413 training-data tests passing; 63 non-e2e dashboard tests passing (playwright e2e failures pre-existing/environmental).
+
+**Breaking changes:** None — CLI flags and dashboard UI are additive.
+
 ### Raise Validation Token Cap (VALIDATION_MAX_TOKENS=16384) — 2026-08-06
 
 The VALIDATION query path (`validate_qa` / `validate_with_model`) no longer inherits the 8192 `max_tokens` default from `QueryModel.query()`. Reasoning-model validators (e.g. `deepseek-v4-flash`) emit `reasoning_content` thinking tokens that count against the same budget on the serving backend, truncating the final JSON and causing "Validation parse failed: Expecting value..." rejections (run `7c58c422`). Validation now passes `max_tokens=VALIDATION_MAX_TOKENS` (16384) — twice the old cap. Generation (8192) and observer (2048) budgets are unchanged.

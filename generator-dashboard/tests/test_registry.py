@@ -52,30 +52,30 @@ def test_default_counts_positive():
 
 def test_all_scripts_define_model_defaults():
     for spec in GENERATORS:
-        model, validation, observer = config.script_model_defaults(spec)
-        assert model is not None, f"{spec.slug}: missing MODEL=${2:-...} default"
-        assert validation is not None, f"{spec.slug}: missing VALIDATION_MODEL default"
+        model, validation, observer, shadow = config.script_model_defaults(spec)
+        assert model is not None, f"{spec.slug}: missing DEFAULT_MODEL"
+        assert validation is not None, f"{spec.slug}: missing DEFAULT_VALIDATION_MODEL"
         assert "openai" in model and "openai" in validation
 
 
 def test_script_model_defaults_parses(monkeypatch, tmp_path):
     (tmp_path / "run_test.sh").write_text(
-        "MODEL=${2:-host,openai,gemma4:31b,$LITELLM_API_KEY}\n"
-        "VALIDATION_MODEL=${3:-host,openai,glm-5.2,$LITELLM_API_KEY}\n"
-        "OBSERVER_MODEL=${6:-host,openai,qwen3:27b,$LITELLM_API_KEY}\n"
+        'DEFAULT_MODEL="host,openai,gemma4:31b,$LITELLM_API_KEY"\n'
+        'DEFAULT_VALIDATION_MODEL="host,openai,glm-5.2,$LITELLM_API_KEY"\n'
         "OTHER=stuff\n"
     )
     monkeypatch.setattr(config, "GEN_SYNTH_DIR", tmp_path)
-    model, validation, observer = config.script_model_defaults(
+    model, validation, observer, shadow = config.script_model_defaults(
         config.GeneratorSpec("test", "--x", "cat", "Cls", 1)
     )
     assert model == "host,openai,gemma4:31b,$LITELLM_API_KEY"
     assert validation == "host,openai,glm-5.2,$LITELLM_API_KEY"
-    assert observer == "host,openai,qwen3:27b,$LITELLM_API_KEY"
+    assert observer is None
+    assert shadow is None
 
 
 def test_script_model_defaults_missing_script():
     from config import GeneratorSpec
 
     spec = GeneratorSpec("does_not_exist", "--x", "cat", "Cls", 1)
-    assert config.script_model_defaults(spec) == (None, None, None)
+    assert config.script_model_defaults(spec) == (None, None, None, None)

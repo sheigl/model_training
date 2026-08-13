@@ -11,6 +11,7 @@ from training_data.generate_synthetic_data.models import (
     Model,
     ModelType,
     ModelProvider,
+    GenerationTrace,
     QuestionAnswer,
     QuestionAnswerEnhanced,
     ValidationMetrics,
@@ -35,6 +36,7 @@ class MockQueryModel(QueryModel):
         super().__init__()
         self.query_responses = []
         self.validate_responses = []
+        self.shadow_validate_responses = []
         self.regenerate_responses = []
         self.query_call_count = 0
         self.validate_call_count = 0
@@ -48,9 +50,29 @@ class MockQueryModel(QueryModel):
 
     def validate_qa(self, validation_model: Model, question: str, answer: str, context: str = "", category: str = "", enable_extra_validation: bool = True, trace_round: dict | None = None):
         self.validate_call_count += 1
-        if self.validate_responses:
-            return self.validate_responses.pop(0)
-        return True, "OK", 8.0
+        if getattr(validation_model, "type", None) == ModelType.SHADOW_VALIDATION:
+            if self.shadow_validate_responses:
+                is_valid, reason, score = self.shadow_validate_responses.pop(0)
+            else:
+                is_valid, reason, score = True, "OK", 8.0
+        elif self.validate_responses:
+            is_valid, reason, score = self.validate_responses.pop(0)
+        else:
+            is_valid, reason, score = True, "OK", 8.0
+        if trace_round is not None:
+            trace_round.update({
+                "prompt": f"validation prompt for {question[:30]}",
+                "response": '{"score": 8, "is_acceptable": true}',
+                "parsed_ok": True,
+                "score": score,
+                "is_acceptable": is_valid,
+                "errors": "",
+                "missing_info": "",
+                "reason": reason or "",
+                "verification_checklist": None,
+                "latency_ms": 100,
+            })
+        return is_valid, reason, score
 
     def regenerate_answer(self, generation_model: Model, question: str, old_answer: str, reason: str, score: float | None, context: str = "", category: str = "", sibling_feedback: str = "", trace_regeneration: dict | None = None) -> str | None:
         self.regenerate_call_count += 1
@@ -465,6 +487,44 @@ class TestGenerationLoop:
 
         # Metrics should record the candidate
         self.metrics.record_candidate.assert_called()
+
+    def test_shadow_validation_rounds_recorded_in_trace(self):
+        """Story 049: shadow validator verdict recorded on traces through the
+        full generation pipeline; the real outcome is unaffected."""
+        traces_received: list[GenerationTrace] = []
+        models = {
+            ModelType.GENERATION: MockModel("gen-model", ModelType.GENERATION),
+            ModelType.VALIDATION: MockModel("val-model", ModelType.VALIDATION),
+            ModelType.SHADOW_VALIDATION: MockModel("shadow-model", ModelType.SHADOW_VALIDATION),
+        }
+        generator = ConcreteGenerator(
+            models=models,
+            validation_pct=1.0,
+            target_count=1,
+            save_item=self.save_item,
+            metrics=self.metrics,
+            trace_callback=lambda t: traces_received.append(t),
+            dry_run=True,
+        )
+        generator.data_batches = [[{"id": 1}]]
+
+        generator.query_model = MockQueryModel()
+        generator.query_model.query_responses = [
+            json.dumps([{"question": "Q1?", "answer": "A1 with sufficient length to pass validation."}]),
+        ]
+        generator.query_model.validate_responses = [(True, "OK", 8.0)]
+        generator.query_model.shadow_validate_responses = [(False, "Too strict", 4.0)]
+
+        generator.generate()
+
+        assert len(traces_received) == 1
+        trace = traces_received[0]
+        assert trace.final_outcome == "accepted_first_attempt"
+        assert trace.final_score == 8.0
+        assert trace.shadow_validation_model == "shadow-model"
+        assert len(trace.shadow_validation_rounds) == 1
+        assert trace.shadow_validation_rounds[0]["shadow"] is True
+        assert trace.shadow_validation_rounds[0]["score"] == 4.0
 
 
 class TestValidationIntegration:

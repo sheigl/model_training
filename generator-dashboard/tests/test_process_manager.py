@@ -100,8 +100,8 @@ def test_start_respects_dry_run(monkeypatch, tmp_path):
         spec, count=5, model="m", validation_model="v", validation_pct=0.5, dry_run=True
     )
     assert captured["cmd"][0] == "bash"
-    assert captured["cmd"][-1] == "--dry-run"
     assert captured["cmd"][1].endswith("run_archetypes.sh")
+    assert "--dry-run" in captured["cmd"]
 
 
 def test_start_includes_observer_model(monkeypatch, tmp_path):
@@ -120,7 +120,6 @@ def test_start_includes_observer_model(monkeypatch, tmp_path):
     )
     assert "--observer-model" in captured["cmd"]
     assert "obs" in captured["cmd"]
-    assert "--enable-observer" in captured["cmd"]
 
 
 def test_start_excludes_observer_when_empty(monkeypatch, tmp_path):
@@ -138,7 +137,42 @@ def test_start_excludes_observer_when_empty(monkeypatch, tmp_path):
         spec, count=5, model="m", validation_model="v", validation_pct=1.0
     )
     assert "--observer-model" not in captured["cmd"]
-    assert "--enable-observer" not in captured["cmd"]
+
+
+def test_start_includes_shadow_validation_model(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakeProc()
+
+    monkeypatch.setattr(config, "LOGS_DIR", tmp_path)
+    monkeypatch.setattr(process_manager.subprocess, "Popen", fake_popen)
+
+    spec = config.GENERATOR_BY_SLUG["synergy"]
+    process_manager.start(
+        spec, count=5, model="m", validation_model="v", validation_pct=1.0,
+        shadow_validation_model="shadow",
+    )
+    assert "--shadow-validation-model" in captured["cmd"]
+    assert "shadow" in captured["cmd"]
+
+
+def test_start_excludes_shadow_when_empty(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakeProc()
+
+    monkeypatch.setattr(config, "LOGS_DIR", tmp_path)
+    monkeypatch.setattr(process_manager.subprocess, "Popen", fake_popen)
+
+    spec = config.GENERATOR_BY_SLUG["synergy"]
+    process_manager.start(
+        spec, count=5, model="m", validation_model="v", validation_pct=1.0
+    )
+    assert "--shadow-validation-model" not in captured["cmd"]
 
 
 def test_stop_removes_pid_file(monkeypatch, tmp_path):

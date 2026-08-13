@@ -133,16 +133,29 @@ def start(
     validation_pct: float,
     dry_run: bool = False,
     observer_model: str = "",
+    shadow_validation_model: str = "",
 ) -> int:
-    """Launch ``run_<slug>.sh`` as a detached process, logging to ``logs/<slug>.log``."""
+    """Launch ``run_<slug>.sh`` as a detached process, logging to ``logs/<slug>.log``.
+
+    All optional values are passed as named flags (never positional), so the
+    run scripts parse them position-independently (Story 049).
+    """
     if not spec.script.exists():
         raise FileNotFoundError(f"Script not found: {spec.script}")
 
-    cmd = ["bash", str(spec.script), str(count), model, validation_model, str(validation_pct)]
+    cmd = [
+        "bash", str(spec.script),
+        "--count", str(count),
+        "--model", model,
+        "--validation-model", validation_model,
+        "--validation-pct", str(validation_pct),
+    ]
     if dry_run:
         cmd.append("--dry-run")
     if observer_model:
-        cmd.extend(["--observer-model", observer_model, "--enable-observer"])
+        cmd.extend(["--observer-model", observer_model])
+    if shadow_validation_model:
+        cmd.extend(["--shadow-validation-model", shadow_validation_model])
     return _spawn(spec, cmd)
 
 

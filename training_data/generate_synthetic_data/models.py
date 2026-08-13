@@ -177,6 +177,20 @@ class GenerationTrace:
     template_version: int | None = None
     validator_template_version: int | None = None
 
+    # Per-QA attribution (Story 048) — one trace per Q&A pair, so each trace
+    # carries only its own question, final answer, and position in the batch.
+    qa_index: int = 0
+    question: str = ""
+    answer: str = ""            # final answer text (after any regeneration)
+
+    # Shadow validation (Story 049) — optional second validator whose verdict is
+    # recorded for trace analysis ONLY. It never affects acceptance,
+    # regeneration, metrics, or the observer. Each entry mirrors a real
+    # ``validation_rounds`` entry with the same ``round`` index, plus ``model``
+    # and ``shadow: True`` so shadow rounds are unmistakable.
+    shadow_validation_model: str = ""            # model name when configured
+    shadow_validation_rounds: list = field(default_factory=list)
+
 
 class ValidationMetrics:
     """Collects success/failure metrics for Q&A pair validation.
@@ -434,6 +448,7 @@ class ValidationMetrics:
 class ModelType(Enum):
     GENERATION = "generation"
     VALIDATION = "validation"
+    SHADOW_VALIDATION = "shadow_validation"
 
 
 class ModelProvider(Enum):

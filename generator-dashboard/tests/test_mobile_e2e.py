@@ -103,9 +103,9 @@ class TestMobileResponsiveness:
         page.locator(".tab").first.click()
         
         # Wait for panel to render
-        page.wait_for_selector("#ctl-model", state="visible", timeout=5000)
+        page.wait_for_selector("#ctl-model-name", state="visible", timeout=5000)
         
-        model_input = page.locator("#ctl-model")
+        model_input = page.locator("#ctl-model-name")
         
         # Click into the field and try to change value multiple times
         for i in range(10):
@@ -152,8 +152,8 @@ class TestMobileResponsiveness:
         
         fields = [
             ("#ctl-count", "100"),
-            ("#ctl-model", "test-model-1"),
-            ("#ctl-valmodel", "test-val-1"),
+            ("#ctl-model-name", "test-model-1"),
+            ("#ctl-valmodel-name", "test-val-1"),
             ("#ctl-pct", "0.5"),
         ]
         
@@ -237,7 +237,7 @@ class TestMobileResponsiveness:
         page.wait_for_timeout(500)
         
         # 2. Click into model field
-        model_input = page.locator("#ctl-model")
+        model_input = page.locator("#ctl-model-name")
         expect(model_input).to_be_visible()
         model_input.click()
         page.wait_for_timeout(300)
@@ -258,7 +258,7 @@ class TestMobileResponsiveness:
         page.locator(".tab").nth(0).click()
         page.wait_for_timeout(300)
         
-        model_input = page.locator("#ctl-model")
+        model_input = page.locator("#ctl-model-name")
         expect(model_input).to_be_visible()
         model_input.click()
         page.wait_for_timeout(200)
@@ -286,7 +286,7 @@ class TestMobileResponsiveness:
         page.wait_for_timeout(500)
         
         # Text fields only (count and pct are number inputs)
-        text_fields = ["#ctl-model", "#ctl-valmodel", "#ctl-obsmodel"]
+        text_fields = ["#ctl-model-name", "#ctl-valmodel-name", "#ctl-obsmodel-name", "#ctl-shadowmodel-name"]
         
         # Click through text fields multiple times
         for round in range(5):

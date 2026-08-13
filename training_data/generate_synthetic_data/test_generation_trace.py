@@ -60,6 +60,7 @@ class MockQueryModel(QueryModel):
         super().__init__()
         self.query_responses: list[str] = []
         self.validate_responses: list[tuple[bool, str | None, float | None]] = []
+        self.shadow_validate_responses: list[tuple[bool, str | None, float | None]] = []
         self.regenerate_responses: list[str | None] = []
         self.sibling_feedbacks: list[str] = []
         self.query_call_count = 0
@@ -84,7 +85,12 @@ class MockQueryModel(QueryModel):
         trace_round: dict | None = None,
     ) -> tuple[bool, str | None, float | None]:
         self.validate_call_count += 1
-        if self.validate_responses:
+        if getattr(validation_model, "type", None) == ModelType.SHADOW_VALIDATION:
+            if self.shadow_validate_responses:
+                is_valid, reason, score = self.shadow_validate_responses.pop(0)
+            else:
+                is_valid, reason, score = True, "OK", 8.0
+        elif self.validate_responses:
             is_valid, reason, score = self.validate_responses.pop(0)
         else:
             is_valid, reason, score = True, "OK", 8.0
@@ -206,6 +212,11 @@ class TestGenerationTraceDataclass:
         assert trace.final_outcome == "pending"
         assert trace.total_rounds == 0
         assert trace.final_score is None
+        assert trace.qa_index == 0
+        assert trace.question == ""
+        assert trace.answer == ""
+        assert trace.shadow_validation_model == ""
+        assert trace.shadow_validation_rounds == []
 
     def test_create_full_trace(self):
         """Test creating a GenerationTrace with all fields populated."""
@@ -289,6 +300,11 @@ class TestGenerationTraceDataclass:
         assert d["final_outcome"] == "accepted_first_attempt"
         assert d["total_rounds"] == 1
         assert d["final_score"] == 9.0
+        assert d["qa_index"] == 0
+        assert d["question"] == ""
+        assert d["answer"] == ""
+        assert d["shadow_validation_model"] == ""
+        assert d["shadow_validation_rounds"] == []
 
     def test_validation_rounds_default_factory(self):
         """Test that validation_rounds uses a mutable default factory (not shared)."""
@@ -397,6 +413,9 @@ class TestBaseGeneratorTraceIntegration:
         assert trace.final_outcome == "accepted_first_attempt"
         assert trace.total_rounds >= 1
         assert trace.final_score is not None
+        assert trace.qa_index == 0
+        assert trace.question == "Q1?"
+        assert trace.answer == "A1 with sufficient length to pass validation."
 
     def test_no_trace_when_callback_not_provided(self):
         """Test that no trace is created when trace_callback is None."""
@@ -500,6 +519,67 @@ class TestBaseGeneratorTraceIntegration:
         # Each trace should have the same item_id but possibly different templates
         # (Templates are randomly selected, so we just check both exist)
         assert all(t.item_id for t in traces_received)
+
+    def test_trace_callback_called_per_qa_with_own_rounds(self):
+        """One trace is emitted per QA pair, each with only its own rounds and outcome."""
+        traces_received: list[GenerationTrace] = []
+
+        def capture_trace(trace: GenerationTrace):
+            traces_received.append(trace)
+
+        generator = ConcreteGenerator(
+            models=self.models,
+            validation_pct=1.0,
+            target_count=2,
+            save_item=self.save_item,
+            metrics=self.metrics,
+            trace_callback=capture_trace,
+        )
+        generator.data_batches = [[{"id": 1}]]
+
+        generator.query_model = MockQueryModel()
+        generator.query_model.query_responses = [
+            json.dumps([
+                {"question": "Q1?", "answer": "A1 with sufficient length to pass validation."},
+                {"question": "Q2?", "answer": "A2 with sufficient length to pass validation."},
+            ]),
+        ]
+        # QA1 accepted first attempt; QA2 rejected after 3 regen attempts
+        generator.query_model.validate_responses = [
+            (True, "OK", 8.0),
+            (False, "Score too low", 3.0),
+            (False, "Still bad", 3.0),
+            (False, "Still bad", 3.0),
+        ]
+        generator.query_model.regenerate_responses = [
+            "Regenerated attempt 1",
+            "Regenerated attempt 2",
+            "Regenerated attempt 3",
+        ]
+
+        generator.generate()
+
+        assert len(traces_received) == 2
+        qa0, qa1 = traces_received
+
+        # Each trace is a distinct Q&A item with its own outcome
+        assert qa0.item_id != qa1.item_id
+        assert qa0.qa_index == 0
+        assert qa0.question == "Q1?"
+        assert qa0.answer == "A1 with sufficient length to pass validation."
+        assert qa0.final_outcome == "accepted_first_attempt"
+        assert len(qa0.validation_rounds) == 1
+        assert qa0.validation_rounds[0]["score"] == 8.0
+
+        assert qa1.qa_index == 1
+        assert qa1.question == "Q2?"
+        assert qa1.answer == "Regenerated attempt 3"  # final answer after fixes
+        assert qa1.final_outcome == "rejected"
+        assert len(qa1.validation_rounds) == 3
+        assert all(r["score"] == 3.0 for r in qa1.validation_rounds)
+
+        # No round bleed: QA1's trace only contains QA1's own validation rounds
+        assert generator.generated_count == 1  # only QA1 was saved
 
     def test_trace_capture_parse_failure(self):
         """Test that trace captures generation_parsed_ok=False on JSON parse error."""
@@ -1010,6 +1090,142 @@ class TestValidationLoopTraceAccumulation:
 # Test 4: CLI Flag Parsing
 # =============================================================================
 
+# =============================================================================
+# Test 4: Shadow validation (Story 049)
+# =============================================================================
+
+class TestShadowValidation:
+    """Tests for the shadow validator — mirrors every real validation call and
+    records its verdict on the trace ONLY (never affects the outcome)."""
+
+    def _make_models(self, with_shadow: bool = True):
+        models = {
+            ModelType.GENERATION: MockModel("gen-model", ModelType.GENERATION),
+            ModelType.VALIDATION: MockModel("val-model", ModelType.VALIDATION),
+        }
+        if with_shadow:
+            models[ModelType.SHADOW_VALIDATION] = MockModel("shadow-model", ModelType.SHADOW_VALIDATION)
+        return models
+
+    def _run(self, models, qm, qa_pairs, trace=None):
+        return validate_and_loop_with_suggested_fix(
+            query_model=qm,
+            models=models,
+            qa_pairs=qa_pairs,
+            validation_pct=1.0,
+            enable_extra_validation=True,
+            build_context=lambda: "context",
+            source_category="test_category",
+            source_data=[],
+            source_template="test_template",
+            metrics=None,
+            trace=trace,
+        )
+
+    def test_shadow_round_recorded_on_first_attempt_pass(self):
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [(True, "OK", 8.5)]
+        qm.shadow_validate_responses = [(False, "Too strict", 4.0)]
+        trace = GenerationTrace(item_id="test", run_id="run")
+
+        is_valid, doc = self._run(models, qm, [QuestionAnswer("Q?", "A")], trace=trace)
+
+        assert is_valid is True
+        assert doc.validation_score == 8.5
+        assert len(trace.validation_rounds) == 1
+        assert trace.validation_rounds[0]["score"] == 8.5
+        assert trace.final_outcome == "accepted_first_attempt"
+        # Shadow verdict recorded separately and clearly tagged
+        assert trace.shadow_validation_model == "shadow-model"
+        assert len(trace.shadow_validation_rounds) == 1
+        shadow_round = trace.shadow_validation_rounds[0]
+        assert shadow_round["shadow"] is True
+        assert shadow_round["model"] == "shadow-model"
+        assert shadow_round["round"] == 0
+        assert shadow_round["score"] == 4.0
+        assert shadow_round["is_acceptable"] is False
+
+    def test_shadow_mirrors_every_validation_round(self):
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [(False, "Too vague", 4.0), (True, "OK", 8.0)]
+        qm.regenerate_responses = ["Fixed answer with sufficient length."]
+        qm.shadow_validate_responses = [(True, "OK", 8.0), (False, "Too strict", 5.0)]
+        trace = GenerationTrace(item_id="test", run_id="run")
+
+        is_valid, doc = self._run(models, qm, [QuestionAnswer("Q?", "Initial answer")], trace=trace)
+
+        assert is_valid is True
+        assert trace.final_outcome == "accepted_after_fix"
+        assert len(trace.validation_rounds) == 2
+        assert len(trace.shadow_validation_rounds) == 2
+        assert [r["round"] for r in trace.shadow_validation_rounds] == [0, 1]
+        assert [r["score"] for r in trace.shadow_validation_rounds] == [8.0, 5.0]
+
+    def test_shadow_verdict_never_affects_outcome(self):
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [(True, "OK", 9.0)]
+        qm.shadow_validate_responses = [(False, "Terrible", 1.0)]
+        trace = GenerationTrace(item_id="test", run_id="run")
+
+        is_valid, doc = self._run(models, qm, [QuestionAnswer("Q?", "A")], trace=trace)
+
+        assert is_valid is True
+        assert doc.validation_score == 9.0
+        assert trace.final_score == 9.0
+        assert trace.final_outcome == "accepted_first_attempt"
+
+    def test_no_shadow_model_skips_shadow_validation(self):
+        models = self._make_models(with_shadow=False)
+        qm = MockQueryModel()
+        qm.validate_responses = [(True, "OK", 8.0)]
+        trace = GenerationTrace(item_id="test", run_id="run")
+
+        self._run(models, qm, [QuestionAnswer("Q?", "A")], trace=trace)
+
+        assert trace.shadow_validation_model == ""
+        assert trace.shadow_validation_rounds == []
+        assert len(trace.validation_rounds) == 1
+
+    def test_shadow_skipped_when_validation_skipped(self):
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [(True, "OK", 8.0)]
+        qm.shadow_validate_responses = [(False, "Too strict", 3.0)]
+        trace = GenerationTrace(item_id="test", run_id="run")
+
+        with patch("training_data.generate_synthetic_data.common.random.random", return_value=0.9):
+            is_valid, doc = validate_and_loop_with_suggested_fix(
+                query_model=qm, models=models, qa_pairs=[QuestionAnswer("Q?", "A")],
+                validation_pct=0.0, enable_extra_validation=True,
+                build_context=lambda: "context", source_category="c", source_data=[],
+                source_template="t", metrics=None, trace=trace,
+            )
+
+        assert is_valid is True
+        assert trace.final_outcome == "skipped"
+        assert trace.shadow_validation_rounds == []
+        assert qm.shadow_validate_responses  # shadow never called
+
+    def test_shadow_without_trace_is_noop(self):
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [(True, "OK", 8.0)]
+        qm.shadow_validate_responses = [(False, "Too strict", 3.0)]
+
+        is_valid, doc = self._run(models, qm, [QuestionAnswer("Q?", "A")], trace=None)
+
+        assert is_valid is True
+        assert doc.validation_score == 8.0
+        assert qm.shadow_validate_responses  # shadow never called (no trace to record)
+
+
+# =============================================================================
+# Test 4b: CLI Flag Parsing
+# =============================================================================
+
 class TestCLIFlagParsing:
     """Tests for --log-traces / --no-log-traces argument parsing."""
 
@@ -1057,6 +1273,15 @@ class TestCLIFlagParsing:
         args = parser.parse_args(['--combo-queries', '0'])
 
         assert args.log_traces is True
+
+    def test_shadow_validation_model_flag(self):
+        """--shadow-validation-model defaults to None and parses when provided (Story 049)."""
+        from training_data.generate_synthetic_data.main import build_parser
+
+        parser = build_parser()
+        assert parser.parse_args([]).shadow_validation_model is None
+        args = parser.parse_args(["--shadow-validation-model", "shadow-model"])
+        assert args.shadow_validation_model == "shadow-model"
 
 
 # =============================================================================

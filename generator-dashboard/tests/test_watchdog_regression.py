@@ -31,7 +31,7 @@ class TestWatchdogRegression:
     def test_watchdog_does_not_fire_during_editing(self, page: Page):
         """Stop-all button must stay 'STOP ALL' while user edits fields for >10s."""
         stop_btn = page.locator("#stop-all-btn")
-        model = page.locator("#ctl-model")
+        model = page.locator("#ctl-model-name")
 
         # Click into field and type
         model.click()
@@ -71,7 +71,7 @@ class TestWatchdogRegression:
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
 
         # Interact normally for 12s
-        model = page.locator("#ctl-model")
+        model = page.locator("#ctl-model-name")
         model.click()
         model.fill("gpt-4o")
         time.sleep(12)

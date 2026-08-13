@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from config import (
     DEFAULT_MODEL,
     DEFAULT_OBSERVER_MODEL,
+    DEFAULT_SHADOW_VALIDATION_MODEL,
     DEFAULT_VALIDATION_MODEL,
     GENERATORS,
     GENERATOR_BY_SLUG,
@@ -99,7 +100,7 @@ def _snapshot() -> dict:
     for spec in GENERATORS:
         insts = running.get(spec.slug, [])
         log_path = spec.log_path
-        script_model, script_validation, script_observer = script_model_defaults(spec)
+        script_model, script_validation, script_observer, script_shadow = script_model_defaults(spec)
         generators.append(
             {
                 "slug": spec.slug,
@@ -111,6 +112,7 @@ def _snapshot() -> dict:
                 "default_model": _resolve_env_refs(script_model or DEFAULT_MODEL),
                 "default_validation_model": _resolve_env_refs(script_validation or DEFAULT_VALIDATION_MODEL),
                 "default_observer_model": _resolve_env_refs(script_observer or DEFAULT_OBSERVER_MODEL),
+                "default_shadow_validation_model": _resolve_env_refs(script_shadow or DEFAULT_SHADOW_VALIDATION_MODEL),
                 "running": bool(insts),
                 "instances": _instance_summary(insts),
                 "log_exists": log_path.exists(),
@@ -168,6 +170,7 @@ class StartPayload(BaseModel):
     model: str | None = None
     validation_model: str | None = None
     observer_model: str | None = None
+    shadow_validation_model: str | None = None
     validation_pct: float = Field(default=1.0, ge=0.0, le=1.0)
     dry_run: bool = False
 
@@ -185,6 +188,9 @@ def start_generator(slug: str, payload: StartPayload) -> dict:
         _resolve_env_refs(payload.validation_model) if payload.validation_model else _default_validation_model()
     )
     observer_model = _resolve_env_refs(payload.observer_model) if payload.observer_model else ""
+    shadow_validation_model = (
+        _resolve_env_refs(payload.shadow_validation_model) if payload.shadow_validation_model else ""
+    )
     try:
         pid = process_manager.start(
             spec,
@@ -194,6 +200,7 @@ def start_generator(slug: str, payload: StartPayload) -> dict:
             validation_pct=payload.validation_pct,
             dry_run=payload.dry_run,
             observer_model=observer_model,
+            shadow_validation_model=shadow_validation_model,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

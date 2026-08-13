@@ -1,16 +1,13 @@
 - template_id: how_does_it_work
-  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works.
-
-    Focus on: the sequence of steps, what triggers what, and why the loop is infinite
-    (if applicable).
-
-    At least one question must come from the perspective of a player who has never
-    seen this combo before.
-
-    CRITICAL: Ensure strict factual accuracy regarding the combo''s final outcome.
-    Do not overstate the result or claim an unsupported infinite resource (e.g., infinite
-    +1/+1 counters, tokens, or mana) unless the exact sequence of steps and card interactions
-    strictly prove it.'
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works, based
+    strictly on the given combo pieces and their current Oracle text. Focus on: the
+    exact sequence of steps, what triggers what, and why the loop is infinite (if
+    applicable). Before writing, verify every ability referenced actually exists on
+    the named card, and include all cards required for each interaction; do not invent,
+    omit, or substitute abilities. If an interaction depends on a specific card type,
+    quality, or additional named card, state that dependency explicitly and do not
+    describe the interaction as working without it. At least one question must come
+    from the perspective of a player who has never seen this combo before.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -40,18 +37,15 @@
   max_answer_length: 2000
   version: '1'
 - template_id: what_do_i_need
-  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works.
-
-    Focus on: the sequence of steps, what triggers what, and why the loop is infinite
-    (if applicable).
-
-    At least one question must come from the perspective of a player who has never
-    seen this combo before.
-
-    CRITICAL: Ensure strict factual accuracy regarding the combo''s final outcome.
-    Do not overstate the result or claim an unsupported infinite resource (e.g., infinite
-    +1/+1 counters, tokens, or mana) unless the exact sequence of steps and card interactions
-    strictly prove it.'
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works, based
+    strictly on the given combo pieces and their current Oracle text. Focus on: the
+    exact sequence of steps, what triggers what, and why the loop is infinite (if
+    applicable). Before writing, verify every ability referenced actually exists on
+    the named card, and include all cards required for each interaction; do not invent,
+    omit, or substitute abilities. If an interaction depends on a specific card type,
+    quality, or additional named card, state that dependency explicitly and do not
+    describe the interaction as working without it. At least one question must come
+    from the perspective of a player who has never seen this combo before.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -76,18 +70,15 @@
   max_answer_length: 2000
   version: '1'
 - template_id: why_does_this_work
-  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works.
-
-    Focus on: the sequence of steps, what triggers what, and why the loop is infinite
-    (if applicable).
-
-    At least one question must come from the perspective of a player who has never
-    seen this combo before.
-
-    CRITICAL: Ensure strict factual accuracy regarding the combo''s final outcome.
-    Do not overstate the result or claim an unsupported infinite resource (e.g., infinite
-    +1/+1 counters, tokens, or mana) unless the exact sequence of steps and card interactions
-    strictly prove it.'
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works, based
+    strictly on the given combo pieces and their current Oracle text. Focus on: the
+    exact sequence of steps, what triggers what, and why the loop is infinite (if
+    applicable). Before writing, verify every ability referenced actually exists on
+    the named card, and include all cards required for each interaction; do not invent,
+    omit, or substitute abilities. If an interaction depends on a specific card type,
+    quality, or additional named card, state that dependency explicitly and do not
+    describe the interaction as working without it. At least one question must come
+    from the perspective of a player who has never seen this combo before.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -109,18 +100,15 @@
   max_answer_length: 2000
   version: '1'
 - template_id: what_is_the_result
-  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works.
-
-    Focus on: the sequence of steps, what triggers what, and why the loop is infinite
-    (if applicable).
-
-    At least one question must come from the perspective of a player who has never
-    seen this combo before.
-
-    CRITICAL: Ensure strict factual accuracy regarding the combo''s final outcome.
-    Do not overstate the result or claim an unsupported infinite resource (e.g., infinite
-    +1/+1 counters, tokens, or mana) unless the exact sequence of steps and card interactions
-    strictly prove it.'
+  instruction: 'Generate exactly 3 Q&A pairs explaining HOW this combo works, based
+    strictly on the given combo pieces and their current Oracle text. Focus on: the
+    exact sequence of steps, what triggers what, and why the loop is infinite (if
+    applicable). Before writing, verify every ability referenced actually exists on
+    the named card, and include all cards required for each interaction; do not invent,
+    omit, or substitute abilities. If an interaction depends on a specific card type,
+    quality, or additional named card, state that dependency explicitly and do not
+    describe the interaction as working without it. At least one question must come
+    from the perspective of a player who has never seen this combo before.'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'

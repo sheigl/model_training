@@ -1012,6 +1012,44 @@ def _upsert_sibling_correction(sibling_corrections: list[str], q_index: int, rea
     sibling_corrections.append(correction)
 
 
+def _run_shadow_validation(
+    query_model: QueryModel,
+    models: dict[ModelType, Model],
+    qa: QuestionAnswer,
+    qa_context: str,
+    source_category: str,
+    enable_extra_validation: bool,
+    round_num: int,
+    trace: GenerationTrace,
+) -> None:
+    """Mirror a real validation call with the shadow validator (Story 049).
+
+    When a shadow validation model is configured, every answer passed to the
+    real validator is ALSO validated by the shadow model using the same
+    validation template/context. The shadow verdict is recorded on the trace's
+    ``shadow_validation_rounds`` ONLY — it never affects acceptance,
+    regeneration, metrics, or the observer. No-op when no shadow model is
+    configured or when no trace is being captured.
+    """
+    shadow_model = models.get(ModelType.SHADOW_VALIDATION)
+    if shadow_model is None or trace is None:
+        return
+    shadow_round: dict = {"round": round_num, "model": shadow_model.name, "shadow": True}
+    query_model.validate_qa(
+        validation_model=shadow_model,
+        question=qa.question,
+        answer=qa.answer,
+        context=qa_context,
+        category=source_category,
+        enable_extra_validation=enable_extra_validation,
+        trace_round=shadow_round,
+    )
+    trace.shadow_validation_model = shadow_model.name
+    trace.shadow_validation_rounds.append(shadow_round)
+    verdict = "accepted" if shadow_round.get("is_acceptable") else "rejected"
+    print(f"    👤 SHADOW VALIDATION ({shadow_model.name}): {verdict} (score: {shadow_round.get('score')}/10)")
+
+
 def validate_and_loop_with_suggested_fix(
     query_model: QueryModel,
     models: dict[ModelType, Model],
@@ -1062,6 +1100,20 @@ def validate_and_loop_with_suggested_fix(
                 enable_extra_validation=enable_extra_validation,
                 trace_round=round_data,
             )
+
+            # Story 049 — shadow validator mirrors every real validation call.
+            # Verdict recorded on the trace only; never affects this loop.
+            if trace is not None:
+                _run_shadow_validation(
+                    query_model=query_model,
+                    models=models,
+                    qa=qa,
+                    qa_context=qa_context,
+                    source_category=source_category,
+                    enable_extra_validation=enable_extra_validation,
+                    round_num=round_num,
+                    trace=trace,
+                )
 
             if not is_valid:
                 if is_transport_failure_reason(reason):

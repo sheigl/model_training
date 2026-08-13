@@ -3,30 +3,33 @@
     about building a {archetype} Commander deck.
 
 
-    Use the provided commanders, key cards, and strategy context to give specific,
+    Use ONLY the provided commanders, key cards, and strategy context to give specific,
     grounded advice. Reference actual card names from the <key_cards> and <commanders>
-    blocks, and explicitly name the key enablers needed for the archetype''s core
-    game plan. Explain WHY each referenced card fits this archetype in Commander.
+    blocks. Do NOT invent cards or abilities not in the provided context.
 
 
-    Questions must be specific to Commander format construction challenges. Cover
+    Color Identity Constraint: Identify the commander''s color identity from <commanders>
+    and ensure every recommended card is legal for that identity. Never recommend
+    off-color payoffs or cards outside the commander''s color identity.
+
+
+    Mechanical Grounding Constraint: Explain WHY specific cards fit this archetype
+    using only information present in the <strategy_context>, <key_cards>, and <commanders>
+    blocks. Do not add unsupported synergy claims, mana costs, trigger timings, token
+    types, or mechanics not explicitly stated in the source material. If a detail
+    is not provided, do not state it. Do not omit costs or misstate timing.
+
+
+    Questions should be specific to Commander format construction challenges. Cover
     topics like: choosing a commander, building around themes, threat density, political
-    considerations, power level calibration. Answers must address Commander-specific
-    constraints (100-card singleton, multiplayer dynamics).
+    considerations, power level calibration.
 
 
-    Do NOT invent cards that are not in the provided context. Do NOT make rules or
-    gameplay claims that are not directly supported by the provided card text and
-    strategy context; if a card''s effect involves an opponent''s choice, describe
-    that effect exactly as written and avoid unsupported extrapolation.
+    Answers must address Commander-specific constraints (100-card singleton, multiplayer
+    dynamics) and stay within 3-6 sentences with Commander-specific advice and reasoning.
 
 
-    Output JSON array with question/answer pairs. Keep answers 3-6 sentences with
-    Commander-specific advice and reasoning. Every answer should reference at least
-    one distinct card from the provided context and should not omit the enablers that
-    make the archetype function.
-
-    {output_format}'
+    Output JSON array with question/answer pairs. {output_format}'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -54,30 +57,33 @@
     about building a {archetype} Commander deck.
 
 
-    Use the provided commanders, key cards, and strategy context to give specific,
+    Use ONLY the provided commanders, key cards, and strategy context to give specific,
     grounded advice. Reference actual card names from the <key_cards> and <commanders>
-    blocks, and explicitly name the key enablers needed for the archetype''s core
-    game plan. Explain WHY each referenced card fits this archetype in Commander.
+    blocks. Do NOT invent cards or abilities not in the provided context.
 
 
-    Questions must be specific to Commander format construction challenges. Cover
+    Color Identity Constraint: Identify the commander''s color identity from <commanders>
+    and ensure every recommended card is legal for that identity. Never recommend
+    off-color payoffs or cards outside the commander''s color identity.
+
+
+    Mechanical Grounding Constraint: Explain WHY specific cards fit this archetype
+    using only information present in the <strategy_context>, <key_cards>, and <commanders>
+    blocks. Do not add unsupported synergy claims, mana costs, trigger timings, token
+    types, or mechanics not explicitly stated in the source material. If a detail
+    is not provided, do not state it. Do not omit costs or misstate timing.
+
+
+    Questions should be specific to Commander format construction challenges. Cover
     topics like: choosing a commander, building around themes, threat density, political
-    considerations, power level calibration. Answers must address Commander-specific
-    constraints (100-card singleton, multiplayer dynamics).
+    considerations, power level calibration.
 
 
-    Do NOT invent cards that are not in the provided context. Do NOT make rules or
-    gameplay claims that are not directly supported by the provided card text and
-    strategy context; if a card''s effect involves an opponent''s choice, describe
-    that effect exactly as written and avoid unsupported extrapolation.
+    Answers must address Commander-specific constraints (100-card singleton, multiplayer
+    dynamics) and stay within 3-6 sentences with Commander-specific advice and reasoning.
 
 
-    Output JSON array with question/answer pairs. Keep answers 3-6 sentences with
-    Commander-specific advice and reasoning. Every answer should reference at least
-    one distinct card from the provided context and should not omit the enablers that
-    make the archetype function.
-
-    {output_format}'
+    Output JSON array with question/answer pairs. {output_format}'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'

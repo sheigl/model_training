@@ -106,11 +106,18 @@ class TestLoadCategoryFile:
         """All 27 generator category YAML files parse correctly."""
         loader = _make_loader()
         import os
+        import re
         templates_dir = str(loader._templates_dir)
+
+        is_versioned = re.compile(r"_v\d+\.yaml$")
+
+        # Base category files: exclude shared/validator docs and observer-generated
+        # versioned files (e.g. combo_query_v2.yaml), which are checked separately.
         yaml_files = sorted(
             f for f in os.listdir(templates_dir)
             if f.endswith(".yaml")
             and "_validator" not in f
+            and not is_versioned.search(f)
             and f not in ("shared.yaml", "qa_validation.yaml", "comparison_validator.yaml")
         )
         assert len(yaml_files) == 27
@@ -120,6 +127,16 @@ class TestLoadCategoryFile:
             assert isinstance(entries, list), f"{fname} did not produce a list"
             for entry in entries:
                 assert "template_id" in entry, f"Entry missing template_id in {fname}"
+
+        # Observer-generated versioned generation files must also parse.
+        versioned_files = sorted(
+            f for f in os.listdir(templates_dir)
+            if is_versioned.search(f) and "_validator" not in f
+        )
+        for fname in versioned_files:
+            path = loader._templates_dir / fname
+            entries = loader._load_yaml(path)
+            assert isinstance(entries, list), f"{fname} did not produce a list"
 
 
 # ---------------------------------------------------------------------------

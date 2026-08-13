@@ -185,9 +185,10 @@ def get_mongo_collections(uri, username, password):
     # Metrics collection (separate DB so concurrent generators don't collide)
     metrics_collection = client['synthetic_metrics']['generator_runs']
     generation_traces = client['synthetic_metrics']['generation_traces']
+    generation_errors = client['synthetic_metrics']['generation_errors']
 
     return (cards, combos, synthetic, commanders, rules, glossary, articles, guides, 
-            game_changers, top_cards, archetypes, metrics_collection, generation_traces)
+            game_changers, top_cards, archetypes, metrics_collection, generation_traces, generation_errors)
 
 
 def save_to_mongo(synthetic_collection, examples: list[QuestionAnswerEnhanced], batch_size=500):
@@ -270,6 +271,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--multi-card', type=int, default=0)
     parser.add_argument('--model', type=str, default='qwen2.5:14b', help='Ollama model name for generation')
     parser.add_argument('--validation-model', type=str, default='qwen2.5:14b', help='Ollama model name for validation')
+    parser.add_argument('--shadow-validation-model', type=str, default=None,
+                        help='Optional second validator (shadow). Its verdict is recorded on traces '
+                             'ONLY for analysis — it never affects acceptance, regeneration, or metrics.')
     
     # Phase 1 formats
     parser.add_argument('--comparison', type=int, default=0, help='Card comparison questions')
@@ -364,8 +368,19 @@ def main():
         ModelType.GENERATION: Model(name=args.model, type=ModelType.GENERATION),
         ModelType.VALIDATION: Model(name=args.validation_model, type=ModelType.VALIDATION)
     }
-    
-    print(f"\n⚡ Using {models[ModelType.GENERATION].name} for text generation and {models[ModelType.VALIDATION].name} for validation")
+
+    # Story 049 — optional shadow validator. It rides in the shared models dict
+    # so every generator picks it up without per-generator wiring. Its verdicts
+    # are recorded on traces only and never affect validation outcomes.
+    shadow_validation_model: Model | None = None
+    if args.shadow_validation_model:
+        shadow_validation_model = Model(
+            name=args.shadow_validation_model, type=ModelType.SHADOW_VALIDATION
+        )
+        models[ModelType.SHADOW_VALIDATION] = shadow_validation_model
+
+    print(f"\n⚡ Using {models[ModelType.GENERATION].name} for text generation and {models[ModelType.VALIDATION].name} for validation"
+          + (f" (shadow validator: {shadow_validation_model.name})" if shadow_validation_model else ""))
     
     # Apply presets
     if args.phase1: #args.phase1:
@@ -440,7 +455,7 @@ def main():
     # Connect to MongoDB
     print("\nConnecting to MongoDB...")
     (cards, combos, synthetic, commanders, rules, glossary, articles, guides, 
-     game_changers, top_cards, archetypes, metrics_collection, generation_traces) = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
+     game_changers, top_cards, archetypes, metrics_collection, generation_traces, generation_errors) = get_mongo_collections(args.mongo_uri, args.mongo_user, args.mongo_pass)
     print("  ✓ Connected")
 
     # Create single MTGDataAccess instance for new generators
@@ -471,6 +486,10 @@ def main():
         generation_traces.create_index(
             [("run_id", 1), ("template_version", 1)],
             name="idx_run_version", background=True)
+        # Story 048 — generation_error traces live in a separate collection
+        generation_errors.create_index(
+            [("run_id", 1), ("category", 1), ("generation_model", 1)],
+            background=True)
     except Exception:
         pass
 
@@ -525,19 +544,29 @@ def main():
 
     from dataclasses import asdict
     traces_buffer: list[dict] = []
+    error_traces_buffer: list[dict] = []
     TRACE_BATCH_SIZE = 1
 
     def save_trace(trace: 'GenerationTrace') -> None:
-        traces_buffer.append(asdict(trace))
-        print(f"  📝 Trace queued ({trace.final_outcome}) — {len(traces_buffer)} buffered")
-        if len(traces_buffer) >= TRACE_BATCH_SIZE:
+        # generation_error traces (template-level, no QAs) go to a separate
+        # collection so validator analysis is never polluted by them (Story 048).
+        if trace.final_outcome == "generation_error":
+            error_traces_buffer.append(asdict(trace))
+        else:
+            traces_buffer.append(asdict(trace))
+        print(f"  📝 Trace queued ({trace.final_outcome}) — {len(traces_buffer)} validated, {len(error_traces_buffer)} errors buffered")
+        if len(traces_buffer) + len(error_traces_buffer) >= TRACE_BATCH_SIZE:
             flush_traces()
 
     def flush_traces():
         if traces_buffer:
             generation_traces.insert_many(traces_buffer, ordered=False)
-            print(f"  📝 Flushed {len(traces_buffer)} traces to MongoDB")
+            print(f"  📝 Flushed {len(traces_buffer)} traces to synthetic_metrics.generation_traces")
             traces_buffer.clear()
+        if error_traces_buffer:
+            generation_errors.insert_many(error_traces_buffer, ordered=False)
+            print(f"  📝 Flushed {len(error_traces_buffer)} generation errors to synthetic_metrics.generation_errors")
+            error_traces_buffer.clear()
 
     # Generate all synthetic data
 
@@ -981,6 +1010,8 @@ def main():
         print(f"  Run ID: {run_id}")
         print(f"  Generation model: {models[ModelType.GENERATION].name}")
         print(f"  Validation model: {models[ModelType.VALIDATION].name}")
+        if shadow_validation_model:
+            print(f"  Shadow validation model: {shadow_validation_model.name} (trace-only)")
         for m in used_metrics:
             summary = m.summary()
             print(f"\n  Generator: {m.generator_name} (doc_id={m._id})")
@@ -1011,6 +1042,7 @@ def main():
     if args.log_traces:
         flush_traces()
         print(f"\n📝 Generation traces saved to synthetic_metrics.generation_traces")
+        print(f"   Generation errors saved to synthetic_metrics.generation_errors")
 
     # Clean up
     data_access.close()

@@ -39,7 +39,7 @@ def test_list_generators(client):
 def test_start_generator(monkeypatch, client):
     captured = {}
 
-    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model=""):
+    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model="", shadow_validation_model=""):
         captured["slug"] = spec.slug
         captured["count"] = count
         captured["dry_run"] = dry_run
@@ -56,7 +56,7 @@ def test_start_generator(monkeypatch, client):
 def test_start_resolves_default_models(monkeypatch, client):
     captured = {}
 
-    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model=""):
+    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model="", shadow_validation_model=""):
         captured["model"] = model
         captured["validation_model"] = validation_model
         return 1
@@ -71,7 +71,7 @@ def test_start_resolves_default_models(monkeypatch, client):
 def test_start_passes_observer_model(monkeypatch, client):
     captured = {}
 
-    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model=""):
+    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model="", shadow_validation_model=""):
         captured["observer_model"] = observer_model
         return 1
 
@@ -79,6 +79,19 @@ def test_start_passes_observer_model(monkeypatch, client):
     r = client.post("/api/generators/synergy/start", json={"count": 1, "observer_model": "obs-model"})
     assert r.status_code == 200
     assert captured["observer_model"] == "obs-model"
+
+
+def test_start_passes_shadow_validation_model(monkeypatch, client):
+    captured = {}
+
+    def fake_start(spec, count, model, validation_model, validation_pct, dry_run, observer_model="", shadow_validation_model=""):
+        captured["shadow_validation_model"] = shadow_validation_model
+        return 1
+
+    monkeypatch.setattr(app.process_manager, "start", fake_start)
+    r = client.post("/api/generators/synergy/start", json={"count": 1, "shadow_validation_model": "shadow-model"})
+    assert r.status_code == 200
+    assert captured["shadow_validation_model"] == "shadow-model"
 
 
 def test_stop_generator(monkeypatch, client):
@@ -103,9 +116,9 @@ def test_resolve_env_refs(monkeypatch):
 def test_events_stream_yields_snapshot():
     async def first():
         agen = app._event_stream()
-        return await agen.__anext__()
+        return await    return await agen.__anext__()
 
-    payload = json.loads(asyncio.run(first()).removeprefix("data: "))
+    payload = json.loads(run_async(first()).removeprefix("data: "))
     assert "generators" in payload
     assert len(payload["generators"]) == 27
 
@@ -118,7 +131,7 @@ def test_logs_stream_yields_init(monkeypatch, tmp_path):
         agen = app._log_stream(spec)
         return await agen.__anext__()
 
-    payload = json.loads(asyncio.run(first()).removeprefix("data: "))
+    payload = json.loads(run_async(first()).removeprefix("data: "))
     assert payload["type"] == "init"
     assert payload["lines"] == []
     assert payload["log_path"].endswith("synergy.log")
