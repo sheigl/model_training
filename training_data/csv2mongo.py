@@ -4,7 +4,7 @@ import csv
 import json
 
 # Initialize MongoDB connection
-client = MongoClient('mongodb://root:whatever@localhost:27017/')  # Adjust connection string as needed
+client = MongoClient('mongodb://root:whatever@server.home:27017/')  # Adjust connection string as needed
 db = client['mtg_json']
 
 csvFiles = os.listdir('/home/sheigl/code/model_training/training_data/AllPrintingsCSVFiles')  # List files in the data directory

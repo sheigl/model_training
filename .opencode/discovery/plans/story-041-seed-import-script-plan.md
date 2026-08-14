@@ -162,7 +162,7 @@ def extract_validators() -> list[dict]: ...
 
 def main():
     parser = argparse.ArgumentParser(description="Seed MongoDB template store from hardcoded sources")
-    parser.add_argument("--mongo-uri", default="mongodb://localhost:27017/")
+    parser.add_argument("--mongo-uri", default="mongodb://server.home:27017/")
     parser.add_argument("--mongo-user", default="root")
     parser.add_argument("--mongo-pass", default="whatever")
     parser.add_argument("--dry-run", action="store_true")

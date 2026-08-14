@@ -33,8 +33,7 @@ from pymongo import MongoClient
 
 # ── MongoDB ───────────────────────────────────────────────────────────────────
 MONGO_URIS = [
-    'mongodb://root:whatever@localhost:27017/',
-    'mongodb://root:whatever@127.0.0.1:27017/',
+    'mongodb://root:whatever@server.home:27017/',
     'mongodb://root:whatever@172.25.5.3:27017/',
 ]
 client     = None

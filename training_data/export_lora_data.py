@@ -125,8 +125,8 @@ Examples:
                         help='Max rules examples (0 = all)')
     
     # MongoDB settings
-    parser.add_argument('--mongo-uri', type=str, default='mongodb://localhost:27017/',
-                        help='MongoDB URI (default: mongodb://localhost:27017/)')
+    parser.add_argument('--mongo-uri', type=str, default='mongodb://server.home:27017/',
+                        help='MongoDB URI (default: mongodb://server.home:27017/)')
     parser.add_argument('--mongo-user', type=str, default='root',
                         help='MongoDB username')
     parser.add_argument('--mongo-pass', type=str, default='whatever',

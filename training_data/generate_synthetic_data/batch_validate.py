@@ -95,7 +95,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Show what would be processed without validating")
     parser.add_argument("--model", type=str, default="http://localhost:8080/v1,openai,qwen3.6:27b",
                         help="Validation model connection string")
-    parser.add_argument("--mongo-uri", type=str, default="mongodb://admin:password@localhost:27017/",
+    parser.add_argument("--mongo-uri", type=str, default="mongodb://admin:password@server.home:27017/",
                         help="MongoDB connection URI")
     parser.add_argument("--db", type=str, default="synthetic_data", help="MongoDB database name")
     parser.add_argument("--collection", type=str, default="queries", help="MongoDB collection name")

@@ -10,7 +10,7 @@ This repository contains two projects:
 ## Prerequisites
 
 - **Python 3.10+** (see `.python-version`)
-- **MongoDB** running on `localhost:27017` (user: `root`, password: `whatever`)
+- **MongoDB** running on `server.home:27017` (user: `root`, password: `whatever`)
 - **Ollama** with models pulled (default: `qwen2.5:14b`)
 - **uv** package manager (recommended) or pip
 - **Populated MongoDB databases**: `mtg_json`, `edhrec`, `commander_spellbook`, `mtg_rules`, `mtg_archetypes`

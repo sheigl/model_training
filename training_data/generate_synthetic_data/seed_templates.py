@@ -15,7 +15,7 @@ Run via::
     python -m training_data.generate_synthetic_data.seed_templates
     python -m training_data.generate_synthetic_data.seed_templates --dry-run
     python -m training_data.generate_synthetic_data.seed_templates \
-        --mongo-uri mongodb://localhost:27017/ --mongo-user root --mongo-pass whatever
+        --mongo-uri mongodb://server.home:27017/ --mongo-user root --mongo-pass whatever
 
 The script is idempotent — ``TemplateStore.seed`` skips docs whose
  ``(generator, template_id, template_type, version=1)`` key already exists.
@@ -431,8 +431,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--mongo-uri",
-        default=os.getenv("MONGO_URI", "mongodb://localhost:27017/"),
-        help="MongoDB URI (default: $MONGO_URI or mongodb://localhost:27017/)",
+        default=os.getenv("MONGO_URI", "mongodb://server.home:27017/"),
+        help="MongoDB URI (default: $MONGO_URI or mongodb://server.home:27017/)",
     )
     parser.add_argument("--mongo-user", default="root", help="MongoDB username (default: root)")
     parser.add_argument("--mongo-pass", default="whatever", help="MongoDB password (default: whatever)")

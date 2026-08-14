@@ -9,7 +9,7 @@ This guide walks you through creating a comprehensive Magic: The Gathering exper
 
 ## Prerequisites
 
-1. **MongoDB running** on localhost:27017
+1. **MongoDB running** on server.home:27017
 2. **Python 3.8+** with required packages
 3. **Intel ARC B580 GPU** (or CUDA GPU)
 4. **Existing MongoDB databases** (from your previous work):

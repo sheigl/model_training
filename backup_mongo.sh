@@ -6,7 +6,7 @@ set -euo pipefail
 # Password: MONGO_BACKUP_PASSWORD env var takes precedence over --password flag.
 
 CONTAINER="mongodb"
-HOST="localhost"
+HOST="server.home"
 PORT="27017"
 USERNAME="root"
 PASSWORD=""
@@ -28,7 +28,7 @@ Options:
   --username USER         MongoDB username (default: root)
   --password PASS         MongoDB password (env MONGO_BACKUP_PASSWORD takes precedence)
   --auth-source DB        Auth database (default: admin)
-  --host HOST             MongoDB host (default: localhost)
+  --host HOST             MongoDB host (default: server.home)
   --port PORT             MongoDB port (default: 27017)
   --container NAME        Docker container name (default: mongodb)
   -h, --help              Show this help message and exit

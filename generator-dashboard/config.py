@@ -22,7 +22,7 @@ DEFAULT_OBSERVER_MODEL = DEFAULT_VALIDATION_MODEL
 # Shadow validation is opt-in (Story 049) — off by default, trace-only output.
 DEFAULT_SHADOW_VALIDATION_MODEL = ""
 
-MONGO_URI = "mongodb://localhost:27017/"
+MONGO_URI = "mongodb://server.home:27017/"
 MONGO_USER = "root"
 MONGO_PASS = "whatever"
 

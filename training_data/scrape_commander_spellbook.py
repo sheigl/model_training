@@ -5,7 +5,7 @@ from pymongo import MongoClient
 from datetime import datetime
 
 # Initialize MongoDB connection
-client = MongoClient('mongodb://root:whatever@localhost:27017/')  # Adjust connection string as needed
+client = MongoClient('mongodb://root:whatever@server.home:27017/')  # Adjust connection string as needed
 db = client['commander_spellbook']
 collection = db['variants']
 

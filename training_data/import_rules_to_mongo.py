@@ -392,7 +392,7 @@ def import_to_mongodb(rules, glossary, metadata):
     
     # Connect to MongoDB with authentication
     client = MongoClient(
-        'mongodb://localhost:27017/',
+        'mongodb://server.home:27017/',
         username='root',
         password='whatever',
         authSource='admin'
@@ -454,7 +454,7 @@ def verify_import():
     print("\n=== Verifying Import ===")
     
     client = MongoClient(
-        'mongodb://localhost:27017/',
+        'mongodb://server.home:27017/',
         username='root',
         password='whatever',
         authSource='admin'

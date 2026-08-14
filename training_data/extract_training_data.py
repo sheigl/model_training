@@ -931,7 +931,7 @@ EXAMPLES:
                         help='Do not shuffle examples')
     
     # MongoDB configuration
-    parser.add_argument('--mongo-uri', type=str, default='mongodb://localhost:27017/',
+    parser.add_argument('--mongo-uri', type=str, default='mongodb://server.home:27017/',
                         help='MongoDB connection URI')
     parser.add_argument('--mongo-user', type=str, default='root',
                         help='MongoDB username')

@@ -95,7 +95,7 @@ def dedup_synthetic_queries(uri, username, password, dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description='Deduplicate synthetic_queries.queries collection')
-    parser.add_argument('--mongo-uri', default='mongodb://localhost:27017/')
+    parser.add_argument('--mongo-uri', default='mongodb://server.home:27017/')
     parser.add_argument('--mongo-user', default='root')
     parser.add_argument('--mongo-pass', default='whatever')
     parser.add_argument('--dry-run', action='store_true',

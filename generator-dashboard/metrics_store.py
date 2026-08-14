@@ -16,7 +16,7 @@ TRACES_COLLECTION = "generation_traces"
 class MetricsStore:
     def __init__(
         self,
-        uri: str = "mongodb://localhost:27017/",
+        uri: str = "mongodb://server.home:27017/",
         username: str = "root",
         password: str = "whatever",
     ):

@@ -120,7 +120,7 @@ class TestMTGDataAccess:
     def data_access(self, mock_client):
         """Create MTGDataAccess instance with mocked client."""
         da = MTGDataAccess(
-            uri="mongodb://localhost:27017",
+            uri="mongodb://server.home:27017",
             username="root",
             password="whatever",
             database="mtg_json",

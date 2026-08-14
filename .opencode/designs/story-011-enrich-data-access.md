@@ -240,7 +240,7 @@ def retry_on_transient_error(max_retries: int = 3, base_delay: float = 0.5):
 #### 4a: Updated __init__
 
 ```python
-def __init__(self, uri: str = "mongodb://localhost:27017", **kwargs):
+def __init__(self, uri: str = "mongodb://server.home:27017", **kwargs):
     super().__init__(uri=uri, **kwargs)
     self.db_name = "synthetic_queries"  # For backward compat with simple methods
     self._cache = LRUCacheWithTTL(maxsize=kwargs.pop("cache_maxsize", 1000), ttl=kwargs.pop("cache_ttl", 300))

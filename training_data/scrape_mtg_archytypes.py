@@ -33,7 +33,7 @@ from selenium.webdriver.chrome.webdriver import WebDriver
 from pymongo import MongoClient
 
 # ── MongoDB ───────────────────────────────────────────────────────────────────
-client     = MongoClient('mongodb://root:whatever@localhost:27017/')
+client     = MongoClient('mongodb://root:whatever@server.home:27017/')
 db         = client['mtg_archetypes']
 collection = db['archetypes']
 

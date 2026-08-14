@@ -164,7 +164,7 @@ from domain_models import (
 class MTGDataAccess:
     def __init__(
         self,
-        uri: str = "mongodb://localhost:27017",
+        uri: str = "mongodb://server.home:27017",
         username: str = "root",
         password: str = "whatever",
         database: str = "mtg_json",

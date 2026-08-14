@@ -343,7 +343,7 @@ services:
 **Connect:**
 ```python
 from pymongo import MongoClient
-client = MongoClient("mongodb://admin:password@localhost:27017/", authSource='admin')
+client = MongoClient("mongodb://admin:password@server.home:27017/", authSource='admin')
 db = client['mtg_database']
 ```
 
@@ -588,7 +588,7 @@ bash generate_synthetic_data/run_combos.sh
 bash generate_synthetic_data/run_rules.sh
 
 # 5. Deduplicate
-python dedup_synthetic_queries.py --uri mongodb://admin:password@localhost:27017/
+python dedup_synthetic_queries.py --uri mongodb://admin:password@server.home:27017/
 
 # 6. Extract combined dataset
 python extract_training_data.py --preset comprehensive

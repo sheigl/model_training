@@ -9,7 +9,7 @@ import json
 from pprint import pprint
 
 
-def connect_to_mongo(connection_string='mongodb://localhost:27017/', db_name='mtg_database'):
+def connect_to_mongo(connection_string='mongodb://server.home:27017/', db_name='mtg_database'):
     """Connect to MongoDB"""
     client = MongoClient(connection_string)
     db = client[db_name]
@@ -193,9 +193,9 @@ def main():
     print("=" * 70)
     
     # Get connection details
-    connection_string = input("MongoDB connection string [mongodb://localhost:27017/]: ").strip()
+    connection_string = input("MongoDB connection string [mongodb://server.home:27017/]: ").strip()
     if not connection_string:
-        connection_string = 'mongodb://root:whatever@localhost:27017/'
+        connection_string = 'mongodb://root:whatever@server.home:27017/'
     
     db_name = input("Database name [mtg_database]: ").strip()
     if not db_name:

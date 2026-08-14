@@ -260,7 +260,7 @@ def build_parser() -> argparse.ArgumentParser:
     running the full pipeline.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mongo-uri', default='mongodb://localhost:27017/')
+    parser.add_argument('--mongo-uri', default='mongodb://server.home:27017/')
     parser.add_argument('--mongo-user', default='root')
     parser.add_argument('--mongo-pass', default='whatever')
     
