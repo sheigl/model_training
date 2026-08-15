@@ -18,6 +18,34 @@ python -m training_data.generate_synthetic_data.seed_templates --to-yaml
 
 ## Recent Changes
 
+### Generation Token Budget Raised (Story 051) — 2026-08-14
+
+The generation path (`BaseGenerator._process_item()` initial generation and `regenerate_answer()`) no longer inherits the 8192 `max_tokens` default from `QueryModel.query()`. Reasoning-model generators (e.g. `deepseek-v4-flash`) emit `reasoning_content` thinking tokens that count against the SAME budget on the serving backend, so the final answer JSON was truncated mid-generation. Generation now passes `max_tokens=GENERATION_MAX_TOKENS` (16384) — twice the old cap, mirroring the Story 047 validation raise.
+
+- **`query_model.py`** — New module constant `GENERATION_MAX_TOKENS = 16384` with explanatory comment (directly below `VALIDATION_MAX_TOKENS`); `regenerate_answer()` now passes `max_tokens=GENERATION_MAX_TOKENS` to `query()`
+- **`base_generator.py`** — Import updated; the `_process_item()` generation call switches from the hardcoded `max_tokens=8192` to `max_tokens=GENERATION_MAX_TOKENS`
+- **`test_generation_trace.py`** — 2 new regression tests (`test_generation_call_passes_generation_max_tokens`, `test_regenerate_answer_passes_generation_max_tokens`) asserting the generation path passes `GENERATION_MAX_TOKENS`. Total 433 passing.
+- **Deliberately unchanged** — `QueryModel.query()` default (8192), validation path (`VALIDATION_MAX_TOKENS` 16384), observer (`observer.py` 2048), all `run_*.sh`, YAML templates
+
+**New files:** None
+**Modified files:** `query_model.py`, `base_generator.py`, `test_generation_trace.py`
+**Breaking changes:** None — additive constant + call-site changes; no CLI flags, generator endpoints, or config changes.
+
+### Validator Context Parity + Shadow Disagreement Metric + Mana-Cost Hardening (Story 050) — 2026-08-13
+
+Run analysis of `muse:30b`-as-generator showed an information-asymmetry bug: the generation prompt included `Color Identity`, `Mana Cost`, and `Type` for every card, but the **validation context stripped those fields down to oracle text only**. The grounding rules then marked correct claims ("Guttersnipe is legal in Ashling's red deck") as `UNSUPPORTED` → auto-reject → regeneration produced evasive hedging answers. Also observed: `muse` hallucinating a card's color as judge (rejecting mono-black Viscera Seer as "white") and fabricating mana costs as generator.
+
+- **Validator context parity** — `build_context()` in `generate_commander_building.py`, `generate_commander_knowledge.py`, and `generate_synergy_questions.py` now emit the same `to_prompt_detail()` card data the generation prompt sees (Name, Mana Cost, Type, Oracle Text, Color Identity, Keywords, EDHREC data) instead of truncated oracle text. The validator can now ground legality/cost claims; `commander_building` and `commander_rules` were the two legality-sensitive categories with the full asymmetry, `synergy` was missing Mana Cost/CI on its primary card and partners.
+- **Shadow disagreement counter** — `GenerationTrace` gains defaulted `shadow_disagreements: int = 0` (backward compatible, `asdict`-serialized). New `_record_shadow_disagreement()` in `common.py` runs after every shadow validation round and counts rounds where the real validator and shadow validator produced **different parseable verdicts** (a proxy for the validator's own hallucination rate); unparseable transport-failure rounds never count. Matching rounds are flagged `disagreement: bool` on the shadow round and `shadow_disagreement: bool` on the corresponding `validation_rounds` entry so both sides join by `round`. Records only — never affects acceptance/regeneration/metrics/observer.
+- **Mana-cost hardening** — both `commander_building.yaml` templates gain: "Do NOT state a card's mana cost or color identity unless it appears verbatim in the provided card data."
+- **Tests**: 18 new (`test_generate_commander_building.py` covers context parity across all 3 generators + template rule; `TestShadowValidation` ×5 loop-level disagreement tests + 1 unit test of `_record_shadow_disagreement`). Total 431 passing.
+
+**New files:** `test_generate_commander_building.py`
+**Modified files:** `common.py`, `models.py`, `generate_commander_building.py`, `generate_commander_knowledge.py`, `generate_synergy_questions.py`, `templates/commander_building.yaml`, `test_generation_trace.py`
+**Breaking changes:** None — additive fields, context parity only enriches validator input. Note: `seed_templates.py --to-yaml` reads commander_building from YAML, so the hardened instruction survives regeneration.
+
+## Recent Changes
+
 ### Shadow Validator — Trace-Only Second Validator (Story 049) — 2026-08-12
 
 `main.py` accepts an optional `--shadow-validation-model`. When set, every answer passed to the real validator is ALSO validated by the shadow model using the identical validation template/context. The shadow verdict is recorded on the trace's new `shadow_validation_rounds` field (each round tagged `"shadow": True`, `"model"`, and the matching `"round"` index for joining to `validation_rounds`) plus the `shadow_validation_model` field — it NEVER affects acceptance, regeneration, metrics, or the observer. This enables trace analysis comparing real vs shadow validator verdicts (same template, different model) to tune the validation template for a future validator swap. Skipped items (`validation_pct`) and `--no-log-traces` runs produce no shadow rounds; `batch_validate.py` (no traces) is unaffected.
@@ -177,4 +205,4 @@ TrainForge files live in the separate `../trainforge/` repository — see `../tr
 pytest training_data/generate_synthetic_data/ -v
 ```
 
-Current: 413 tests passing.
+Current: 433 tests passing.

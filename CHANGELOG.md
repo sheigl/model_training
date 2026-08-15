@@ -1,5 +1,18 @@
 # Changelog
 
+### Raise Generation Token Cap (GENERATION_MAX_TOKENS=16384) — 2026-08-14
+
+The GENERATION path (initial `BaseGenerator._process_item` call and `regenerate_answer()`) no longer inherits the 8192 `max_tokens` default from `QueryModel.query()`. Reasoning-model generators (e.g. `deepseek-v4-flash`) emit `reasoning_content` thinking tokens that count against the same budget on the serving backend, truncating the final answer JSON mid-generation. Generation now passes `max_tokens=GENERATION_MAX_TOKENS` (16384) — twice the old cap, mirroring the Story 047 validation raise. The `query()` default (8192), validation path (`VALIDATION_MAX_TOKENS`), and observer (2048) are unchanged.
+
+- **`query_model.py`** — New module constant `GENERATION_MAX_TOKENS = 16384` with explanatory comment; `regenerate_answer()` now passes `max_tokens=GENERATION_MAX_TOKENS` to `query()`
+- **`base_generator.py`** — Main generation call in `_process_item()` switches from the hardcoded `max_tokens=8192` to `max_tokens=GENERATION_MAX_TOKENS`
+- **`test_generation_trace.py`** — Two regression-guard tests (`test_generation_call_passes_generation_max_tokens`, `test_regenerate_answer_passes_generation_max_tokens`) asserting the generation path passes `GENERATION_MAX_TOKENS` to `query()`
+- **Unchanged** — `QueryModel.query()` default `max_tokens=8192`, validation path (`VALIDATION_MAX_TOKENS` usages), `observer.py` explicit 2048, all `run_*.sh`, all YAML templates
+
+**Test results:** 433 passing (431 baseline + 2 new), zero failures.
+
+**Breaking changes:** None — additive constant + call-site changes; no CLI flags, generator endpoints, or config changes.
+
 ### Story 049: Shadow Validator — Trace-Only Second Validator — 2026-08-12
 
 Added an optional second validator ("shadow") configurable as a separate model from the real validation model. Every answer passed to the real validator is ALSO validated by the shadow model using the identical validation template/context, and the shadow verdict is recorded on the trace (`shadow_validation_rounds` + `shadow_validation_model`) ONLY — it never affects acceptance, regeneration, metrics, or the observer. Purpose: compare real-vs-shadow verdicts (same template, different model) on stored traces to tune the validation template for a future validator swap.

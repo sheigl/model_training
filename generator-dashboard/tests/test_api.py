@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 import app
 import config
+from conftest import run_async
 
 
 @pytest.fixture
@@ -116,7 +117,7 @@ def test_resolve_env_refs(monkeypatch):
 def test_events_stream_yields_snapshot():
     async def first():
         agen = app._event_stream()
-        return await    return await agen.__anext__()
+        return await agen.__anext__()
 
     payload = json.loads(run_async(first()).removeprefix("data: "))
     assert "generators" in payload
@@ -135,3 +136,26 @@ def test_logs_stream_yields_init(monkeypatch, tmp_path):
     assert payload["type"] == "init"
     assert payload["lines"] == []
     assert payload["log_path"].endswith("synergy.log")
+
+
+def test_clear_log(monkeypatch, client, tmp_path):
+    monkeypatch.setattr(config, "LOGS_DIR", tmp_path)
+    log = config.GENERATOR_BY_SLUG["synergy"].log_path
+    log.write_text("some\nstale\nlines\n")
+
+    r = client.post("/api/logs/synergy/clear")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert log.read_text() == ""
+    assert r.json()["log_path"].endswith("synergy.log")
+
+
+def test_clear_log_missing_file(monkeypatch, client, tmp_path):
+    monkeypatch.setattr(config, "LOGS_DIR", tmp_path)
+    r = client.post("/api/logs/synergy/clear")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_clear_log_unknown_generator(client):
+    assert client.post("/api/logs/nope/clear").status_code == 404

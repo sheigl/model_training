@@ -486,12 +486,14 @@ REQUIREMENTS:
             validation_focus = ""
         
         partner_context = NEW_LINE.join(
-            f"  - {p.name}: {p.primary_face.oracle_text[:120]}... (EDHREC: {p.edhrec_rank or 'N/A'})"
+            f"  - {p.name}:\n  {p.to_prompt_detail()}"
             for p in partners if p.primary_face.oracle_text
         )
         
         primary_context = f"""Primary Card: {card.name}
+Mana Cost: {card.primary_face.mana_cost or 'N/A'}
 Type: {card.primary_face.type_line}
+Color Identity: {', '.join(card.color_identity) if card.color_identity else 'Colorless'}
 Oracle Text: {card.primary_face.oracle_text}
 Keywords: {', '.join(card.keywords) if card.keywords else 'None'}
 Creature Types: {', '.join(data_batch.creature_types) if data_batch.creature_types else 'N/A'}

@@ -246,6 +246,30 @@ def stop_scraper(slug: str) -> dict:
 
 
 # =============================================================================
+# Log management
+# =============================================================================
+
+
+def _clear_log(log_path: Path) -> dict:
+    """Truncate a spec's log file; creates it empty if missing."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("")
+    return {"ok": True, "log_path": str(log_path)}
+
+
+@app.post("/api/logs/{slug}/clear")
+def clear_log(slug: str) -> dict:
+    spec = _get_spec(slug)
+    return _clear_log(spec.log_path)
+
+
+@app.post("/api/scraper-logs/{slug}/clear")
+def clear_scraper_log(slug: str) -> dict:
+    spec = _get_scraper(slug)
+    return _clear_log(spec.log_path)
+
+
+# =============================================================================
 # SSE
 # =============================================================================
 

@@ -1,35 +1,22 @@
 - template_id: general_advice
   instruction: 'You are an expert Commander deckbuilder. Generate exactly 3 Q&A pairs
-    about building a {archetype} Commander deck.
-
-
-    Use ONLY the provided commanders, key cards, and strategy context to give specific,
-    grounded advice. Reference actual card names from the <key_cards> and <commanders>
-    blocks. Do NOT invent cards or abilities not in the provided context.
-
-
-    Color Identity Constraint: Identify the commander''s color identity from <commanders>
-    and ensure every recommended card is legal for that identity. Never recommend
-    off-color payoffs or cards outside the commander''s color identity.
-
-
-    Mechanical Grounding Constraint: Explain WHY specific cards fit this archetype
-    using only information present in the <strategy_context>, <key_cards>, and <commanders>
-    blocks. Do not add unsupported synergy claims, mana costs, trigger timings, token
-    types, or mechanics not explicitly stated in the source material. If a detail
-    is not provided, do not state it. Do not omit costs or misstate timing.
-
-
-    Questions should be specific to Commander format construction challenges. Cover
-    topics like: choosing a commander, building around themes, threat density, political
-    considerations, power level calibration.
-
-
-    Answers must address Commander-specific constraints (100-card singleton, multiplayer
-    dynamics) and stay within 3-6 sentences with Commander-specific advice and reasoning.
-
-
-    Output JSON array with question/answer pairs. {output_format}'
+    about building a {archetype} Commander deck. Use ONLY the provided commanders,
+    key cards, and strategy context to give specific, grounded advice. Reference actual
+    card names from the <key_cards> and <commanders> blocks. Do NOT invent cards that
+    are not in the provided context. Before writing, extract the archetype requirements
+    and each commander''s color identity from <strategy_context> and <commanders>.
+    Only select commanders that explicitly meet the archetype requirements per the
+    context. Explain WHY specific cards fit this archetype in Commander, grounding
+    all mechanical, timing, trigger, color identity, and legality claims strictly
+    in the provided blocks. Do NOT infer or assume card abilities, color identity,
+    or legality beyond what is explicitly stated in the context. If a detail is not
+    present in the provided blocks, do not state it as fact; use general deckbuilding
+    reasoning instead. Questions should be specific to Commander format construction
+    challenges. Cover topics like: choosing a commander, building around themes, threat
+    density, political considerations, power level calibration. Answers must address
+    Commander-specific constraints (100-card singleton, multiplayer dynamics). Output
+    JSON array with question/answer pairs. Keep answers 3-6 sentences with Commander-specific
+    advice and reasoning. {output_format}'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'
@@ -54,36 +41,23 @@
   version: '1'
 - template_id: example_driven
   instruction: 'You are an expert Commander deckbuilder. Generate exactly 3 Q&A pairs
-    about building a {archetype} Commander deck.
-
-
-    Use ONLY the provided commanders, key cards, and strategy context to give specific,
-    grounded advice. Reference actual card names from the <key_cards> and <commanders>
-    blocks. Do NOT invent cards or abilities not in the provided context.
-
-
-    Color Identity Constraint: Identify the commander''s color identity from <commanders>
-    and ensure every recommended card is legal for that identity. Never recommend
-    off-color payoffs or cards outside the commander''s color identity.
-
-
-    Mechanical Grounding Constraint: Explain WHY specific cards fit this archetype
-    using only information present in the <strategy_context>, <key_cards>, and <commanders>
-    blocks. Do not add unsupported synergy claims, mana costs, trigger timings, token
-    types, or mechanics not explicitly stated in the source material. If a detail
-    is not provided, do not state it. Do not omit costs or misstate timing.
-
-
-    Questions should be specific to Commander format construction challenges. Cover
-    topics like: choosing a commander, building around themes, threat density, political
-    considerations, power level calibration.
-
-
-    Answers must address Commander-specific constraints (100-card singleton, multiplayer
-    dynamics) and stay within 3-6 sentences with Commander-specific advice and reasoning.
-
-
-    Output JSON array with question/answer pairs. {output_format}'
+    about building a {archetype} Commander deck. Use ONLY the provided commanders,
+    key cards, and strategy context to give specific, grounded advice. Reference actual
+    card names from the <key_cards> and <commanders> blocks. Do NOT invent cards that
+    are not in the provided context. Before writing, extract the archetype requirements
+    and each commander''s color identity from <strategy_context> and <commanders>.
+    Only select commanders that explicitly meet the archetype requirements per the
+    context. Explain WHY specific cards fit this archetype in Commander, grounding
+    all mechanical, timing, trigger, color identity, and legality claims strictly
+    in the provided blocks. Do NOT infer or assume card abilities, color identity,
+    or legality beyond what is explicitly stated in the context. If a detail is not
+    present in the provided blocks, do not state it as fact; use general deckbuilding
+    reasoning instead. Questions should be specific to Commander format construction
+    challenges. Cover topics like: choosing a commander, building around themes, threat
+    density, political considerations, power level calibration. Answers must address
+    Commander-specific constraints (100-card singleton, multiplayer dynamics). Output
+    JSON array with question/answer pairs. Keep answers 3-6 sentences with Commander-specific
+    advice and reasoning. {output_format}'
   weight: 1.0
   validation_rules:
   - 'HARD REJECT RULES:'

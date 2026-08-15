@@ -33,7 +33,7 @@ from training_data.generate_synthetic_data.common import (
     TemplateConfig,
 )
 from training_data.generate_synthetic_data.base_generator import BaseGenerator
-from training_data.generate_synthetic_data.query_model import QueryModel, VALIDATION_MAX_TOKENS
+from training_data.generate_synthetic_data.query_model import QueryModel, VALIDATION_MAX_TOKENS, GENERATION_MAX_TOKENS
 
 
 # =============================================================================
@@ -416,6 +416,34 @@ class TestBaseGeneratorTraceIntegration:
         assert trace.qa_index == 0
         assert trace.question == "Q1?"
         assert trace.answer == "A1 with sufficient length to pass validation."
+
+    def test_generation_call_passes_generation_max_tokens(self):
+        """BaseGenerator generation path must pass GENERATION_MAX_TOKENS to query().
+
+        Regression guard: reasoning-model generators (deepseek-v4-flash) emit
+        thinking tokens against the same max_tokens budget on the serving
+        backend; the 8192 default truncated the final answer JSON
+        mid-generation. Mirrors the Story 047 validation-path guard.
+        """
+        generator = ConcreteGenerator(
+            models=self.models,
+            validation_pct=1.0,
+            target_count=1,
+            save_item=self.save_item,
+            metrics=self.metrics,
+        )
+        generator.data_batches = [[{"id": 1}]]
+
+        qm = generator.query_model
+        with patch.object(
+            qm, 'query',
+            return_value=json.dumps([{"question": "Q1?", "answer": "A1 with sufficient length to pass validation."}]),
+        ) as mock_query, patch.object(qm, 'validate_qa', return_value=(True, "OK", 8.0)):
+            generator.generate()
+
+        assert generator.generated_count == 1
+        assert mock_query.call_args.kwargs["max_tokens"] == GENERATION_MAX_TOKENS
+        assert mock_query.call_args.kwargs["max_tokens"] == 16384
 
     def test_no_trace_when_callback_not_provided(self):
         """Test that no trace is created when trace_callback is None."""
@@ -1177,6 +1205,75 @@ class TestShadowValidation:
         assert trace.final_score == 9.0
         assert trace.final_outcome == "accepted_first_attempt"
 
+    def test_shadow_disagreement_counted_and_flagged(self):
+        """Real accepts, shadow rejects → disagreement counted on both rounds."""
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [(True, "OK", 8.0)]
+        qm.shadow_validate_responses = [(False, "Too strict", 3.0)]
+        trace = GenerationTrace(item_id="test", run_id="run")
+
+        is_valid, doc = self._run(models, qm, [QuestionAnswer("Q?", "A")], trace=trace)
+
+        assert is_valid is True
+        assert trace.shadow_disagreements == 1
+        shadow_round = trace.shadow_validation_rounds[0]
+        assert shadow_round["disagreement"] is True
+        assert trace.validation_rounds[0]["shadow_disagreement"] is True
+
+    def test_shadow_agreement_not_counted(self):
+        """Real and shadow both accept → no disagreement."""
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [(True, "OK", 8.0)]
+        qm.shadow_validate_responses = [(True, "OK", 7.0)]
+        trace = GenerationTrace(item_id="test", run_id="run")
+
+        self._run(models, qm, [QuestionAnswer("Q?", "A")], trace=trace)
+
+        assert trace.shadow_disagreements == 0
+        assert trace.shadow_validation_rounds[0]["disagreement"] is False
+        assert trace.validation_rounds[0]["shadow_disagreement"] is False
+
+    def test_shadow_disagreement_aggregated_over_rounds(self):
+        """One agreeing round + one disagreeing round → count of 1."""
+        models = self._make_models()
+        qm = MockQueryModel()
+        qm.validate_responses = [(False, "Too vague", 4.0), (True, "OK", 8.0)]
+        qm.regenerate_responses = ["Fixed answer with sufficient length."]
+        qm.shadow_validate_responses = [(False, "Too vague", 3.0), (False, "Fine", 6.0)]
+        trace = GenerationTrace(item_id="test", run_id="run")
+
+        is_valid, doc = self._run(models, qm, [QuestionAnswer("Q?", "Initial answer")], trace=trace)
+
+        assert is_valid is True
+        assert trace.final_outcome == "accepted_after_fix"
+        assert trace.shadow_disagreements == 1
+        assert [r["disagreement"] for r in trace.shadow_validation_rounds] == [False, True]
+        assert [r["shadow_disagreement"] for r in trace.validation_rounds] == [False, True]
+
+    def test_shadow_disagreement_defaults_zero(self):
+        """The counter defaults to 0 on a fresh trace (backward compatible)."""
+        trace = GenerationTrace(item_id="test", run_id="run")
+        assert trace.shadow_disagreements == 0
+
+    def test_parse_failure_rounds_never_count_disagreement(self):
+        """Unparseable (transport-failure) rounds are not verdicts and never count."""
+        from training_data.generate_synthetic_data.common import _record_shadow_disagreement
+
+        trace = GenerationTrace(item_id="test", run_id="run")
+        trace.shadow_validation_rounds.append({
+            "round": 0, "model": "shadow-model", "shadow": True,
+            "parsed_ok": False, "is_acceptable": False, "score": 0,
+        })
+        round_data = {"round": 0, "parsed_ok": True, "is_acceptable": True, "score": 8.0}
+
+        _record_shadow_disagreement(trace, round_data)
+
+        assert trace.shadow_disagreements == 0
+        assert "shadow_disagreement" not in round_data
+        assert "disagreement" not in trace.shadow_validation_rounds[0]
+
     def test_no_shadow_model_skips_shadow_validation(self):
         models = self._make_models(with_shadow=False)
         qm = MockQueryModel()
@@ -1364,6 +1461,27 @@ class TestBackwardCompatibility:
             )
             assert is_valid is True
             assert mock_query.call_args.kwargs["max_tokens"] == VALIDATION_MAX_TOKENS
+            assert mock_query.call_args.kwargs["max_tokens"] == 16384
+
+    def test_regenerate_answer_passes_generation_max_tokens(self):
+        """regenerate_answer() must pass GENERATION_MAX_TOKENS as max_tokens to query().
+
+        Regression guard: reasoning-model generators (deepseek-v4-flash) emit
+        thinking tokens against the same budget; an 8192 cap truncated the
+        final answer JSON mid-generation.
+        """
+        qm = QueryModel()
+        qm._last_elapsed_ms = 100
+        with patch.object(qm, 'query', return_value='{"answer": "New answer"}') as mock_query:
+            new_answer = qm.regenerate_answer(
+                generation_model=MockModel(),
+                question="Q?",
+                old_answer="Old answer",
+                reason="Too vague",
+                score=4.0,
+            )
+            assert new_answer == "New answer"
+            assert mock_query.call_args.kwargs["max_tokens"] == GENERATION_MAX_TOKENS
             assert mock_query.call_args.kwargs["max_tokens"] == 16384
 
     def test_regenerate_answer_without_trace(self):

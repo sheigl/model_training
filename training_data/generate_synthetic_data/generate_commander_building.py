@@ -540,18 +540,24 @@ Weaknesses: {weakness_text}
         return sources
 
     def build_context(self, template: TemplateConfig, data_batch: CommanderBuildingBatch) -> str:
-        """Build validation context with commander and card details."""
+        """Build validation context with commander and card details.
+
+        Mirrors the generation prompt's card data (Mana Cost, Type, Oracle Text,
+        Color Identity) so the validator can ground color-identity legality and
+        mana-cost claims. Previously only oracle text was included, which made the
+        validator mark correct "card X is legal in commander Y" claims UNSUPPORTED.
+        """
         batch = data_batch
 
         commander_context = NEW_LINE.join(
-            f"  {cmd.name}: {getattr(cmd.card_details, 'text', 'N/A') if cmd.card_details else 'N/A'} (decks: {cmd.num_decks})"
+            f"  {cmd.name} (decks: {cmd.num_decks}):\n"
+            f"  {cmd.card_details.to_prompt_detail() if cmd.card_details else 'Color Identity: ' + ', '.join(cmd.color_identity)}"
             for cmd in batch.example_commanders
         ) or "  None"
 
         card_context = NEW_LINE.join(
-            f"  {card.name}: {card.primary_face.oracle_text[:150] if card.primary_face else 'N/A'}"
+            f"  {card.name}:\n  {card.to_prompt_detail()}"
             for card in batch.key_cards
-            if card.primary_face and card.primary_face.oracle_text
         ) or "  None"
 
         return f"""Category: {self.get_source_category()}

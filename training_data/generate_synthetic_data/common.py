@@ -1050,6 +1050,33 @@ def _run_shadow_validation(
     print(f"    👤 SHADOW VALIDATION ({shadow_model.name}): {verdict} (score: {shadow_round.get('score')}/10)")
 
 
+def _record_shadow_disagreement(trace: GenerationTrace, round_data: dict) -> None:
+    """Count a real-vs-shadow verdict disagreement on the trace (Story 050).
+
+    A disagreement is counted when the real validator and the shadow validator
+    produced DIFFERENT parseable verdicts for the same answer/round. Transport
+    failures (``parsed_ok`` False) are not verdicts and never count. When a
+    disagreement is found, both the shadow round (matched by ``round`` index)
+    and the real ``round_data`` are flagged so the two sides can be joined for
+    analysis, and ``trace.shadow_disagreements`` is incremented.
+    """
+    shadow_round = next(
+        (r for r in trace.shadow_validation_rounds if r.get("round") == round_data.get("round")),
+        None,
+    )
+    if shadow_round is None:
+        return
+    if not (round_data.get("parsed_ok") and shadow_round.get("parsed_ok")):
+        return
+    real_verdict = bool(round_data.get("is_acceptable"))
+    shadow_verdict = bool(shadow_round.get("is_acceptable"))
+    disagreement = real_verdict != shadow_verdict
+    shadow_round["disagreement"] = disagreement
+    round_data["shadow_disagreement"] = disagreement
+    if disagreement:
+        trace.shadow_disagreements += 1
+
+
 def validate_and_loop_with_suggested_fix(
     query_model: QueryModel,
     models: dict[ModelType, Model],
@@ -1114,6 +1141,9 @@ def validate_and_loop_with_suggested_fix(
                     round_num=round_num,
                     trace=trace,
                 )
+                # Story 050 — count real-vs-shadow verdict disagreements as a
+                # proxy for the validator's own hallucination rate.
+                _record_shadow_disagreement(trace, round_data)
 
             if not is_valid:
                 if is_transport_failure_reason(reason):

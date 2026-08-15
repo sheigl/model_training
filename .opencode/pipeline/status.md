@@ -1,11 +1,15 @@
 # Pipeline Status
 
-## Current Feature: Story 047 — Raise validation max_tokens — COMPLETE ✅
-## Last Step Completed: Document updated AGENTS.md, CHANGELOG.md, .opencode/context/implementation.md
-## Next Action: None — feature shipped. Tracked follow-ups: (1) thread batch QA index through validate_answer for true per-QA sibling-correction dedupe (common.py note); (2) `regenerate_answer` still uses 8192 default — if a reasoning model is ever used for regeneration, it shares the same truncation risk (code review note).
-## Subagent Result Summary: Implement changed query_model.py (VALIDATION_MAX_TOKENS=16384 on both validation entry points) + 2 regression tests; Code Review approved; Test passed 394/8 (baseline unchanged); Docs updated.
+## Current Feature: Story 051 — Raise generation max_tokens to 16k — COMPLETE ✅
+## Last Step Completed: Document verified/reconciled CHANGELOG.md, AGENTS.md (433 tests), .opencode/context/implementation.md
+## Next Action: None — feature shipped. No open follow-ups for this story (the Story 047 regenerate_answer follow-up was resolved by this change).
+## Subagent Result Summary: Implement added GENERATION_MAX_TOKENS=16384 (query_model.py constant; base_generator.py:475 generation call + regenerate_answer() now pass it) + 2 regression tests; Code Review approved; Test passed; Docs reconciled. 433 total passing.
 
 | Feature | Discovery + Planning | Implement | Review | Test | Document |
 |---------|----------|-----------|--------|------|----------|
-| Story 047 — Raise validation max_tokens | ⏳ Skipped (simple fix) | ✅ Complete | ✅ Approved | ✅ Passed (394 / 8 pre-existing) | ✅ Complete |
+| Story 051 — Raise generation max_tokens | ⏳ Skipped (simple fix) | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Complete |
+| Story 047 — Raise validation max_tokens | ⏳ Skipped (simple fix) | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Complete |
 | Story 046 — Filter validator transport failures | ✅ Complete | ✅ Complete | ✅ Approved | ✅ Passed | ✅ Complete |
+
+## Other tracked follow-ups (not part of Story 051):
+- Thread the batch QA index through `validate_answer` for true per-QA sibling-correction dedupe (common.py note from Story 046).

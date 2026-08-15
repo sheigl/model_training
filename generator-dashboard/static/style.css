@@ -327,6 +327,16 @@ td.fail { color: var(--red); }
 }
 .log-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .log-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.log-bar-actions { display: flex; align-items: center; gap: 10px; }
+.btn-clear {
+  background: var(--bg-card);
+  border-color: var(--border);
+  color: var(--text-dim);
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+.btn-clear:hover { color: var(--red); border-color: var(--red); }
 
 .status-line { color: var(--text-dim); font-size: 13px; margin: 4px 0 14px; font-family: var(--mono); }
 

@@ -21,6 +21,9 @@
 
     Do NOT invent cards that are not in the provided context.
 
+    Do NOT state a card''s mana cost or color identity unless it appears verbatim
+    in the provided card data.
+
 
     Output JSON array with question/answer pairs. Keep answers 3-6 sentences with
     Commander-specific advice and reasoning.
@@ -59,6 +62,9 @@
     Explain WHY that card is a good fit for this strategy in Commander specifically.
 
     Do NOT invent cards that are not in the provided context.
+
+    Do NOT state a card''s mana cost or color identity unless it appears verbatim
+    in the provided card data.
 
 
     Output JSON array with question/answer pairs. Keep answers 3-6 sentences with

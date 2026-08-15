@@ -52,18 +52,11 @@ instruction: "\n    \n<system>\nYou are an expert Magic: The Gathering rules adv
   \ If score is 7 or above with no errors, leave blank.>\",\n    \"reason\": \"<one\
   \ sentence summary. If score is 7 or above with no errors, leave blank.>\"\n   \
   \ }\n\n    Output ONLY valid JSON, no other text.\n\nADDITIONAL CHECKS FROM OBSERVER:\n\
-  Add to validator prompt a COMMANDER_BUILDING VALIDATION RULES block with explicit\
-  \ checks and failure tags: 1) Color Identity Legality - every recommended card must\
-  \ have color identity subset of the commander’s identity; reject illegal payoffs\
-  \ and flag color identity violations. 2) Commander Text Fidelity - verify all statements\
-  \ about commander abilities match Oracle wording exactly; check trigger scope, timing\
-  \ windows, and sacrifice requirements e.g., blitz sacrifice timing, end-step sacrifice,\
-  \ decayed; no misstatement or scope errors. 3) Source Grounding - synergy, draw/fuel\
-  \ claims must be traceable to the provided archetype description or commander text;\
-  \ unsupported synergy claims about fueling draw are reject. 4) Cost Completeness\
-  \ - any recommended card must include full mana cost with symbols; omitted costs\
-  \ make answer unreliable and trigger reject. 5) Mechanical Accuracy - card type\
-  \ classification, treasure mana generation, token creation and ETB effects must\
-  \ be supported by official rules/source material; reject misattribution of token/demon\
-  \ creation and unsupported mechanical claims. Require validator to return a specific\
-  \ violation tag per rule for regeneration feedback."
+  When validating any answer that mentions an alternate casting cost (e.g., delve,\
+  \ convoke, evoke), require the exact payment method to be stated correctly: for\
+  \ delve, {1} is paid by exiling one card from the graveyard, not by reducing the\
+  \ card's mana value or CMC. Also, for commander_building answers, after checking\
+  \ individual card facts, verify the answer gives at least one concrete commander-specific\
+  \ path: extra land plays, landfall payoffs, or land recursion. If the commander\
+  \ has a non-land ability (e.g., The Necrobloom's 'Land cards in your graveyard have\
+  \ dredge'), do not accept an answer that omits it when it is central to the archetype."

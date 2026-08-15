@@ -26,6 +26,14 @@ VALIDATION_TRANSPORT_ERROR_PREFIX = "Validation error"
 # Expecting value..." rejections. 16384 leaves room for thinking + full JSON.
 VALIDATION_MAX_TOKENS = 16384
 
+# Generation responses (initial generation + regeneration) get the same raised
+# budget as validation for the same reason: reasoning models used as generators
+# (e.g. deepseek-v4-flash) emit `reasoning_content` thinking tokens that count
+# against the same max_tokens budget on the serving backend, so the final
+# answer JSON gets truncated mid-generation at the 8192 default. 16384 leaves
+# room for thinking + full JSON.
+GENERATION_MAX_TOKENS = 16384
+
 
 def is_transport_failure_reason(reason: str | None) -> bool:
     """True when the rejection came from the validator itself (unparseable,
@@ -357,7 +365,7 @@ Output ONLY a JSON object:
 Output ONLY valid JSON, no other text."""
 
         try:
-            response = self.query(generation_model, prompt, purpose="REGENERATION")
+            response = self.query(generation_model, prompt, max_tokens=GENERATION_MAX_TOKENS, purpose="REGENERATION")
             response = response.replace("```json", "").replace("```", "").strip()
             if not response.startswith('{'):
                 start = response.find('{')

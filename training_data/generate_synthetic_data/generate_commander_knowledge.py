@@ -413,12 +413,12 @@ Real cards relevant to this topic. Reference ONLY these cards by name.
         ) or "  None"
 
         commander_context = NEW_LINE.join(
-            f"  {c.name}: {c.primary_face.oracle_text[:200] if c.primary_face else 'N/A'}"
+            f"  {c.name}:\n  {c.to_prompt_detail()}"
             for c in batch.example_commanders
         ) or "  None"
 
         card_context = NEW_LINE.join(
-            f"  {c.name}: {c.primary_face.oracle_text[:200] if c.primary_face else 'N/A'}"
+            f"  {c.name}:\n  {c.to_prompt_detail()}"
             for c in batch.key_cards
             if c.primary_face and c.primary_face.oracle_text
         ) or "  None"

@@ -86,3 +86,18 @@ def test_scraper_logs_stream_yields_init(monkeypatch, tmp_path):
     assert payload["type"] == "init"
     assert payload["lines"] == []
     assert payload["log_path"].endswith("mtg_archetypes.log")
+
+
+def test_clear_scraper_log(monkeypatch, client, tmp_path):
+    monkeypatch.setattr(config, "LOGS_DIR", tmp_path)
+    log = config.SCRAPER_BY_SLUG["funtrivia"].log_path
+    log.write_text("some\nstale\nlines\n")
+
+    r = client.post("/api/scraper-logs/funtrivia/clear")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert log.read_text() == ""
+
+
+def test_clear_scraper_log_unknown_scraper(client):
+    assert client.post("/api/scraper-logs/nope/clear").status_code == 404

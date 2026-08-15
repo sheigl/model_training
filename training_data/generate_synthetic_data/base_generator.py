@@ -28,7 +28,7 @@ from .common import (
     QuestionAnswerEnhanced,
 )
 from .models import ValidationMetrics, ModelType, Model, GenerationTrace
-from .query_model import QueryModel
+from .query_model import QueryModel, GENERATION_MAX_TOKENS
 from .yaml_template_loader import YamlTemplateLoader
 
 
@@ -472,7 +472,7 @@ class BaseGenerator(ABC, Generic[T]):
                 response = self.query_model.query(
                     self.generation_model,
                     prompt,
-                    max_tokens=8192,
+                    max_tokens=GENERATION_MAX_TOKENS,
                     purpose="GENERATION",
                 )
 

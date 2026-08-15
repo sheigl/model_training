@@ -54,12 +54,13 @@
       "active_validator_version": 4,
       "generation_versions": {
         "2": {
-          "first_pass_rate": 31.3,
-          "total_items": 9241,
+          "first_pass_rate": 31.28,
+          "total_items": 9251,
           "run_ids": [
             "f754d729-f892-454c-a291-693db35f0d53",
             "6c29c5b3-b973-4219-8c6a-ddf823d6ce23",
-            "e85e65a5-3b75-473e-a4eb-80fc3f1ef3b8"
+            "e85e65a5-3b75-473e-a4eb-80fc3f1ef3b8",
+            "35f701a7-72d0-4668-8dd1-379c0fbecd61"
           ]
         }
       },
@@ -86,12 +87,14 @@
           ]
         },
         "5": {
-          "regen_rate": 15.51,
-          "total_items": 7248,
+          "regen_rate": 15.6,
+          "total_items": 7298,
           "run_ids": [
             "f754d729-f892-454c-a291-693db35f0d53",
             "6c29c5b3-b973-4219-8c6a-ddf823d6ce23",
-            "e85e65a5-3b75-473e-a4eb-80fc3f1ef3b8"
+            "e85e65a5-3b75-473e-a4eb-80fc3f1ef3b8",
+            "35f701a7-72d0-4668-8dd1-379c0fbecd61",
+            "af06ae78-f41e-4bad-a07b-5175a77a1eb3"
           ]
         }
       }

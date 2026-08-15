@@ -191,6 +191,16 @@ class GenerationTrace:
     shadow_validation_model: str = ""            # model name when configured
     shadow_validation_rounds: list = field(default_factory=list)
 
+    # Shadow disagreement counter (Story 050) — number of rounds where the real
+    # validator and the shadow validator produced DIFFERENT parseable verdicts
+    # for the same answer. Measured as a proxy for the validator's own
+    # hallucination rate; recorded for analysis only. Unparseable (transport
+    # failure) rounds never count. Matching rounds are flagged with
+    # ``disagreement: bool`` on the shadow round and
+    # ``shadow_disagreement: bool`` on the corresponding ``validation_rounds``
+    # entry so both sides of a disagreement can be joined by ``round``.
+    shadow_disagreements: int = 0
+
 
 class ValidationMetrics:
     """Collects success/failure metrics for Q&A pair validation.

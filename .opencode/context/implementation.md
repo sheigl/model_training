@@ -1,3 +1,37 @@
+# Implementation Summary — Raise Generation Token Cap (GENERATION_MAX_TOKENS=16384)
+
+## What was implemented
+
+The GENERATION path was truncating responses mid-generation: both `BaseGenerator._process_item()` (the initial generation call, hardcoded `max_tokens=8192`) and `QueryModel.regenerate_answer()` (silently inheriting `query()`'s default 8192) were capped below what reasoning-model generators (e.g. `deepseek-v4-flash`) need. Those models emit `reasoning_content` thinking tokens that count against the SAME `max_tokens` budget on the serving backend, so the final answer JSON got cut off mid-generation. This mirrors the Story 047 fix for the validation path.
+
+### Files Modified
+
+1. **`query_model.py`**
+   - Added module constant `GENERATION_MAX_TOKENS = 16384` directly below `VALIDATION_MAX_TOKENS` (line 35, comment block at lines 29–34) with a comment explaining the reasoning-token rationale (same text as the validation comment, s/validators/generators/).
+   - `regenerate_answer()` (line 368): `self.query(generation_model, prompt, max_tokens=GENERATION_MAX_TOKENS, purpose="REGENERATION")` (was inheriting the 8192 default).
+   - NOT changed: `query()` default `max_tokens=8192`, validation path (`VALIDATION_MAX_TOKENS` usages), observer's `max_tokens=2048`, `run_*.sh` scripts, YAML templates.
+
+2. **`base_generator.py`**
+   - Import updated: `from .query_model import QueryModel, GENERATION_MAX_TOKENS`.
+   - `_process_item()` generation call (line 472–477, `max_tokens=` at line 475): `max_tokens=8192` → `max_tokens=GENERATION_MAX_TOKENS`.
+
+3. **`test_generation_trace.py`** — Two regression-guard tests proving the max_tokens passthrough on the generation path:
+   - `TestBaseGeneratorTraceIntegration::test_generation_call_passes_generation_max_tokens` — builds a `ConcreteGenerator`, patches the real `QueryModel.query` and `validate_qa` on the generator's query model via `patch.object`, calls `generate()`, asserts the generation call's `call_args.kwargs["max_tokens"] == GENERATION_MAX_TOKENS` and `== 16384`.
+   - `TestBackwardCompatibility::test_regenerate_answer_passes_generation_max_tokens` — patches `qm.query` via `patch.object` (Story 047 style), calls `regenerate_answer()`, asserts `call_args.kwargs["max_tokens"] == GENERATION_MAX_TOKENS` and `== 16384`.
+   - Import updated: `from ...query_model import QueryModel, VALIDATION_MAX_TOKENS, GENERATION_MAX_TOKENS`.
+
+4. **`CHANGELOG.md`** — Added entry under `# Changelog`.
+
+### Grep verification for max_tokens assertions
+- Fake `query()` methods in test files (`test_generation_trace.py`, `test_base_generator.py`, `test_generate_reverse_lookup_questions.py`, `test_generate_quick_guidelines.py`, `test_generate_color_identity_questions.py`) define `max_tokens: int = 8192` as the default param — they ACCEPT any value passed. No test asserted the exact 8192 value on the generation path, so no stale assertions needed updating.
+
+### Test Results
+- test_generation_trace.py: 52 tests (50 pre-existing + 2 new), all passing
+- Full suite: 433 passed / 0 failed (431 baseline + 2 new), zero failures
+- Lint: 9 pre-existing ruff errors in the 3 touched files (unused imports `dataclasses.dataclass`, `typing.Iterator`, `yaml`, `anthropic.Stream`, `MagicMock`, `call`, `QuestionAnswerEnhanced`, `ValidationMetrics`, f-string at line 72) — all pre-existing, none in touched lines, left untouched
+
+---
+
 # Implementation Summary — Raise Validation Token Cap (VALIDATION_MAX_TOKENS=16384)
 
 ## What was implemented

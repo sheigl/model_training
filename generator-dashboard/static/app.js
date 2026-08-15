@@ -228,6 +228,7 @@ function buildGeneratorPanel(g) {
   const logSection = el("div");
   const logBar = el("div", "log-bar");
   logBar.appendChild(el("span", null, `Log — ${g.slug}.log`));
+  const logBarActions = el("div", "log-bar-actions");
   const autoscroll = el("label", null);
   const scrollBox = el("input", null);
   scrollBox.type = "checkbox";
@@ -235,7 +236,10 @@ function buildGeneratorPanel(g) {
   scrollBox.dataset.action = "autoscroll";
   autoscroll.appendChild(scrollBox);
   autoscroll.appendChild(document.createTextNode(" auto-scroll"));
-  logBar.appendChild(autoscroll);
+  const clearBtn = el("button", "btn btn-clear", "Clear");
+  clearBtn.dataset.action = "clear-log";
+  logBarActions.append(autoscroll, clearBtn);
+  logBar.appendChild(logBarActions);
   refs.logBox = el("pre", "log-box", "");
   logSection.append(logBar, refs.logBox);
 
@@ -296,6 +300,7 @@ function buildScraperPanel(item) {
   const logSection = el("div");
   const logBar = el("div", "log-bar");
   logBar.appendChild(el("span", null, `Log — ${item.slug}.log`));
+  const logBarActions = el("div", "log-bar-actions");
   const autoscroll = el("label", null);
   const scrollBox = el("input", null);
   scrollBox.type = "checkbox";
@@ -303,7 +308,10 @@ function buildScraperPanel(item) {
   scrollBox.dataset.action = "autoscroll";
   autoscroll.appendChild(scrollBox);
   autoscroll.appendChild(document.createTextNode(" auto-scroll"));
-  logBar.appendChild(autoscroll);
+  const clearBtn = el("button", "btn btn-clear", "Clear");
+  clearBtn.dataset.action = "clear-log";
+  logBarActions.append(autoscroll, clearBtn);
+  logBar.appendChild(logBarActions);
   refs.logBox = el("pre", "log-box", "");
   logSection.append(logBar, refs.logBox);
 
@@ -431,6 +439,24 @@ function onScraperStop(slug) {
     .finally(() => {
       refs.stopBtn.disabled = true;
       refs.stopBtn.textContent = "Stop";
+    });
+}
+
+function onClearLog(slug) {
+  const refs = state.refs;
+  const url = state.mode === "scrapers" ? `/api/scraper-logs/${slug}/clear` : `/api/logs/${slug}/clear`;
+  fetch(url, { method: "POST" })
+    .then((r) => r.json())
+    .then((data) => {
+      if (refs) {
+        refs.statusLine.textContent = data.ok
+          ? "Log cleared"
+          : `Clear failed: ${data.detail || "unknown error"}`;
+      }
+      if (data.ok) openLogSSE(slug);
+    })
+    .catch((e) => {
+      if (refs) refs.statusLine.textContent = `Clear request failed: ${e}`;
     });
 }
 
@@ -820,6 +846,8 @@ panelEl.addEventListener("click", (e) => {
     state.mode === "scrapers" ? onScraperStart(state.active) : onStart(state.active);
   } else if (action === "stop") {
     state.mode === "scrapers" ? onScraperStop(state.active) : onStop(state.active);
+  } else if (action === "clear-log") {
+    onClearLog(state.active);
   }
 });
 
