@@ -6,15 +6,22 @@ legality and mana-cost claims instead of rejecting them as UNSUPPORTED.
 """
 
 from pathlib import Path
+import random
+from unittest.mock import patch
 
 import pytest
 
 from training_data.generate_synthetic_data.base_generator import BaseGenerator, TemplateConfig
 from training_data.generate_synthetic_data.common import NEW_LINE
-from training_data.generate_synthetic_data.domain_models import CardFace, CardWithMetadata, CommanderWithTags
+from training_data.generate_synthetic_data.domain_models import CardFace, CardWithMetadata, CommanderWithTags, Article, Guide
 from training_data.generate_synthetic_data.generate_commander_building import (
+    ARCHETYPE_KEY_CARDS,
+    ARTICLE_POOL_SIZE,
+    COMMANDER_POOL_SIZE,
+    COMMANDERS_PER_BATCH,
     CommanderBuildingBatch,
     GenerateCommanderBuilding,
+    GUIDE_POOL_SIZE,
 )
 from training_data.generate_synthetic_data.generate_commander_knowledge import (
     CommanderKnowledgeBatch,
@@ -220,3 +227,132 @@ class TestCommanderBuildingTemplateManaCostRule:
         instruction = entry["instruction"]
         assert "mana cost" in instruction.lower()
         assert "verbatim" in instruction.lower()
+
+
+def _make_commander(name: str, text: str, num_decks: int = 1000) -> CommanderWithTags:
+    card = create_mock_card(name=name, color_identity=["R"], text=text)
+    return CommanderWithTags(
+        name=name,
+        color_identity=["R"],
+        tags=[],
+        num_decks=num_decks,
+        salt=0.0,
+        card_uuid=f"uuid-{name}",
+        card_details=card,
+    )
+
+
+class _FakeDataAccess:
+    """Minimal stand-in exposing get_cards_enriched for key-card lookup."""
+
+    def __init__(self, cards):
+        self.cards = cards
+
+    def get_cards_enriched(self, filters=None, limit=100, skip=0, lite=False):
+        return self.cards
+
+
+class TestCommanderBuildingRandomization:
+    """Commander/key-card/article selection is randomized for batch variety."""
+
+    SACRIFICE = "sacrifice/aristocrats"
+
+    def _generator(self):
+        return GenerateCommanderBuilding(
+            data_access=None, models={}, validation_pct=0.0, target_count=1
+        )
+
+    def _populate_commander_cache(self, gen, count, text="You may sacrifice a creature"):
+        cmds = [
+            _make_commander(f"Commander{i}", text=text, num_decks=1000 - i)
+            for i in range(count)
+        ]
+        gen._commander_cache = {"aristocrats": cmds}
+        return cmds
+
+    def test_commander_selection_samples_from_scored_pool(self):
+        gen = self._generator()
+        cmds = self._populate_commander_cache(gen, 40)
+        with patch(
+            "training_data.generate_synthetic_data.generate_commander_building.random.sample",
+            wraps=random.sample,
+        ) as mock_sample:
+            result = gen._fetch_commanders_for_archetype(self.SACRIFICE)
+            mock_sample.assert_called_once()
+            pool, k = mock_sample.call_args[0][0], mock_sample.call_args.kwargs["k"]
+        assert k == min(COMMANDERS_PER_BATCH, len(pool))
+        assert len(pool) <= COMMANDER_POOL_SIZE
+        assert len(result) <= COMMANDERS_PER_BATCH
+        assert all(c.name in {c.name for c in cmds} for c in result)
+
+    def test_commander_selection_varies_across_calls(self):
+        gen = self._generator()
+        self._populate_commander_cache(gen, 60)
+        seen = set()
+        for _ in range(10):
+            seen.update(c.name for c in gen._fetch_commanders_for_archetype(self.SACRIFICE))
+        assert len(seen) > COMMANDERS_PER_BATCH
+
+    def test_fallback_archetype_samples_uniformly(self):
+        gen = self._generator()
+        cmds = self._populate_commander_cache(gen, 12)
+        with patch(
+            "training_data.generate_synthetic_data.generate_commander_building.random.sample",
+            wraps=random.sample,
+        ) as mock_sample:
+            result = gen._fetch_commanders_for_archetype("midrange goodstuff")
+            mock_sample.assert_called_once()
+            pool, k = mock_sample.call_args[0][0], mock_sample.call_args.kwargs["k"]
+        assert k == min(COMMANDERS_PER_BATCH, len(pool))
+        assert len(pool) <= COMMANDER_POOL_SIZE
+        assert len(result) == min(COMMANDERS_PER_BATCH, len(cmds))
+
+    def test_key_cards_shuffled_across_calls(self):
+        fallback_names = ARCHETYPE_KEY_CARDS[self.SACRIFICE]
+        cards = [create_mock_card(name, ["B"]) for name in fallback_names]
+        gen = self._generator()
+        gen.data_access = _FakeDataAccess(cards)
+        gen._archetypes_db = {}
+
+        first = gen._fetch_key_cards_for_archetype(self.SACRIFICE)
+        second = gen._fetch_key_cards_for_archetype(self.SACRIFICE)
+        third = gen._fetch_key_cards_for_archetype(self.SACRIFICE)
+
+        assert {c.name for c in first} == set(fallback_names)
+        assert not (first == second == third)
+
+    def test_articles_sampled_from_top_matches(self):
+        gen = self._generator()
+        gen._articles = [
+            Article(title=f"Sacrifice guide {i}", content="x", tags=["sacrifice", "aristocrats"])
+            for i in range(8)
+        ]
+        with patch(
+            "training_data.generate_synthetic_data.generate_commander_building.random.sample",
+            wraps=random.sample,
+        ) as mock_sample:
+            result = gen._fetch_articles_for_archetype(self.SACRIFICE)
+            mock_sample.assert_called_once()
+            pool, k = mock_sample.call_args[0][0], mock_sample.call_args.kwargs["k"]
+        assert k == min(2, len(pool))
+        assert len(pool) <= ARTICLE_POOL_SIZE
+        assert len(result) == 2
+        assert all(a.title.startswith("Sacrifice guide") for a in result)
+
+    def test_guides_sampled_from_top_matches(self):
+        gen = self._generator()
+        gen._guides = [
+            Guide(title=f"Aristocrats how-to {i}", chapters=[], tags=["sacrifice", "dies"])
+            for i in range(8)
+        ]
+        with patch(
+            "training_data.generate_synthetic_data.generate_commander_building.random.sample",
+            wraps=random.sample,
+        ) as mock_sample:
+            result = gen._fetch_guides_for_archetype(self.SACRIFICE)
+            mock_sample.assert_called_once()
+            pool, k = mock_sample.call_args[0][0], mock_sample.call_args.kwargs["k"]
+        assert k == min(2, len(pool))
+        assert len(pool) <= GUIDE_POOL_SIZE
+        assert len(result) == 2
+        assert all(g.title.startswith("Aristocrats how-to") for g in result)

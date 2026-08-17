@@ -43,7 +43,7 @@ class MockModel(Model):
     def __init__(self, name: str = "test-model", model_type: ModelType = ModelType.GENERATION):
         self.name = name
         self.type = model_type
-        self.provider = ModelProvider.OLLAMA
+        self.provider = ModelProvider.OPENAI
         self.provider_url = "http://localhost:11434"
         self.api_key = None
 

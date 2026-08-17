@@ -1,9 +1,9 @@
 """
-Generate high-quality MTG training data using ChatGPT or Claude API
+Generate high-quality MTG training data using ChatGPT API
 This produces the best quality strategic content
 
 Usage:
-1. Get API key from OpenAI or Anthropic
+1. Get API key from OpenAI
 2. Set environment variable: export OPENAI_API_KEY="your-key"
 3. Run: python generate_with_api.py
 """
@@ -12,15 +12,8 @@ import os
 import json
 import time
 
-# Choose your provider
-USE_OPENAI = True  # Set to False to use Anthropic Claude
-
-if USE_OPENAI:
-    import openai
-    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-else:
-    import anthropic
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+import openai
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # High-value topics to generate
 GENERATION_PROMPTS = [
@@ -93,18 +86,6 @@ def generate_with_openai(system_prompt, user_prompt):
     )
     return response.choices[0].message.content
 
-def generate_with_anthropic(system_prompt, user_prompt):
-    """Generate response using Anthropic Claude API"""
-    response = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=1000,
-        system=system_prompt,
-        messages=[
-            {"role": "user", "content": user_prompt}
-        ]
-    )
-    return response.content[0].text
-
 def create_question_variations(prompt):
     """Create multiple question phrasings for the same topic"""
     # Extract the key topic
@@ -146,18 +127,11 @@ def main():
     print("High-Quality MTG Training Data Generator")
     print("=" * 60)
     
-    if USE_OPENAI:
-        if not os.getenv("OPENAI_API_KEY"):
-            print("ERROR: OPENAI_API_KEY environment variable not set")
-            print("Set it with: export OPENAI_API_KEY='your-key-here'")
-            return
-        print("Using OpenAI GPT-4o")
-    else:
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            print("ERROR: ANTHROPIC_API_KEY environment variable not set")
-            print("Set it with: export ANTHROPIC_API_KEY='your-key-here'")
-            return
-        print("Using Anthropic Claude")
+    if not os.getenv("OPENAI_API_KEY"):
+        print("ERROR: OPENAI_API_KEY environment variable not set")
+        print("Set it with: export OPENAI_API_KEY='your-key-here'")
+        return
+    print("Using OpenAI GPT-4o")
     
     all_training_data = []
     total_prompts = sum(len(category["prompts"]) for category in GENERATION_PROMPTS)
@@ -172,10 +146,7 @@ def main():
             
             try:
                 # Generate answer
-                if USE_OPENAI:
-                    answer = generate_with_openai(system_prompt, prompt)
-                else:
-                    answer = generate_with_anthropic(system_prompt, prompt)
+                answer = generate_with_openai(system_prompt, prompt)
                 
                 # Create question variations
                 questions = create_question_variations(prompt)

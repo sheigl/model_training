@@ -4,13 +4,11 @@ import sys
 import time
 import logging
 from typing import Iterator
-import ollama
 import json
 import re
 import yaml
 from .constants import MTG_NOTATION_LEGEND, SYSTEM_MESSAGE, VALIDATION_CHECKLIST, VALIDATION_SCORING_GUIDE
 from .models import Model, ModelProvider
-from anthropic import Anthropic, Stream
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -48,13 +46,12 @@ def is_transport_failure_reason(reason: str | None) -> bool:
 
 class QueryModel():
     def __init__(self):
-        self.anthropic_client: Anthropic | None = None
         self._last_elapsed_ms = 0
         # Optional YAML template loader for loading validator templates.
         self.yaml_loader = None
 
     def query(self, model: Model, prompt: str, max_tokens=8192, purpose: str = ""):
-        """Query Ollama API"""
+        """Query OpenAI-compatible API"""
         start = time.time()
         print(f"\n{'─'*60}")
         print(f"  → PROMPT ({len(prompt)} chars, max_tokens={max_tokens}):")
@@ -63,10 +60,6 @@ class QueryModel():
         print(f"{'─'*60}")
         
         try:
-            if model.provider == ModelProvider.ANTHROPIC:
-                anthropic_key = model.api_key or os.getenv("ANTHROPIC_KEY")
-                self.anthropic_client = Anthropic(api_key=anthropic_key) if not self.anthropic_client else self.anthropic_client
-
             purpose_label = f" [{purpose}]" if purpose else ""
             print(f"  → MODEL{purpose_label}: {model.name} ({model.provider.value}, host={model.provider_url})")
             print(f"  → RESPONSE:")
@@ -75,87 +68,42 @@ class QueryModel():
             response_content = ""
             #thinking_content = ""
                         
-            if model.provider == ModelProvider.ANTHROPIC:
-                time.sleep(1) # because of anthropic rater limits
-                with self.anthropic_client.messages.stream(max_tokens=max_tokens, # type: ignore
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt,
-                        }
-                    ],
-                    model=model.name,
-                    temperature=0.7) as stream:
-                        for event in stream:
-                            if event.type == "content_block_delta":
-                                # Extract the new text chunk
-                                new_text = event.delta.text # type: ignore
-                                
-                                # Append to full response
-                                response_content += new_text
-                                
-                                # Print ONLY the new text (not the event object)
-                                sys.stderr.write(new_text)
-                                sys.stderr.flush()
-            elif model.provider == ModelProvider.OPENAI:
-                openai_key = model.api_key or os.getenv("OPENAI_API_KEY") or "none"
-                client = OpenAI(base_url=model.provider_url, api_key=openai_key)
-                stream = client.chat.completions.create(
-                    model=model.name,
-                    messages=[
-                        {"role": "user", "content": prompt}],
-                    stream=True,
-                    max_tokens=max_tokens,
-                    #temperature=1.0,
-                    #top_p=0.95,
-                    #presence_penalty=1.5,
-                    #extra_body={
-                    #    "top_k": 20,
-                    #    "min_p": 0.0,
-                    #    "repetition_penalty": 1.0,
-                    #    "chat_template_kwargs": {"enable_thinking": True},
-                    #    "max_context_length": max_tokens * 2
-                    #}
-                )
-                
-                for chunk in stream:
-                    if chunk.choices:
-                        if (hasattr(chunk.choices[0].delta, "reasoning_content") and chunk.choices[0].delta.reasoning_content is not None): # type: ignore
-                            content_chunk = chunk.choices[0].delta.reasoning_content # type: ignore
-                            sys.stderr.write(content_chunk)
-                            sys.stderr.flush()
-                            #thinking_content += content_chunk
-                        if chunk.choices[0].delta.content is not None: # type: ignore
-                            content_chunk = chunk.choices[0].delta.content
-                            sys.stderr.write(content_chunk)
-                            sys.stderr.flush()
-                            response_content += content_chunk
-                
-            else:
-                client = ollama.Client(host=model.provider_url) 
-                stream = client.chat(
-                    model=model.name, 
-                    messages=[{"role": "user", "content": prompt}], 
-                    stream=True,
-                    options= {
-                        "num_predict": max_tokens,
-                        'num_ctx': max_tokens * 2, # Set the total context window size
-                        "temperature": 1.0,
-                        "top_p": 0.95,
-                        "top_k": 20,
-                        "min_p": 0.0,
-                        "presence_penalty": 1.5,
-                        "repetition_penalty": 1.0,
-                        "chat_template_kwargs": {"enable_thinking": False}
-                    })
+            openai_key = model.api_key or os.getenv("OPENAI_API_KEY") or "none"
+            client = OpenAI(base_url=model.provider_url, api_key=openai_key)
+            stream = client.chat.completions.create(
+                model=model.name,
+                messages=[
+                    {"role": "user", "content": prompt}],
+                stream=True,
+                max_tokens=max_tokens,
+                #temperature=1.0,
+                #top_p=0.95,
+                #presence_penalty=1.5,
+                extra_body={
+                    "chat_template_kwargs": {
+                        "enable_thinking": True,
+                        "reasoning_effort": "xhigh",
+                    },
+                    #"top_k": 20,
+                    #"min_p": 0.0,
+                    #"repetition_penalty": 1.0,
+                    #"max_context_length": max_tokens * 2
+                }
+            )
             
-                for chunk in stream:
-                    if 'message' in chunk and 'content' in chunk['message']:
-                        content_chunk = chunk['message']['content']
+            for chunk in stream:
+                if chunk.choices:
+                    if (hasattr(chunk.choices[0].delta, "reasoning_content") and chunk.choices[0].delta.reasoning_content is not None): # type: ignore
+                        content_chunk = chunk.choices[0].delta.reasoning_content # type: ignore
+                        sys.stderr.write(content_chunk)
+                        sys.stderr.flush()
+                        #thinking_content += content_chunk
+                    if chunk.choices[0].delta.content is not None: # type: ignore
+                        content_chunk = chunk.choices[0].delta.content
                         sys.stderr.write(content_chunk)
                         sys.stderr.flush()
                         response_content += content_chunk
-            
+                
             print(f"{'─'*60}")
             end = time.time()
             self._last_elapsed_ms = int((end - start) * 1000)

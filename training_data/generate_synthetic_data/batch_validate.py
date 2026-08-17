@@ -56,10 +56,10 @@ def parse_model_string(model_str: str) -> Model:
         url, provider, name = parts
     elif len(parts) == 2:
         url, name = parts
-        provider = "ollama"
+        provider = "openai"
     else:
         url = "http://localhost:11434"
-        provider = "ollama"
+        provider = "openai"
         name = model_str
 
     provider_enum = ModelProvider(provider.lower())

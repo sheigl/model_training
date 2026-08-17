@@ -52,11 +52,18 @@ instruction: "\n    \n<system>\nYou are an expert Magic: The Gathering rules adv
   \ If score is 7 or above with no errors, leave blank.>\",\n    \"reason\": \"<one\
   \ sentence summary. If score is 7 or above with no errors, leave blank.>\"\n   \
   \ }\n\n    Output ONLY valid JSON, no other text.\n\nADDITIONAL CHECKS FROM OBSERVER:\n\
-  When validating any answer that mentions an alternate casting cost (e.g., delve,\
-  \ convoke, evoke), require the exact payment method to be stated correctly: for\
-  \ delve, {1} is paid by exiling one card from the graveyard, not by reducing the\
-  \ card's mana value or CMC. Also, for commander_building answers, after checking\
-  \ individual card facts, verify the answer gives at least one concrete commander-specific\
-  \ path: extra land plays, landfall payoffs, or land recursion. If the commander\
-  \ has a non-land ability (e.g., The Necrobloom's 'Land cards in your graveyard have\
-  \ dredge'), do not accept an answer that omits it when it is central to the archetype."
+  Before accepting an answer, verify:\n1. The answer explicitly addresses every part\
+  \ of the original question, including any 'how to handle', 'what would you do',\
+  \ political/multiplayer, or deckbuilding aspects; if the question asks for advice,\
+  \ the answer must give concrete, actionable steps rather than only describing mechanics.\n\
+  2. Every factual claim about a card, interaction, or deckbuilding consequence must\
+  \ be directly traceable to the referenced oracle text/source; flag any claim presented\
+  \ as fact but not supported.\n3. If the answer makes a comparative or superlative\
+  \ claim (e.g., 'best', 'only', 'equally', 'better'), check it against the provided\
+  \ commanders/card list and correct it if another option is equally or more valid.\n\
+  4. For commander/archetype questions, explicitly evaluate whether the answer covers\
+  \ the commander's role, synergy with the archetype, and relevant weaknesses (e.g.,\
+  \ graveyard hate) unless the source clearly makes that optional.\n5. Do not accept\
+  \ an answer just because its individual mechanics are correct; if any required part\
+  \ of the original question is unaddressed or only vaguely addressed, regenerate\
+  \ with a request that fills that gap."

@@ -462,8 +462,6 @@ class ModelType(Enum):
 
 
 class ModelProvider(Enum):
-    OLLAMA = "ollama"
-    ANTHROPIC = "anthropic"
     OPENAI = "openai"
 
 
@@ -476,12 +474,7 @@ class Model:
         self.api_key = api_key or self._parse_api_key(name)
 
     def _parse_provider(self, model_name: str) -> ModelProvider:
-        if "anthropic" in model_name:
-            return ModelProvider.ANTHROPIC
-        elif "openai" in model_name:
-            return ModelProvider.OPENAI
-        else:
-            return ModelProvider.OLLAMA
+        return ModelProvider.OPENAI
 
     def _parse_model_name(self, model_name: str):
         if "," not in model_name:

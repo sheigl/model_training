@@ -5,6 +5,7 @@ and archetype data (win conditions, weaknesses) from MongoDB.
 """
 
 from dataclasses import dataclass, field
+import random
 from typing import Iterator
 
 from .base_generator import BaseGenerator, TemplateConfig
@@ -167,6 +168,22 @@ ARCHETYPE_KEY_CARDS: dict[str, list[str]] = {
 
 
 # =============================================================================
+# RANDOMIZATION TUNING
+# =============================================================================
+
+# Commanders are drawn uniformly at random from the top COMMANDER_POOL_SIZE
+# most relevant+popular commanders for the archetype (instead of always the
+# deterministic top 5), so consecutive batches — and consecutive runs — vary.
+COMMANDER_POOL_SIZE = 500
+COMMANDERS_PER_BATCH = 5
+
+# Articles/guides are sampled from the top ARTICLE_POOL_SIZE / GUIDE_POOL_SIZE
+# overlap-scored matches instead of always the top 2.
+ARTICLE_POOL_SIZE = 5
+GUIDE_POOL_SIZE = 5
+
+
+# =============================================================================
 # GENERATOR CLASS
 # =============================================================================
 
@@ -293,10 +310,15 @@ class GenerateCommanderBuilding(BaseGenerator[CommanderBuildingBatch]):
         print(f"    Fetched {len(self._guides)} guides")
 
     def _fetch_commanders_for_archetype(self, archetype_name: str) -> list[CommanderWithTags]:
-        """Get top commanders matching this archetype by oracle text keywords."""
+        """Get commanders matching this archetype by oracle text keywords.
+
+        Samples uniformly at random from a pool of the top
+        ``COMMANDER_POOL_SIZE`` scored commanders so that consecutive batches
+        feature different (still relevant, still popular) commanders.
+        """
         keywords = ARCHETYPE_KEYWORD_MAP.get(archetype_name, [])
         if not keywords:
-            # Fallback: return most popular commanders overall
+            # Fallback: most popular commanders overall
             all_cmd = []
             for cmds in self._commander_cache.values():
                 all_cmd.extend(cmds)
@@ -307,27 +329,29 @@ class GenerateCommanderBuilding(BaseGenerator[CommanderBuildingBatch]):
                     seen.add(cmd.name)
                     unique.append(cmd)
             unique.sort(key=lambda c: c.num_decks, reverse=True)
-            return unique[:5]
+            pool = unique[:COMMANDER_POOL_SIZE]
+        else:
+            scored: list[tuple[int, CommanderWithTags]] = []
+            for cmds in self._commander_cache.values():
+                for cmd in cmds:
+                    oracle = ""
+                    if cmd.card_details:
+                        oracle = getattr(cmd.card_details, "text", "") or ""
+                    oracle_lower = oracle.lower()
+                    matches = sum(1 for kw in keywords if kw.lower() in oracle_lower)
+                    if matches > 0:
+                        scored.append((matches, cmd))
+            # Deduplicate, sort by keyword matches then popularity
+            seen: set[str] = set()
+            unique_scored: list[tuple[int, CommanderWithTags]] = []
+            for matches, cmd in scored:
+                if cmd.name not in seen:
+                    seen.add(cmd.name)
+                    unique_scored.append((matches, cmd))
+            unique_scored.sort(key=lambda x: (x[0], x[1].num_decks), reverse=True)
+            pool = [cmd for _, cmd in unique_scored[:COMMANDER_POOL_SIZE]]
 
-        scored: list[tuple[int, CommanderWithTags]] = []
-        for cmds in self._commander_cache.values():
-            for cmd in cmds:
-                oracle = ""
-                if cmd.card_details:
-                    oracle = getattr(cmd.card_details, "text", "") or ""
-                oracle_lower = oracle.lower()
-                matches = sum(1 for kw in keywords if kw.lower() in oracle_lower)
-                if matches > 0:
-                    scored.append((matches, cmd))
-        # Deduplicate, sort by keyword matches then popularity
-        seen: set[str] = set()
-        unique_scored: list[tuple[int, CommanderWithTags]] = []
-        for matches, cmd in scored:
-            if cmd.name not in seen:
-                seen.add(cmd.name)
-                unique_scored.append((matches, cmd))
-        unique_scored.sort(key=lambda x: (x[0], x[1].num_decks), reverse=True)
-        return [cmd for _, cmd in unique_scored[:5]]
+        return random.sample(pool, k=min(COMMANDERS_PER_BATCH, len(pool)))
 
     def _fetch_key_cards_for_archetype(self, archetype_name: str) -> list[CardWithMetadata]:
         """Get key cards from DB archetype data or fallback to curated list."""
@@ -363,7 +387,11 @@ class GenerateCommanderBuilding(BaseGenerator[CommanderBuildingBatch]):
                 seen_names.add(card.name)
                 unique_cards.append(card)
         self._key_card_cache[cache_key] = unique_cards
-        return unique_cards
+        # Vary presentation order across batches so the same cards don't always
+        # lead the prompt (cache keeps the base list; each call shuffles a copy).
+        result = list(unique_cards)
+        random.shuffle(result)
+        return result
 
     def _fetch_archetype_details(self, archetype_name: str) -> tuple[list[str], list[str]]:
         """Get win conditions and weaknesses from DB archetype data."""
@@ -389,7 +417,8 @@ class GenerateCommanderBuilding(BaseGenerator[CommanderBuildingBatch]):
             if overlap > 0:
                 scored.append((overlap, article))
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [a for _, a in scored[:2]]
+        pool = [a for _, a in scored[:ARTICLE_POOL_SIZE]]
+        return random.sample(pool, k=min(2, len(pool)))
 
     def _fetch_guides_for_archetype(self, archetype_name: str) -> list[Guide]:
         """Get EDHREC guides relevant to this archetype."""
@@ -404,7 +433,8 @@ class GenerateCommanderBuilding(BaseGenerator[CommanderBuildingBatch]):
             if overlap > 0:
                 scored.append((overlap, guide))
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [g for _, g in scored[:2]]
+        pool = [g for _, g in scored[:GUIDE_POOL_SIZE]]
+        return random.sample(pool, k=min(2, len(pool)))
 
     # =========================================================================
     # BASE GENERATOR OVERRIDES

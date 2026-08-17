@@ -100,7 +100,6 @@ from datetime import datetime
 import argparse
 import json
 import time
-import ollama
 from pathlib import Path
 from .common import *
 from .models import ValidationMetrics, QuestionAnswerEnhanced, GenerationTrace

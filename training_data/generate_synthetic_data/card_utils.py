@@ -2,7 +2,7 @@
 
 These functions convert raw MongoDB dicts into Pydantic ``Card`` models.
 They live in their own module so they can be unit-tested without pulling
-in the full dependency chain (ollama, anthropic, etc.) that ``common.py``
+in the full dependency chain (openai, etc.) that ``common.py``
 requires at import time.
 """
 

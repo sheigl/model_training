@@ -87,14 +87,16 @@
           ]
         },
         "5": {
-          "regen_rate": 15.6,
-          "total_items": 7298,
+          "regen_rate": 15.89,
+          "total_items": 8098,
           "run_ids": [
             "f754d729-f892-454c-a291-693db35f0d53",
             "6c29c5b3-b973-4219-8c6a-ddf823d6ce23",
             "e85e65a5-3b75-473e-a4eb-80fc3f1ef3b8",
             "35f701a7-72d0-4668-8dd1-379c0fbecd61",
-            "af06ae78-f41e-4bad-a07b-5175a77a1eb3"
+            "af06ae78-f41e-4bad-a07b-5175a77a1eb3",
+            "f175d5d1-800f-4c38-93e5-fc1534fd738e",
+            "ee1742f5-a814-4822-a9d0-47d236ab47fd"
           ]
         }
       }
